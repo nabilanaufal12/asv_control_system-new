@@ -1,65 +1,78 @@
 # gui/api_client.py
-# VERSI DUMMY (ALWAYS CONNECTED): Disambungkan secara otomatis untuk pengujian yang lebih mudah.
+# --- Versi Stabil: Kurir serial dengan koneksi otomatis ---
 
 import time
-import random
 import threading
-from PySide6.QtCore import QObject, Signal
+import serial
+import serial.tools.list_ports
+from PySide6.QtCore import QObject, Signal, Slot
 
 class ApiClient(QObject):
-    """
-    Kelas ini bertindak sebagai backend palsu.
-    Ia akan langsung aktif dan menghasilkan data saat aplikasi dimulai.
-    """
     data_updated = Signal(dict)
-    connection_failed = Signal(str) 
+    connection_status_changed = Signal(bool, str)
 
     def __init__(self):
         super().__init__()
-        
-        self.is_connected = True 
-        self.current_state = {
-            "latitude": -6.2088, "longitude": 106.8456, "heading": 90.0,
-            "speed": 0.0, "battery_voltage": 12.5, "status": "IDLE",
-            "mission_time": "00:00:00", "control_mode": "MANUAL"
-        }
-        
-        self._simulation_thread = threading.Thread(target=self._simulate_data_changes, daemon=True)
-        self._simulation_thread.start()
-        print("[ApiClient (Dummy)] Simulasi Backend langsung dimulai.")
-
-    def configure_and_connect(self, details):
-        """Fungsi ini sekarang hanya mencetak pesan, karena sudah otomatis terhubung."""
-        print(f"[ApiClient (Dummy)] Pengaturan koneksi diterima: {details}")
-
-    def disconnect(self):
-        """Menghentikan simulasi."""
+        self.serial_port = None
         self.is_connected = False
-        print("[ApiClient (Dummy)] Simulasi Backend Dihentikan.")
+        self.running = True
+        self.current_state = { "status": "DISCONNECTED" }
+        self._read_thread = threading.Thread(target=self._read_from_serial, daemon=True)
+        self._read_thread.start()
 
-    def _simulate_data_changes(self):
-        """Fungsi yang berjalan di background untuk menghasilkan data palsu."""
-        start_time = time.time()
-        while self.is_connected:
-            if self.current_state["control_mode"] == "AUTO":
-                self.current_state["status"] = "NAVIGATING"
-            else: # Mode MANUAL
-                self.current_state["status"] = "IDLE"
+    def _read_from_serial(self):
+        while self.running:
+            if not self.is_connected:
+                if not self.running: break
+                self.find_and_connect_esp32()
+                time.sleep(2)
+                continue
+            try:
+                if self.serial_port and self.serial_port.is_open:
+                    line = self.serial_port.readline().decode('utf-8', errors='ignore').strip()
+                    if line and line.startswith("T:"):
+                        # (Logika parsing telemetri bisa ditambahkan kembali di sini jika perlu)
+                        pass 
+            except serial.SerialException:
+                if not self.running: break
+                self.is_connected = False
+                self.connection_status_changed.emit(False, "Koneksi ESP32 terputus")
 
-            elapsed = time.time() - start_time
-            self.current_state["mission_time"] = time.strftime('%H:%M:%S', time.gmtime(elapsed))
-            self.data_updated.emit(self.current_state)
-            time.sleep(1)
+    def find_and_connect_esp32(self):
+        ports = [p for p in serial.tools.list_ports.comports() if "Silicon Labs" in p.description or "CH340" in p.description or "CP210x" in p.description]
+        if ports:
+            try:
+                self.serial_port = serial.Serial(ports[0].device, 115200, timeout=1)
+                self.is_connected = True
+                self.connection_status_changed.emit(True, f"Terhubung ke {ports[0].device}")
+            except serial.SerialException as e:
+                self.connection_status_changed.emit(False, f"Gagal membuka {ports[0].device}")
+        else:
+            self.connection_status_changed.emit(False, "ESP32 tidak ditemukan")
 
+    @Slot(str)
+    def send_serial_command(self, command_string):
+        """Mengirim string perintah mentah ke ESP32."""
+        if self.is_connected and self.serial_port and self.serial_port.is_open:
+            try:
+                self.serial_port.write(command_string.encode('utf-8'))
+                print(f"Mengirim ke ESP32: {command_string.strip()}")
+            except serial.SerialException:
+                self.is_connected = False
+    
     def send_command(self, command, payload=None):
-        """Mensimulasikan pengiriman perintah."""
-        print(f"[ApiClient (Dummy)] Perintah diterima: {command}, Payload: {payload}")
-        if not self.is_connected:
-            return
+        """Menangani perintah yang tidak terkait langsung dengan aktuator (misal: mode manual)."""
+        if command == "MANUAL_CONTROL":
+            keys = set(payload)
+            forward_input = 1 if 'W' in keys else -1 if 'S' in keys else 0
+            turn_input = 1 if 'D' in keys else -1 if 'A' in keys else 0
+            motor_pwm = 1500 + forward_input * 150
+            servo_angle = 90 - turn_input * 45
+            servo_angle = max(0, min(180, servo_angle))
+            serial_command = f"S{motor_pwm};D{servo_angle}\n"
+            self.send_serial_command(serial_command)
 
-        if command == "CHANGE_MODE":
-            self.current_state["control_mode"] = payload
-        elif command == "EMERGENCY_STOP":
-            self.current_state["control_mode"] = "MANUAL"
-        
-        self.data_updated.emit(self.current_state)
+    def shutdown(self):
+        self.running = False
+        if self._read_thread.is_alive(): self._read_thread.join(timeout=1.0) 
+        if self.serial_port and self.serial_port.is_open: self.serial_port.close()

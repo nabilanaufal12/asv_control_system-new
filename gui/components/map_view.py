@@ -1,126 +1,121 @@
 # gui/components/map_view.py
-# Komponen untuk menampilkan peta, posisi ASV, dan waypoints.
+# --- MODIFIKASI: Mengubah representasi kapal menjadi panah ---
 
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QLabel
-from PySide6.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QPen, QBrush
-from PySide6.QtCore import Qt, Slot, QPointF
-from collections import deque
+from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPolygonF
+from PySide6.QtCore import Slot, QPointF, QRectF, Qt
 
-class MapView(QGroupBox):
-    """
-    Sebuah GroupBox yang menampilkan peta simulasi dengan grid berlabel,
-    posisi ASV, dan jejaknya.
-    """
-    def __init__(self, title="Map View"):
-        super().__init__(title)
-
-        self.map_label = QLabel("Initializing map...")
-        self.map_label.setAlignment(Qt.AlignCenter)
-        self.map_label.setStyleSheet("background-color: #2E4053;")
-        self.map_label.setMinimumSize(640, 480) 
+class MapView(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.asv_lat = -6.9175
+        self.asv_lon = 107.6191
+        self.asv_heading = 0.0 # Simpan heading di sini
         
-        layout = QVBoxLayout()
-        layout.addWidget(self.map_label)
-        self.setLayout(layout)
-        
-        self.initial_pos = None
-        self.current_pos = QPointF(0, 0)
-        self.path_history = deque(maxlen=100)
         self.waypoints = []
+        self.path_history = []
+        
+        self.lat_min, self.lat_max = -6.9185, -6.9165
+        self.lon_min, self.lon_max = 107.6181, 107.6201
 
-        self.scale = 500000 
+    @Slot(list)
+    def update_waypoints(self, new_waypoints):
+        self.waypoints = new_waypoints
+        self.update()
 
     @Slot(dict)
     def update_data(self, data):
-        """Menerima data telemetri dan mengupdate posisi ASV."""
-        lat = data.get("latitude")
-        lon = data.get("longitude")
-
-        if lat is None or lon is None:
-            return
-            
-        if self.initial_pos is None:
-            self.initial_pos = QPointF(lon, lat)
-
-        self.current_pos.setX((lon - self.initial_pos.x()) * self.scale)
-        self.current_pos.setY(-(lat - self.initial_pos.y()) * self.scale) 
-
-        self.path_history.append(self.current_pos)
-        self.draw_map()
-
-    @Slot(list)
-    def update_waypoints(self, waypoints_list):
-        """Menerima daftar waypoints dan menyimpannya untuk digambar."""
-        print(f"[MapView] Menerima waypoints baru: {waypoints_list}")
-        self.waypoints = waypoints_list
-        self.draw_map()
-
-    def draw_map(self):
-        """Menggambar semua elemen di peta: grid, jejak, ASV, dan waypoints."""
-        width = self.map_label.width()
-        height = self.map_label.height()
-        if width <= 0 or height <= 0: return
+        """Mengupdate posisi dan heading kapal."""
+        self.asv_lat = data.get('latitude', self.asv_lat)
+        self.asv_lon = data.get('longitude', self.asv_lon)
+        self.asv_heading = data.get('heading', self.asv_heading)
         
-        image = QImage(width, height, QImage.Format_RGB32)
-        image.fill(QColor("#2E4053"))
-        painter = QPainter(image)
+        new_pos = QPointF(self.asv_lon, self.asv_lat)
+        if not self.path_history or self.path_history[-1] != new_pos:
+            self.path_history.append(new_pos)
+            if len(self.path_history) > 200:
+                self.path_history.pop(0)
+        self.update()
+
+    def _convert_gps_to_pixel(self, lat, lon):
+        widget_width = self.width()
+        widget_height = self.height()
+        if self.lon_max == self.lon_min or self.lat_max == self.lat_min: return QPointF(0, 0)
+        x = (lon - self.lon_min) / (self.lon_max - self.lon_min) * widget_width
+        y = (self.lat_max - lat) / (self.lat_max - self.lat_min) * widget_height
+        return QPointF(x, y)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
         
-        # --- PERUBAHAN UTAMA: Gambar Grid Berlabel 5x5 ---
-        padding = 50 # Ruang di tepi untuk label
-        grid_area_width = width - (2 * padding)
-        grid_area_height = height - (2 * padding)
-        cell_width = grid_area_width / 5
-        cell_height = grid_area_height / 5
-
-        font = QFont(); font.setPointSize(12); font.setBold(True)
-        painter.setFont(font)
-        painter.setPen(QColor("white"))
-
-        # Gambar garis vertikal dan label A-E
-        labels_x = ["A", "B", "C", "D", "E"]
-        for i in range(6):
-            x = padding + (i * cell_width)
-            painter.setPen(QPen(QColor(80, 100, 120), 2)) # Garis grid lebih tebal
-            painter.drawLine(int(x), padding, int(x), height - padding)
-            if i < 5:
-                painter.setPen(QColor("white")) # Warna label
-                label_x_pos = padding + (i * cell_width) + (cell_width / 2) - (font.pointSize() / 2)
-                painter.drawText(int(label_x_pos), height - padding + 25, labels_x[i])
-                painter.drawText(int(label_x_pos), padding - 15, labels_x[i])
-
-
-        # Gambar garis horizontal dan label 1-5
-        for i in range(6):
-            y = padding + (i * cell_height)
-            painter.setPen(QPen(QColor(80, 100, 120), 2))
-            painter.drawLine(padding, int(y), width - padding, int(y))
-            if i < 5:
-                painter.setPen(QColor("white"))
-                label_y_pos = height - padding - (i * cell_height) - (cell_height / 2) + (font.pointSize() / 2)
-                painter.drawText(padding - 25, int(label_y_pos), str(i + 1))
-
-        # Gambar jejak (path) - Disesuaikan dengan area grid
+        # (Kode gambar background, grid, jejak, dan waypoint tidak berubah)
+        painter.fillRect(self.rect(), QColor("#3498db"))
+        grid_pen = QPen(QColor("white"), 1)
+        label_font = QFont("Arial", 11, QFont.Bold)
+        label_pen = QPen(QColor("white"))
+        painter.setFont(label_font)
+        num_cols, num_rows = 5, 5
+        col_step = self.width() / num_cols
+        row_step = self.height() / num_rows
+        for i in range(1, num_cols + 1):
+            x = i * col_step
+            if i < num_cols:
+                painter.setPen(grid_pen)
+                painter.drawLine(int(x), 0, int(x), self.height())
+            painter.setPen(label_pen)
+            label_bawah = chr(ord('A') + i - 1)
+            label_atas = chr(ord('E') - i + 1)
+            painter.drawText(QRectF(x - col_step, self.height() - 30, col_step, 30), Qt.AlignCenter, label_bawah)
+            painter.drawText(QRectF(x - col_step, 0, col_step, 30), Qt.AlignCenter, label_atas)
+        for i in range(1, num_rows + 1):
+            y = i * row_step
+            if i < num_rows:
+                painter.setPen(grid_pen)
+                painter.drawLine(0, int(y), self.width(), int(y))
+            painter.setPen(label_pen)
+            label = str(i)
+            painter.drawText(QRectF(-30, self.height() - y, 30, row_step), Qt.AlignCenter, label)
         if len(self.path_history) > 1:
-            painter.setPen(QPen(QColor("#1ABC9C"), 2))
-            # Asumsikan posisi (0,0) adalah tengah grid
-            center_x, center_y = width / 2, height / 2
-            path_points = [QPointF(p.x() + center_x, p.y() + center_y) for p in self.path_history]
-            painter.drawPolyline(path_points)
-
-        # Gambar Waypoints - Disesuaikan dengan area grid
-        painter.setPen(QPen(QColor("#F1C40F"), 2))
-        painter.setBrush(QBrush(QColor(241, 196, 15, 150)))
+            path_pen = QPen(QColor("#ecf0f1"), 1.5)
+            painter.setPen(path_pen)
+            pixel_path = [self._convert_gps_to_pixel(p.y(), p.x()) for p in self.path_history]
+            painter.drawPolyline(pixel_path)
+        if len(self.waypoints) > 1:
+            waypoint_line_pen = QPen(QColor("#f1c40f"), 1.5, Qt.DashLine)
+            painter.setPen(waypoint_line_pen)
+            waypoint_pixels = [self._convert_gps_to_pixel(wp['lat'], wp['lon']) for wp in self.waypoints]
+            painter.drawPolyline(waypoint_pixels)
+        waypoint_pen = QPen(QColor("#f1c40f"), 2)
+        waypoint_brush = QBrush(QColor("#f1c40f"))
+        waypoint_font = QFont("Monospace", 9, QFont.Bold)
         for i, wp in enumerate(self.waypoints):
-            if self.initial_pos:
-                wp_x = (wp['lon'] - self.initial_pos.x()) * self.scale + (width / 2)
-                wp_y = -(wp['lat'] - self.initial_pos.y()) * self.scale + (height / 2)
-                painter.drawEllipse(QPointF(wp_x, wp_y), 6, 6)
+            painter.setPen(waypoint_pen)
+            painter.setBrush(waypoint_brush)
+            pixel_pos = self._convert_gps_to_pixel(wp['lat'], wp['lon'])
+            painter.drawEllipse(pixel_pos, 5, 5)
+            painter.setFont(waypoint_font)
+            painter.setPen(QColor("white"))
+            painter.drawText(pixel_pos + QPointF(8, 5), str(i + 1))
 
-        # Gambar posisi ASV (lingkaran merah) - Disesuaikan dengan area grid
-        asv_draw_pos = QPointF(self.current_pos.x() + (width / 2), self.current_pos.y() + (height / 2))
-        painter.setBrush(QBrush(QColor("#E74C3C")))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(asv_draw_pos, 8, 8)
-
-        painter.end()
-        self.map_label.setPixmap(QPixmap.fromImage(image))
+        # --- PERUBAHAN UTAMA: Gambar kapal sebagai panah yang berputar ---
+        asv_pixel_pos = self._convert_gps_to_pixel(self.asv_lat, self.asv_lon)
+        
+        painter.save() # Simpan state painter
+        painter.translate(asv_pixel_pos) # Pindahkan titik 0,0 ke posisi kapal
+        # Rotasi berdasarkan heading (0 derajat di utara/atas)
+        painter.rotate(self.asv_heading) 
+        
+        painter.setPen(QPen(QColor("black"), 1))
+        painter.setBrush(QBrush(QColor("#e74c3c")))
+        
+        # Definisikan bentuk panah (segitiga)
+        # Puncak panah menunjuk ke atas (arah Y negatif)
+        ship_polygon = QPolygonF([
+            QPointF(0, -10),   # Hidung kapal
+            QPointF(6, 5),    # Ekor kanan
+            QPointF(-6, 5)    # Ekor kiri
+        ])
+        
+        painter.drawPolygon(ship_polygon)
+        painter.restore() # Kembalikan state painter

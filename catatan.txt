@@ -1,0 +1,2 @@
+folder backend, firmware, yolov5
+file video_view, map_view, api_client, mission, test_koneksi
