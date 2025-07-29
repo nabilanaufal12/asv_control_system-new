@@ -1,5 +1,5 @@
 # gui/views/main_window.py
-# --- Versi Stabil: Menghubungkan VideoView dan ApiClient ---
+# --- MODIFIKASI: Memperbaiki dan menyederhanakan alur sinyal ---
 
 import sys
 from PySide6.QtWidgets import (QMainWindow, QWidget, QApplication, 
@@ -7,15 +7,15 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QApplication,
                                QMessageBox, QStatusBar, QLabel)
 from PySide6.QtCore import Slot, Qt
 
-from components.control_panel import ControlPanel 
-from components.dashboard import Dashboard
-from components.settings_panel import SettingsPanel
-from components.video_view import VideoView
-from components.map_view import MapView
-from components.header import Header
-from components.waypoints_panel import WaypointsPanel
-from components.log_panel import LogPanel
-from api_client import ApiClient
+from gui.components.control_panel import ControlPanel 
+from gui.components.dashboard import Dashboard
+from gui.components.settings_panel import SettingsPanel
+from gui.components.video_view import VideoView
+from gui.components.map_view import MapView
+from gui.components.header import Header
+from gui.components.waypoints_panel import WaypointsPanel
+from gui.components.log_panel import LogPanel
+from gui.api_client import ApiClient
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -64,19 +64,24 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.connection_status_label = QLabel("Mencari ESP32...")
+        self.connection_status_label = QLabel("Menunggu koneksi manual...")
         self.status_bar.addWidget(self.connection_status_label)
 
     def connect_signals(self):
-        # Perintah dari Visi langsung ke Kurir Serial
-        self.video_view.actuator_command_ready.connect(self.api_client.send_serial_command)
+        # --- ALUR SINYAL BARU YANG LEBIH BERSIH ---
+        # Semua sinyal dari panel kontrol sekarang langsung menuju ApiClient
+        self.control_panel.mode_changed.connect(self.api_client.handle_mode_change)
         
-        # Perubahan Mode dari UI ke Thread Visi
-        self.control_panel.mode_changed.connect(self.video_view.mode_changed_in_thread)
+        # Sinyal dari komponen lain
+        self.video_view.vision_status_updated.connect(self.api_client.handle_vision_status)
+        self.waypoints_panel.send_waypoints.connect(self.api_client.set_waypoints)
+        self.settings_panel.connect_requested.connect(self.api_client.connect_manual)
         
-        # Koneksi lain
+        # Sinyal dari ApiClient ke UI
         self.api_client.connection_status_changed.connect(self.update_connection_status)
-        self.control_panel.mode_changed.connect(self.handle_mode_change)
+        
+        # Sinyal dari ApiClient untuk meneruskan mode ke VideoView
+        self.api_client.mode_changed_for_video.connect(self.video_view.set_mode)
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat(): return
@@ -86,8 +91,8 @@ class MainWindow(QMainWindow):
             if key_char not in self.active_manual_keys:
                 self.active_manual_keys.add(key_char)
                 self.control_panel.update_key_press_status(key_char, True)
-                if self.api_client.current_state.get("control_mode") == "MANUAL":
-                    self.api_client.send_command("MANUAL_CONTROL", payload=list(self.active_manual_keys))
+                # Langsung kirim set key yang aktif ke ApiClient
+                self.api_client.handle_manual_keys(list(self.active_manual_keys))
 
     def keyReleaseEvent(self, event):
         if event.isAutoRepeat(): return
@@ -96,21 +101,14 @@ class MainWindow(QMainWindow):
             key_char = key_map[event.key()]
             self.active_manual_keys.discard(key_char)
             self.control_panel.update_key_press_status(key_char, False)
-            if self.api_client.current_state.get("control_mode") == "MANUAL":
-                self.api_client.send_command("MANUAL_CONTROL", payload=list(self.active_manual_keys))
-
+            # Langsung kirim set key yang aktif ke ApiClient
+            self.api_client.handle_manual_keys(list(self.active_manual_keys))
+            
     @Slot(bool, str)
     def update_connection_status(self, is_connected, message):
         self.connection_status_label.setText(message)
         if is_connected: self.connection_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
         else: self.connection_status_label.setStyleSheet("color: #F44336; font-weight: bold;")
-
-    @Slot(str)
-    def handle_mode_change(self, mode):
-        # Simpan mode saat ini untuk referensi
-        self.api_client.current_state["control_mode"] = mode
-        # Kirim mode ke thread visi
-        self.video_view.mode_changed_in_thread.emit(mode)
 
     def closeEvent(self, event):
         self.api_client.shutdown()
