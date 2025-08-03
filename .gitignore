@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Virtual Environment
+# Ganti 'venv' dengan nama folder virtual environment Anda jika berbeda
+venv/
+.venv/
+env/
+.env/
+
+# IDE & Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# File yang Dihasilkan Otomatis
+snapshots/
+*.log
+
+# File Sensitif (jika ada)
+# Jangan unggah kunci API atau kredensial
+credentials.json
+api_keys.txt
+*.env
+
+# Lain-lain
+.DS_Store
+Thumbs.db

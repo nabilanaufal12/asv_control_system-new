@@ -1,5 +1,5 @@
 # gui/views/main_window.py
-# --- MODIFIKASI: Memperbaiki dan menyederhanakan alur sinyal ---
+# --- PERBAIKAN: Memperbarui path impor untuk VideoView ---
 
 import sys
 from PySide6.QtWidgets import (QMainWindow, QWidget, QApplication, 
@@ -11,7 +11,9 @@ from PySide6.QtCore import Slot, Qt
 from gui.components.control_panel import ControlPanel 
 from gui.components.dashboard import Dashboard
 from gui.components.settings_panel import SettingsPanel
-from gui.components.video_view import VideoView
+# === PERUBAHAN DI SINI ===
+# Path impor diubah untuk menunjuk ke folder 'camera' yang baru
+from gui.components.camera.video_view import VideoView 
 from gui.components.map_view import MapView
 from gui.components.header import Header
 from gui.components.waypoints_panel import WaypointsPanel
@@ -70,9 +72,9 @@ class MainWindow(QMainWindow):
         
         # Layout Kolom Utama
         main_columns_layout = QHBoxLayout()
-        main_columns_layout.addWidget(left_sidebar_widget, 2)  # Lebar relatif 2
-        main_columns_layout.addWidget(self.center_tabs, 5)     # Lebar relatif 5 (area utama)
-        main_columns_layout.addWidget(right_sidebar_widget, 2) # Lebar relatif 2
+        main_columns_layout.addWidget(left_sidebar_widget, 2)
+        main_columns_layout.addWidget(self.center_tabs, 5)
+        main_columns_layout.addWidget(right_sidebar_widget, 2)
         
         # Layout Keseluruhan
         overall_layout = QVBoxLayout()
@@ -104,6 +106,9 @@ class MainWindow(QMainWindow):
         self.api_client.data_updated.connect(self.map_view.update_data)
         self.api_client.data_updated.connect(self.system_status_panel.update_data)
         
+        # Mengirim data sensor ke thread video untuk Geo-tagging
+        self.api_client.data_updated.connect(self.video_view.update_telemetry_in_thread)
+        
         # Alur Sinyal: ApiClient -> VideoView (untuk sinkronisasi mode)
         self.api_client.mode_changed_for_video.connect(self.video_view.set_mode)
 
@@ -116,7 +121,6 @@ class MainWindow(QMainWindow):
             if key_char not in self.active_manual_keys:
                 self.active_manual_keys.add(key_char)
                 self.control_panel.update_key_press_status(key_char, True)
-                # Kirim daftar tombol yang aktif ke ApiClient
                 self.api_client.handle_manual_keys(list(self.active_manual_keys))
 
     def keyReleaseEvent(self, event):
@@ -127,7 +131,6 @@ class MainWindow(QMainWindow):
             key_char = key_map[event.key()]
             self.active_manual_keys.discard(key_char)
             self.control_panel.update_key_press_status(key_char, False)
-            # Kirim daftar tombol yang aktif ke ApiClient (bisa kosong)
             self.api_client.handle_manual_keys(list(self.active_manual_keys))
             
     @Slot(bool, str)
