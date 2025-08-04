@@ -15,7 +15,7 @@ if os.name == 'nt': # Hanya untuk Windows
     pathlib.PosixPath = pathlib.WindowsPath
 
 # Impor fungsi overlay dari file terpisah di folder yang sama
-from .overlay_utils import draw_geotag_overlay
+from .overlay_utils import create_overlay_from_html, apply_overlay
 
 # Blok impor untuk YOLOv5
 try:
@@ -71,6 +71,9 @@ class DetectionThread(QThread):
             model.conf = 0.4
             model.iou = 0.45
             
+            # Import annotator setelah model dimuat untuk menghindari konflik
+            from ultralytics.utils.plotting import Annotator
+
             print(f"Mencoba membuka kamera indeks: {self.source_idx}...")
             cap = cv2.VideoCapture(self.source_idx, cv2.CAP_MSMF)
             if not cap.isOpened():
@@ -109,7 +112,8 @@ class DetectionThread(QThread):
                 elif detected_blue_boxes: mission_name = "Underwater Imaging"
                 
                 if mission_name:
-                    snapshot_image = draw_geotag_overlay(self.latest_telemetry, im0, mission_type=mission_name)
+                    overlay_image = create_overlay_from_html(self.latest_telemetry, mission_type=mission_name)
+                    snapshot_image = apply_overlay(im0.copy(), overlay_image)
                     timestamp = time.strftime("%Y%m%d_%H%M%S")
                     filename = f"snapshot_{mission_name.replace(' ','_')}_{timestamp}.jpg"
                     filepath = self.snapshot_dir / filename
@@ -140,15 +144,15 @@ class DetectionThread(QThread):
                         target_object, target_midpoint, lebar_asli_cm = (best_single_ball,), best_single_ball['center'], 10.0
 
                     if target_object:
+                        # Buat annotator baru khusus untuk menggambar kotak jarak
+                        # agar tidak tercampur dengan hasil render()
+                        distance_annotator = Annotator(annotated_frame, line_width=2, example="Jarak")
+                        
                         if len(target_object) == 2:
                             x1, y1 = min(target_object[0]['xyxy'][0], target_object[1]['xyxy'][0]), min(target_object[0]['xyxy'][1], target_object[1]['xyxy'][1])
                             x2, y2 = max(target_object[0]['xyxy'][2], target_object[1]['xyxy'][2]), max(target_object[0]['xyxy'][3], target_object[1]['xyxy'][3])
                         else:
                             x1, y1, x2, y2 = target_object[0]['xyxy']
-                        
-                        # Buat annotator baru khusus untuk menggambar kotak jarak
-                        # agar tidak tercampur dengan hasil render()
-                        distance_annotator = Annotator(annotated_frame, line_width=2, example="Jarak")
                         
                         PANJANG_FOKUS_PIKSEL, lebar_objek_piksel = 600, x2 - x1
                         jarak_estimasi_cm = (lebar_asli_cm * PANJANG_FOKUS_PIKSEL) / lebar_objek_piksel if lebar_objek_piksel > 0 else 0

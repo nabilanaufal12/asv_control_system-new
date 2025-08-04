@@ -20,7 +20,7 @@ class Header(QWidget):
         # --- PERUBAHAN 1: Tambahkan Logo ---
         self.logo_label = QLabel()
         # Ganti "logo.png" dengan nama file logo Anda jika berbeda
-        logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png"))
+        logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "logo_umrah.png"))
 
         if os.path.exists(logo_path):
             pixmap = QPixmap(logo_path)

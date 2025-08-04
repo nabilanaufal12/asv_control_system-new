@@ -1,79 +1,89 @@
 # gui/components/camera/overlay_utils.py
-# --- FILE BARU: Utilitas untuk menggambar overlay pada gambar ---
+# --- PERBAIKAN: Kembali ke metode overlay tunggal yang andal ---
 
 import cv2
 import time
 import random
+import imgkit
+import numpy as np
 from datetime import datetime
+from pathlib import Path
 
-def draw_geotag_overlay(telemetry_data, image, mission_type="Surface Imaging"):
-    """Menggambar overlay yang rapi dan informatif, menggabungkan elemen terbaik."""
-    h, w, _ = image.shape
-    overlay = image.copy()
-    
-    # --- Pengaturan Umum ---
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    white = (255, 255, 255)
-    yellow = (0, 215, 255)
-    
-    # --- Latar Belakang Utama ---
-    start_y_bg = h - 210
-    cv2.rectangle(overlay, (10, start_y_bg), (w - 10, h - 10), (0,0,0), -1)
-    alpha = 0.6
-    image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+# Konfigurasi wkhtmltoimage (tidak berubah)
+path_wkhtmltoimage = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
+config = imgkit.config(wkhtmltoimage=path_wkhtmltoimage)
 
-    # --- Blok Kiri Bawah (Informasi Utama) ---
-    start_x, start_y = 25, h - 180
-    
-    # Judul Misi
-    cv2.putText(image, mission_type.upper(), (start_x, start_y), font, 0.9, white, 2, cv2.LINE_AA)
 
-    # Kotak Waktu
+def create_overlay_from_html(telemetry_data, mission_type="Surface Imaging"):
+    """
+    Membuat satu gambar overlay utuh (header + info) dari template HTML.
+    """
+    # --- 1. Ambil dan Format Data ---
     now = datetime.now()
-    time_str = now.strftime("%H:%M")
-    cv2.rectangle(image, (start_x, start_y + 15), (start_x + 110, start_y + 48), yellow, -1)
-    cv2.putText(image, "VISIT", (start_x + 8, start_y + 39), font, 0.7, (0,0,0), 2, cv2.LINE_AA)
-    cv2.putText(image, time_str, (start_x + 60, start_y + 39), font, 0.7, (0,0,0), 2, cv2.LINE_AA)
-
-    # Detail Teks (Tanggal, Lokasi, Koordinat, SOG, COG)
-    day_map = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
-    day = day_map[now.weekday()]
-    date_str = now.strftime("%d/%m/%Y")
-    full_date_str = f"{day}, {date_str}"
-    
     lat = telemetry_data.get('latitude', 1.177697)
     lon = telemetry_data.get('longitude', 104.319206)
     sog_ms = telemetry_data.get('speed', 0.0)
     cog = telemetry_data.get('heading', 0.0)
-    sog_knot = sog_ms * 1.94384
-    sog_kmh = sog_ms * 3.6
-
-    coord_str = f"{abs(lat):.6f}°{'N' if lat >= 0 else 'S'}, {abs(lon):.6f}°{'E' if lon >= 0 else 'W'}"
-    sog_str = f"SOG: {sog_knot:.2f} knot / {sog_kmh:.2f} km/h"
-    cog_str = f"COG: {cog:.2f} deg"
     
-    text_y = start_y + 80
-    font_scale_small = 0.5
-    y_step = 22
-    cv2.putText(image, full_date_str, (start_x, text_y), font, font_scale_small, white, 1, cv2.LINE_AA)
-    cv2.putText(image, "Lokasi: ASV NAVANTARA - UMRAH", (start_x, text_y + y_step), font, font_scale_small, white, 1, cv2.LINE_AA)
-    cv2.putText(image, coord_str, (start_x, text_y + y_step * 2), font, font_scale_small, white, 1, cv2.LINE_AA)
-    cv2.putText(image, sog_str, (start_x, text_y + y_step * 3), font, font_scale_small, white, 1, cv2.LINE_AA)
-    cv2.putText(image, cog_str, (start_x, text_y + y_step * 4), font, font_scale_small, white, 1, cv2.LINE_AA)
+    day_map = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
+    
+    # Dapatkan path absolut ke folder assets
+    current_dir = Path(__file__).parent
+    assets_path = (current_dir.parents[1] / 'assets').as_uri()
 
-    # Garis pemisah vertikal
-    cv2.line(image, (start_x - 8, start_y + 65), (start_x - 8, text_y + y_step * 4 + 5), yellow, 2)
+    replacements = {
+        "MISSION_TYPE": mission_type.upper(),
+        "TIME": now.strftime("%H:%M"),
+        "DATE_DAY": f"{day_map[now.weekday()]}, {now.strftime('%d/%m/%Y')}",
+        "LOCATION": "ASV NAVANTARA - UMRAH",
+        "LATITUDE": f"{abs(lat):.6f}°{'N' if lat >= 0 else 'S'}",
+        "LONGITUDE": f"{abs(lon):.6f}°{'E' if lon >= 0 else 'W'}",
+        "SOG_KNOT": f"{sog_ms * 1.94384:.2f}",
+        "SOG_KMH": f"{sog_ms * 3.6:.2f}",
+        "COG_DEG": f"{cog:.2f}",
+        "PHOTO_CODE": f"KKI25-{time.strftime('%H%M%S')}-{random.randint(100,999)}",
+        "ASSETS_PATH": assets_path
+    }
 
-    # Footer (Kode Foto Unik)
-    photo_code = f"Kode Foto: KKI25-{time.strftime('%H%M%S')}-{random.randint(100,999)}"
-    cv2.line(image, (15, h - 48), (w - 15, h - 48), (255,255,255), 1)
-    # Ikon centang
-    cv2.line(image, (start_x, h - 28), (start_x + 5, h - 23), white, 2)
-    cv2.line(image, (start_x + 5, h - 23), (start_x + 12, h - 33), white, 2)
-    cv2.putText(image, photo_code, (start_x + 25, h - 25), font, 0.5, white, 1, cv2.LINE_AA)
+    # --- 2. Baca Template HTML ---
+    try:
+        template_path = current_dir / "template.html"
+        with open(template_path, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+    except FileNotFoundError:
+        print(f"ERROR: File 'template.html' tidak ditemukan di {current_dir}")
+        return None
 
-    # --- Kanan Atas (Branding) ---
-    cv2.putText(image, "NAVANTARA - UMRAH", (w - 200, 30), font, 0.6, white, 2, cv2.LINE_AA)
-    cv2.putText(image, "Foto 100% akurat", (w - 200, 50), font, 0.4, (200,200,200), 1, cv2.LINE_AA)
+    # --- 3. Ganti Placeholder ---
+    for key, value in replacements.items():
+        html_content = html_content.replace(f"{{{key}}}", str(value))
 
-    return image
+    # --- 4. Konversi HTML ke Gambar ---
+    try:
+        options = {
+            'format': 'png',
+            'crop-w': '640', 'crop-h': '480',
+            'encoding': "UTF-8",
+            '--enable-local-file-access': None,
+            '--transparent': '', 
+            '--quiet': ''
+        }
+        img_bytes = imgkit.from_string(html_content, False, options=options, config=config)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        return cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+    except Exception as e:
+        print(f"Error saat mengonversi HTML ke gambar: {e}")
+        return None
+
+def apply_overlay(background, overlay_image):
+    """Menempelkan gambar overlay ke gambar background."""
+    if overlay_image is None: return background
+    h, w, c = overlay_image.shape
+    if c < 4: return background
+    
+    alpha = overlay_image[:, :, 3] / 255.0
+    
+    for c_channel in range(0, 3):
+        background[0:h, 0:w, c_channel] = (alpha * overlay_image[:, :, c_channel] +
+                                          (1 - alpha) * background[0:h, 0:w, c_channel])
+    return background

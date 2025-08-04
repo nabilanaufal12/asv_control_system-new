@@ -1,5 +1,5 @@
 # gui/components/camera/video_view.py
-# --- PERBAIKAN: Menambahkan impor 'numpy' yang hilang ---
+# --- FILE UTAMA GUI KAMERA (Struktur Folder Baru) ---
 
 import os
 from pathlib import Path
@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLa
 from PySide6.QtCore import Signal, Slot, Qt
 from PySide6.QtGui import QImage, QPixmap
 import cv2
-import numpy as np # <-- PENAMBAHAN BARIS INI
+import numpy as np
 
 # Impor kelas DetectionThread dari file terpisah di folder yang sama
 from .detection_thread import DetectionThread, YOLO_AVAILABLE
@@ -53,7 +53,6 @@ class VideoView(QWidget):
             
     @Slot(dict)
     def update_telemetry_in_thread(self, data):
-        """Meneruskan data telemetri ke thread deteksi jika sedang berjalan."""
         if self.detection_thread and self.detection_thread.isRunning():
             self.detection_thread.update_telemetry(data)
             
@@ -61,9 +60,8 @@ class VideoView(QWidget):
         if self.detection_thread and self.detection_thread.isRunning(): return
         if "Kamera" not in self.camera_selector.currentText(): return
         
-        # Path ke file bobot sekarang ditentukan dari lokasi file ini
         CURRENT_FILE_DIR = Path(os.path.abspath(__file__)).resolve()
-        PROJECT_ROOT = CURRENT_FILE_DIR.parents[3] # Naik 3 tingkat dari camera/
+        PROJECT_ROOT = CURRENT_FILE_DIR.parents[3]
         weights_path = str(PROJECT_ROOT / "yolov5" / "besto.pt")
         
         if not os.path.exists(weights_path):
