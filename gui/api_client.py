@@ -1,5 +1,5 @@
 # gui/api_client.py
-# --- PERBAIKAN FINAL: Prosedur koneksi/diskoneksi serial yang lebih kuat ---
+# --- FINAL: Membedakan antara HDG (Heading) dan COG (Course Over Ground) ---
 
 import time
 import threading
@@ -22,7 +22,6 @@ class ApiClient(QObject):
         self.serial_port = None
         self.running = True
         
-        # Gunakan Lock untuk mencegah race condition saat mengakses port serial
         self.serial_lock = threading.Lock()
 
         # State terpusat untuk menyimpan semua data penting ASV
@@ -30,23 +29,23 @@ class ApiClient(QObject):
             "control_mode": "MANUAL",
             "latitude": 0.0,
             "longitude": 0.0,
-            "heading": 0.0,
+            "heading": 0.0,           # HDG: Arah hidung kapal dari kompas
+            "cog": 0.0,               # COG: Arah gerak sebenarnya (disimulasikan)
+            "speed": 0.0,
+            "battery_voltage": 0.0,
             "waypoints": [],
             "current_waypoint_index": 0,
         }
         self.vision_override_active = False
         
-        # Jalankan thread untuk membaca data serial dan logika utama di background
         self._read_thread = threading.Thread(target=self._read_from_serial, daemon=True)
         self._logic_thread = threading.Thread(target=self._main_logic_loop, daemon=True)
         self._read_thread.start()
         self._logic_thread.start()
     
-    # --- Fungsi Helper untuk Navigasi ---
-
     def _haversine_distance(self, lat1, lon1, lat2, lon2):
         """Menghitung jarak antara dua titik koordinat GPS dalam meter."""
-        R = 6371000  # Radius Bumi dalam meter
+        R = 6371000
         lat1_rad, lon1_rad, lat2_rad, lon2_rad = map(math.radians, [lat1, lon1, lat2, lon2])
         dlon, dlat = lon2_rad - lon1_rad, lat2_rad - lat1_rad
         a = math.sin(dlat / 2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2)**2
@@ -71,12 +70,15 @@ class ApiClient(QObject):
                     self.current_state['latitude'] = float(data[1])
                     self.current_state['longitude'] = float(data[2])
                 elif data[0] == "COMP":
+                    # Data dari kompas adalah HEADING (HDG)
                     self.current_state['heading'] = float(data[1])
+                elif data[0] == "SPD":
+                    self.current_state['speed'] = float(data[1])
+                elif data[0] == "BAT":
+                    self.current_state['battery_voltage'] = float(data[1])
             self.data_updated.emit(self.current_state.copy())
         except (ValueError, IndexError) as e:
             print(f"Error parsing telemetri: {e} - Data: {line}")
-
-    # --- Thread Utama ---
 
     def _read_from_serial(self):
         """Loop di background untuk terus membaca data dari port serial."""
@@ -85,58 +87,58 @@ class ApiClient(QObject):
             with self.serial_lock:
                 if self.serial_port and self.serial_port.is_open:
                     port = self.serial_port
-
             if port:
                 try:
-                    # 'errors=ignore' penting untuk menghindari crash jika ada data non-UTF8
                     line = port.readline().decode('utf-8', errors='ignore').strip()
                     if line and line.startswith("T:"):
                         self._parse_telemetry(line)
                 except (serial.SerialException, TypeError, OSError):
-                    # Jika ada error, putuskan koneksi secara aman
                     self.disconnect_serial()
             else:
-                # Jika tidak ada koneksi, tunggu sejenak sebelum mencoba lagi
                 time.sleep(0.5)
 
     def _main_logic_loop(self):
         """Loop di background untuk menjalankan logika navigasi otomatis."""
         while self.running:
-            time.sleep(0.2) # Jalankan logika setiap 200ms
-            if self.current_state.get("control_mode") != "AUTO" or self.vision_override_active:
+            time.sleep(0.2)
+            # Jika dalam mode MANUAL, COG diasumsikan sama dengan HDG
+            if self.current_state.get("control_mode") != "AUTO":
+                self.current_state['cog'] = self.current_state.get('heading', 0.0)
+                continue
+            
+            # Logika hanya untuk mode AUTO
+            if self.vision_override_active:
                 continue
             
             waypoints = self.current_state.get("waypoints", [])
             wp_index = self.current_state.get("current_waypoint_index", 0)
             if not waypoints or wp_index >= len(waypoints):
-                self.send_serial_command("S1500;D90\n") # Jika tidak ada waypoint, berhenti
+                self.send_serial_command("S1500;D90\n")
+                self.current_state['cog'] = self.current_state.get('heading', 0.0)
                 continue
 
             current_lat = self.current_state.get("latitude", 0.0)
             current_lon = self.current_state.get("longitude", 0.0)
             current_heading = self.current_state.get("heading", 0.0)
             target_wp = waypoints[wp_index]
+            
+            # Arah ke waypoint adalah COURSE OVER GROUND (COG)
+            target_bearing = self._get_bearing_to_point(current_lat, current_lon, target_wp['lat'], target_wp['lon'])
+            self.current_state['cog'] = target_bearing
+            
             distance_to_wp = self._haversine_distance(current_lat, current_lon, target_wp['lat'], target_wp['lon'])
 
-            # Jika sudah dekat dengan waypoint, lanjut ke waypoint berikutnya
-            if distance_to_wp < 7.0: # Jarak threshold 7 meter
+            if distance_to_wp < 7.0:
                 print(f"Waypoint {wp_index + 1} tercapai. Lanjut ke waypoint berikutnya.")
                 self.current_state["current_waypoint_index"] += 1
                 continue
 
-            # Logika Pure Pursuit sederhana
-            target_bearing = self._get_bearing_to_point(current_lat, current_lon, target_wp['lat'], target_wp['lon'])
             turn_error = (target_bearing - current_heading + 180) % 360 - 180
             
-            # Hitung sudut servo berdasarkan error
             servo_angle = max(45, min(135, int(90 - (turn_error / 90.0) * 45)))
-            
-            # Kurangi kecepatan saat berbelok
             motor_pwm = int(1650 - (abs(turn_error) / 90.0) * 100)
             
             self.send_serial_command(f"S{motor_pwm};D{servo_angle}\n")
-
-    # --- Slot dan Fungsi Publik ---
 
     def disconnect_serial(self):
         """Fungsi terpusat untuk menutup koneksi serial dengan aman."""
@@ -153,7 +155,7 @@ class ApiClient(QObject):
     @Slot(dict)
     def connect_manual(self, connection_details):
         """Slot untuk memulai koneksi serial dari GUI."""
-        self.disconnect_serial() # Selalu putuskan koneksi lama terlebih dahulu
+        self.disconnect_serial()
         time.sleep(0.1)
 
         port_name = connection_details.get("serial_port")

@@ -5,7 +5,6 @@
     <title>Template Overlay KKI 2025</title>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap");
-
       html,
       body {
         margin: 0;
@@ -16,78 +15,57 @@
         height: 480px;
         overflow: hidden;
       }
-
       .photo-container {
         position: relative;
         width: 100%;
         height: 100%;
         color: white;
       }
-
-      /* --- HEADER (sekarang sebagai container tak terlihat) --- */
       .header {
         position: absolute;
         top: 10px;
         left: 15px;
         right: 15px;
-        height: 40px; /* Tinggi referensi untuk alignment */
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
         text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.8);
       }
-
       .header .left-logos {
-        position: absolute;
-        left: 0;
-        top: 50%;
-        transform: translateY(-50%); /* Agar pas di tengah vertikal */
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 10px;
       }
-
       .header .left-logos img {
         height: 30px;
       }
-
-      /* === PERBAIKAN UTAMA DI SINI === */
       .header .right-branding {
-        position: absolute;
-        right: 0;
-        top: 50%;
-        transform: translateY(-50%); /* Agar pas di tengah vertikal */
         display: flex;
-        align-items: center;
-        gap: 12px;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .header .right-branding .brand-text {
         text-align: right;
       }
-
       .header .right-branding .brand-text .title {
         font-size: 1.1em;
         font-weight: 700;
       }
-
       .header .right-branding .brand-text .subtitle {
         font-size: 0.6em;
         color: rgba(255, 255, 255, 0.85);
       }
-
-      .header .right-branding .brand-logo img {
-        height: 40px;
-      }
-
-      /* --- KOTAK INFORMASI --- */
       .info-box {
         position: absolute;
         bottom: 10px;
         left: 10px;
         right: 10px;
-        /* Transparansi ditingkatkan lagi */
-        background-color: rgba(0, 123, 255, 0.6);
+        background-color: transparent;
         backdrop-filter: blur(5px);
         padding: 10px 15px;
         border-radius: 8px;
         box-sizing: border-box;
       }
-
       .info-box .main-title {
         font-size: 1.4em;
         font-weight: 900;
@@ -113,23 +91,33 @@
         background-color: rgba(255, 255, 255, 0.3);
         margin-bottom: 10px;
       }
-      .details-table {
-        width: 100%;
-        border-spacing: 0 4px;
-        font-size: 0.75em;
-        line-height: 1.4;
+      .details-list {
+        font-size: 0.8em;
+        line-height: 1.5;
       }
-      .details-table td {
-        vertical-align: top;
+      .details-list p {
+        margin: 0;
+        padding: 1px 0;
+        color: white;
       }
-      .details-table strong {
-        color: rgba(255, 255, 255, 0.7);
+      .details-list strong {
+        color: white;
         margin-right: 5px;
       }
       .checkmark {
         color: #28a745;
         margin-right: 8px;
         font-size: 1.2em;
+      }
+      .info-box .info-logos {
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 5px;
+      }
+      .info-box .info-logos img {
+        height: 25px;
       }
     </style>
   </head>
@@ -146,36 +134,32 @@
             <div class="title">NAVANTARA - UMRAH</div>
             <div class="subtitle">Foto 100% akurat</div>
           </div>
-          <div class="brand-logo">
-            <img src="{ASSETS_PATH}/logo_umrah.png" alt="Logo UMRAH" />
-          </div>
         </div>
       </div>
-
       <div class="info-box">
+        <div class="info-logos">
+          <img src="{ASSETS_PATH}/logo_umrah.png" alt="Logo Info 1" />
+          <img src="{ASSETS_PATH}/logo_src.png" alt="Logo Info 2" />
+        </div>
         <h2 class="main-title">{MISSION_TYPE}</h2>
         <div class="visit-time">
           <span class="visit-label">VISIT</span>
           <span>{TIME}</span>
         </div>
         <hr class="separator" />
-        <table class="details-table">
-          <tr>
-            <td>{DATE_DAY}</td>
-            <td><strong>Lokasi:</strong> {LOCATION}</td>
-          </tr>
-          <tr>
-            <td><strong>Koordinat:</strong> {LATITUDE}, {LONGITUDE}</td>
-            <td><strong>SOG:</strong> {SOG_KNOT} knot / {SOG_KMH} km/h</td>
-          </tr>
-          <tr>
-            <td><strong>COG:</strong> {COG_DEG} deg</td>
-            <td>
-              <span class="checkmark">✓</span
-              ><strong>Kode Foto:</strong> {PHOTO_CODE}
-            </td>
-          </tr>
-        </table>
+        <div class="details-list">
+          <p>{DATE_DAY}</p>
+          <p><strong>Lokasi:</strong> {LOCATION}</p>
+          <p><strong>Koordinat:</strong> {LATITUDE}, {LONGITUDE}</p>
+          <p><strong>SOG:</strong> {SOG_KNOT} knot / {SOG_KMH} km/h</p>
+          <p><strong>HDG:</strong> {HDG_DEG} deg</p>
+          <p><strong>COG:</strong> {COG_DEG} deg</p>
+          <p><strong>Baterai:</strong> {BATTERY_V}</p>
+          <p>
+            <span class="checkmark">✓</span
+            ><strong>Kode Foto:</strong> {PHOTO_CODE}
+          </p>
+        </div>
       </div>
     </div>
   </body>

@@ -1,5 +1,5 @@
 # gui/components/camera/overlay_utils.py
-# --- PERBAIKAN: Kembali ke metode overlay tunggal yang andal ---
+# --- FINAL: Menampilkan HDG dan COG secara terpisah ---
 
 import cv2
 import time
@@ -9,7 +9,7 @@ import numpy as np
 from datetime import datetime
 from pathlib import Path
 
-# Konfigurasi wkhtmltoimage (tidak berubah)
+# Konfigurasi wkhtmltoimage (pastikan path ini benar untuk sistem Anda)
 path_wkhtmltoimage = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
 config = imgkit.config(wkhtmltoimage=path_wkhtmltoimage)
 
@@ -20,14 +20,17 @@ def create_overlay_from_html(telemetry_data, mission_type="Surface Imaging"):
     """
     # --- 1. Ambil dan Format Data ---
     now = datetime.now()
-    lat = telemetry_data.get('latitude', 1.177697)
-    lon = telemetry_data.get('longitude', 104.319206)
-    sog_ms = telemetry_data.get('speed', 0.0)
-    cog = telemetry_data.get('heading', 0.0)
     
+    # Ambil data dari telemetri, dengan nilai default yang cocok dengan firmware ESP32
+    lat = telemetry_data.get('latitude', -6.2088)
+    lon = telemetry_data.get('longitude', 106.8456)
+    sog_ms = telemetry_data.get('speed', 1.5)
+    heading = telemetry_data.get('heading', 0.0)      # Data HDG dari kompas
+    cog = telemetry_data.get('cog', 0.0)              # Data COG dari logika navigasi
+    battery_v = telemetry_data.get('battery_voltage', 11.5)
+
     day_map = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
     
-    # Dapatkan path absolut ke folder assets
     current_dir = Path(__file__).parent
     assets_path = (current_dir.parents[1] / 'assets').as_uri()
 
@@ -36,11 +39,13 @@ def create_overlay_from_html(telemetry_data, mission_type="Surface Imaging"):
         "TIME": now.strftime("%H:%M"),
         "DATE_DAY": f"{day_map[now.weekday()]}, {now.strftime('%d/%m/%Y')}",
         "LOCATION": "ASV NAVANTARA - UMRAH",
-        "LATITUDE": f"{abs(lat):.6f}°{'N' if lat >= 0 else 'S'}",
+        "LATITUDE": f"{abs(lat):.6f}°{'S' if lat < 0 else 'N'}",
         "LONGITUDE": f"{abs(lon):.6f}°{'E' if lon >= 0 else 'W'}",
         "SOG_KNOT": f"{sog_ms * 1.94384:.2f}",
         "SOG_KMH": f"{sog_ms * 3.6:.2f}",
-        "COG_DEG": f"{cog:.2f}",
+        "HDG_DEG": f"{heading:.2f}", # Placeholder untuk Heading (HDG)
+        "COG_DEG": f"{cog:.2f}",   # Placeholder untuk Course Over Ground (COG)
+        "BATTERY_V": f"{battery_v:.2f} V",
         "PHOTO_CODE": f"KKI25-{time.strftime('%H%M%S')}-{random.randint(100,999)}",
         "ASSETS_PATH": assets_path
     }

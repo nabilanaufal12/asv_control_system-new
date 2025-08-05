@@ -61,17 +61,15 @@ class DetectionThread(QThread):
         cap = None
         try:
             print("Mempersiapkan model YOLOv5...")
-            # Menggunakan torch.hub.load dengan force_reload=True untuk membersihkan cache
             model = torch.hub.load(
                 'ultralytics/yolov5',
                 'custom',
                 path=self.weights_path,
-                force_reload=True # Ini akan memperbaiki error PosixPath
+                force_reload=True
             )
             model.conf = 0.4
             model.iou = 0.45
             
-            # Import annotator setelah model dimuat untuk menghindari konflik
             from ultralytics.utils.plotting import Annotator
 
             print(f"Mencoba membuka kamera indeks: {self.source_idx}...")
@@ -120,7 +118,6 @@ class DetectionThread(QThread):
                     cv2.imwrite(str(filepath), snapshot_image)
                     print(f"✅ SNAPSHOT DIAMBIL: '{mission_name}' terdeteksi. Disimpan sebagai {filename}")
 
-                # --- LOGIKA NAVIGASI (HANYA AKTIF SAAT MODE AUTO) ---
                 if self.mode_auto:
                     target_object, target_midpoint, lebar_asli_cm = None, None, 0
                     best_pair = None
@@ -144,8 +141,6 @@ class DetectionThread(QThread):
                         target_object, target_midpoint, lebar_asli_cm = (best_single_ball,), best_single_ball['center'], 10.0
 
                     if target_object:
-                        # Buat annotator baru khusus untuk menggambar kotak jarak
-                        # agar tidak tercampur dengan hasil render()
                         distance_annotator = Annotator(annotated_frame, line_width=2, example="Jarak")
                         
                         if len(target_object) == 2:
@@ -159,8 +154,9 @@ class DetectionThread(QThread):
                         distance_annotator.box_label([x1, y1, x2, y2], f"Jarak: {jarak_estimasi_cm:.1f} cm")
                         annotated_frame = distance_annotator.result()
 
-
-                        batas_posisi_y, TARGET_JARAK_CM = im0.shape[0] * 0.5, 100.0
+                        # --- PERUBAHAN UTAMA DI SINI ---
+                        # Mengubah jarak deteksi dari 100cm menjadi 200cm
+                        batas_posisi_y, TARGET_JARAK_CM = im0.shape[0] * 0.5, 200.0
                         if jarak_estimasi_cm > 0 and jarak_estimasi_cm < TARGET_JARAK_CM and y1 > batas_posisi_y:
                             print(f"ZONA AKTIVASI TERPENUHI (Jarak: {jarak_estimasi_cm:.1f} cm). Mengikuti objek.")
                             degree = self.calculate_degree(im0, target_midpoint)
