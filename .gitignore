@@ -38,3 +38,6 @@ api_keys.txt
 # Lain-lain
 .DS_Store
 Thumbs.db
+
+# File simulasi
+dashboard.html
