@@ -5,6 +5,12 @@
     <title>Template Overlay KKI 2025</title>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap");
+
+      /* --- PERUBAHAN DI SINI: Menambahkan class untuk text-shadow --- */
+      .text-shadow {
+        text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.7);
+      }
+
       html,
       body {
         margin: 0;
@@ -29,7 +35,6 @@
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.8);
       }
       .header .left-logos {
         display: flex;
@@ -70,20 +75,6 @@
         font-size: 1.4em;
         font-weight: 900;
         margin: 0 0 8px 0;
-      }
-      .info-box .visit-time {
-        font-size: 1em;
-        font-weight: bold;
-        display: flex;
-        align-items: center;
-        margin-bottom: 10px;
-      }
-      .info-box .visit-time .visit-label {
-        background-color: #ffc107;
-        color: black;
-        padding: 3px 8px;
-        border-radius: 4px;
-        margin-right: 8px;
       }
       .separator {
         border: none;
@@ -130,7 +121,7 @@
           <img src="{ASSETS_PATH}/logo_sponsor3.png" alt="Sponsor 3" />
         </div>
         <div class="right-branding">
-          <div class="brand-text">
+          <div class="brand-text text-shadow">
             <div class="title">NAVANTARA - UMRAH</div>
             <div class="subtitle">Foto 100% akurat</div>
           </div>
@@ -141,13 +132,10 @@
           <img src="{ASSETS_PATH}/logo_umrah.png" alt="Logo Info 1" />
           <img src="{ASSETS_PATH}/logo_src.png" alt="Logo Info 2" />
         </div>
-        <h2 class="main-title">{MISSION_TYPE}</h2>
-        <div class="visit-time">
-          <span class="visit-label">VISIT</span>
-          <span>{TIME}</span>
-        </div>
+        <h2 class="main-title text-shadow">{MISSION_TYPE}</h2>
+
         <hr class="separator" />
-        <div class="details-list">
+        <div class="details-list text-shadow">
           <p>{DATE_DAY}</p>
           <p><strong>Lokasi:</strong> {LOCATION}</p>
           <p><strong>Koordinat:</strong> {LATITUDE}, {LONGITUDE}</p>
