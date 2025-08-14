@@ -1,5 +1,5 @@
 # gui/components/camera/video_view.py
-# --- FILE UTAMA GUI KAMERA (Struktur Folder Baru) ---
+# --- MODIFIKASI: Menerima 'config' dan meneruskannya ke DetectionThread ---
 
 import os
 from pathlib import Path
@@ -15,8 +15,13 @@ from .detection_thread import DetectionThread, YOLO_AVAILABLE
 class VideoView(QWidget):
     vision_status_updated = Signal(dict)
     
-    def __init__(self, parent=None):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config, parent=None):
         super().__init__(parent)
+        
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
+        
         self.detection_thread = None
         self.label = QLabel("Kamera nonaktif.")
         self.label.setAlignment(Qt.AlignCenter)
@@ -71,7 +76,14 @@ class VideoView(QWidget):
         source_idx = int(self.camera_selector.currentText().split(" ")[1])
         print(f"Memulai thread kamera baru untuk device {source_idx}...")
         
-        self.detection_thread = DetectionThread(source_idx=source_idx, weights_path=weights_path, parent=self)
+        # --- 3. TERUSKAN 'config' SAAT MEMBUAT DetectionThread ---
+        self.detection_thread = DetectionThread(
+            source_idx=source_idx, 
+            weights_path=weights_path, 
+            config=self.config, # <--- Perubahan di sini
+            parent=self
+        )
+        
         self.detection_thread.frame_ready.connect(self.set_frame)
         self.detection_thread.vision_command_status.connect(self.vision_status_updated.emit)
         
@@ -86,6 +98,7 @@ class VideoView(QWidget):
         self.camera_selector.clear()
         index, arr = 0, []
         while True:
+            # Menggunakan CAP_DSHOW untuk stabilitas di Windows saat memindai
             cap = cv2.VideoCapture(index, cv2.CAP_MSMF)
             if not cap.isOpened(): break
             arr.append(index)

@@ -1,5 +1,5 @@
 # gui/components/header.py
-# --- MODIFIKASI: Menambahkan logo di sebelah kiri judul ---
+# --- MODIFIKASI: Menerima objek 'config' ---
 
 import os
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QSpacerItem, QSizePolicy
@@ -10,25 +10,26 @@ class Header(QWidget):
     """
     Widget untuk header yang berisi logo, judul, dan indikator status.
     """
-    def __init__(self):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config):
         super().__init__()
         self.setObjectName("Header")
         
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
+
         layout = QHBoxLayout()
         layout.setContentsMargins(10, 5, 10, 5)
 
-        # --- PERUBAHAN 1: Tambahkan Logo ---
         self.logo_label = QLabel()
-        # Ganti "logo.png" dengan nama file logo Anda jika berbeda
         logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "logo_umrah.png"))
 
         if os.path.exists(logo_path):
             pixmap = QPixmap(logo_path)
-            # Atur tinggi logo agar sesuai dengan header, lebar akan menyesuaikan
             self.logo_label.setPixmap(pixmap.scaledToHeight(40, Qt.SmoothTransformation))
         else:
             print(f"Peringatan: File logo tidak ditemukan di {logo_path}")
-            self.logo_label.setText("[Logo]") # Tampilkan teks jika gambar tidak ada
+            self.logo_label.setText("[Logo]")
 
         title_font = QFont()
         title_font.setPointSize(16)
@@ -49,7 +50,6 @@ class Header(QWidget):
 
         self.theme_button = QPushButton("Switch to Light Mode")
 
-        # --- PERUBAHAN 2: Tambahkan widget logo ke layout ---
         layout.addWidget(self.logo_label)
         layout.addWidget(self.title_label)
         layout.addSpacerItem(spacer)
@@ -92,4 +92,3 @@ class Header(QWidget):
         else:
             self.mode_label.setText("Manual Mode")
             self.mode_label.setStyleSheet("#StatusLabel { background-color: #f39c12; color: white; }")
-

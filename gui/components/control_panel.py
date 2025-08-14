@@ -1,5 +1,5 @@
 # gui/components/control_panel.py
-# --- MODIFIKASI: Menggabungkan semua mode otonom ke dalam satu tombol "AUTO" ---
+# --- MODIFIKASI: Menerima objek 'config' untuk konsistensi ---
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QGroupBox, QPushButton, 
                                QGridLayout)
@@ -12,8 +12,12 @@ class ControlPanel(QGroupBox):
     manual_control_updated = Signal(str)
     navigation_command = Signal(str)
 
-    def __init__(self, title="Vehicle Control"):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config, title="Vehicle Control"):
         super().__init__(title)
+        
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
         
         main_layout = QVBoxLayout()
         
@@ -21,7 +25,6 @@ class ControlPanel(QGroupBox):
         mode_box = QGroupBox("Mode")
         mode_layout = QVBoxLayout()
         
-        # --- PERUBAHAN 1: Hanya ada mode MANUAL dan AUTO ---
         self.manual_mode_btn = QPushButton("MANUAL")
         self.manual_mode_btn.setCheckable(True)
         self.auto_mode_btn = QPushButton("AUTO") # Tombol AUTO yang digabungkan

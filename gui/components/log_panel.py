@@ -1,5 +1,5 @@
 # gui/components/log_panel.py
-# Komponen untuk menampilkan log data mentah dari backend.
+# --- MODIFIKASI: Menerima objek 'config' ---
 
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTextEdit
 from PySide6.QtCore import Slot
@@ -9,8 +9,12 @@ class LogPanel(QGroupBox):
     """
     Panel yang menampilkan log data mentah yang diterima dari backend.
     """
-    def __init__(self, title="Raw Data Log"):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config, title="Raw Data Log"):
         super().__init__(title)
+
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
 
         main_layout = QVBoxLayout(self)
 
@@ -24,6 +28,7 @@ class LogPanel(QGroupBox):
         self.log_display.setFont(font)
         
         main_layout.addWidget(self.log_display)
+        self.setLayout(main_layout) # <-- Tambahkan baris ini untuk menerapkan layout
 
     @Slot(dict)
     def update_log(self, data):
@@ -39,4 +44,3 @@ class LogPanel(QGroupBox):
         
         # Auto-scroll ke bawah
         self.log_display.verticalScrollBar().setValue(self.log_display.verticalScrollBar().maximum())
-

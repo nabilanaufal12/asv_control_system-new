@@ -1,5 +1,5 @@
 # gui/components/camera/detection_thread.py
-# --- FINAL: Penamaan file sekuensial & pengiriman telemetri 500ms ---
+# --- FINAL: Menggunakan config.json untuk URL API dan parameter deteksi ---
 
 import sys
 import os
@@ -32,10 +32,14 @@ from PySide6.QtCore import QThread, Signal, Slot
 
 # --- FUNGSI BARU UNTUK FIREBASE & SUPABASE ---
 
-def send_telemetry_to_firebase(telemetry_data):
+def send_telemetry_to_firebase(telemetry_data, config):
     """Mengirim data telemetri (dict) ke Firebase Realtime Database."""
     try:
-        FIREBASE_URL = 'https://asv-2025-default-rtdb.asia-southeast1.firebasedatabase.app/monitor.json'
+        # Mengambil URL dari file konfigurasi
+        FIREBASE_URL = config.get("api_urls", {}).get("firebase_url")
+        if not FIREBASE_URL:
+            print("🔥 Peringatan: firebase_url tidak ditemukan di config.json")
+            return
         
         data_to_send = {
             "gps": {
@@ -56,12 +60,19 @@ def send_telemetry_to_firebase(telemetry_data):
     except Exception as e:
         print(f"🔥 Error koneksi Firebase: {e}")
 
-def upload_image_to_supabase(image_buffer, filename):
+def upload_image_to_supabase(image_buffer, filename, config):
     """Mengunggah buffer gambar ke Supabase Storage."""
     try:
-        BUCKET = 'navantara'
-        ENDPOINT = f"https://ngmicoyombtgtlegdjzn.supabase.co/storage/v1/object/{BUCKET}/{filename}"
-        TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nbWljb3lvbWJ0Z3RsZWdkanpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5NjkwOTMsImV4cCI6MjA2OTU0NTA5M30.tz7_mfVaX_5sWO3xtSQ1h85JAIRrL6iC4ZNm0TaUTdI'
+        api_config = config.get("api_urls", {})
+        ENDPOINT_TEMPLATE = api_config.get("supabase_endpoint")
+        TOKEN = api_config.get("supabase_token")
+        
+        if not ENDPOINT_TEMPLATE or not TOKEN:
+            print("🔥 Peringatan: supabase_endpoint atau supabase_token tidak ditemukan di config.json")
+            return
+
+        # Mengganti placeholder {filename} dengan nama file sebenarnya
+        ENDPOINT = ENDPOINT_TEMPLATE.replace("{filename}", filename)
         
         headers = {
             'Authorization': f'Bearer {TOKEN}',
@@ -83,8 +94,10 @@ class DetectionThread(QThread):
     frame_ready = Signal(np.ndarray)
     vision_command_status = Signal(dict)
 
-    def __init__(self, source_idx, weights_path, parent=None):
+    # --- PERUBAHAN DI SINI: Menerima objek 'config' ---
+    def __init__(self, source_idx, weights_path, config, parent=None):
         super().__init__(parent)
+        self.config = config # Simpan objek konfigurasi
         self.source_idx, self.weights_path = source_idx, weights_path
         self.running, self.mode_auto, self.is_inverted = True, False, False
         
@@ -93,10 +106,8 @@ class DetectionThread(QThread):
         print(f"Gambar akan disimpan di: {self.snapshot_dir}")
         
         self.latest_telemetry = {}
-
         self.firebase_thread = threading.Thread(target=self.firebase_updater, daemon=True)
 
-        # --- PERUBAHAN DI SINI: Tambahkan counter untuk nama file ---
         self.surface_image_count = 1
         self.underwater_image_count = 1
 
@@ -104,7 +115,8 @@ class DetectionThread(QThread):
         """Fungsi yang berjalan di thread terpisah untuk mengirim data setiap 500ms."""
         while self.running:
             if self.latest_telemetry:
-                send_telemetry_to_firebase(self.latest_telemetry)
+                # Teruskan config ke fungsi
+                send_telemetry_to_firebase(self.latest_telemetry, self.config)
             time.sleep(0.5)
 
     @Slot(dict)
@@ -123,14 +135,12 @@ class DetectionThread(QThread):
             
     def run(self):
         self.firebase_thread.start()
-
         cap = None
         try:
             print("Mempersiapkan model YOLOv5...")
             model = torch.hub.load('ultralytics/yolov5', 'custom', path=self.weights_path, force_reload=True)
             model.conf = 0.4
             model.iou = 0.45
-            
             from ultralytics.utils.plotting import Annotator
 
             print(f"Mencoba membuka kamera indeks: {self.source_idx}...")
@@ -138,6 +148,13 @@ class DetectionThread(QThread):
             if not cap.isOpened():
                 print(f"ERROR: Tidak bisa membuka kamera {self.source_idx}.")
                 return
+            
+            # --- Ambil parameter deteksi dari config ---
+            detection_config = self.config.get("camera_detection", {})
+            PANJANG_FOKUS_PIKSEL = detection_config.get("focal_length_pixels", 600)
+            TARGET_JARAK_CM = detection_config.get("target_activation_distance_cm", 100.0)
+            LEBAR_BOLA_TUNGGAL_CM = detection_config.get("single_ball_real_width_cm", 10.0)
+            LEBAR_BOLA_GANDA_CM = detection_config.get("dual_ball_real_width_cm", 200.0)
             
             print("Kamera dan model berhasil dimuat. Memulai deteksi...")
             while self.running and cap.isOpened():
@@ -150,17 +167,11 @@ class DetectionThread(QThread):
                 results.render()
                 annotated_frame = results.ims[0]
                 
-                detected_red_buoys, detected_green_buoys = [], []
-                detected_green_boxes, detected_blue_boxes = [], []
-
+                detected_red_buoys, detected_green_buoys, detected_green_boxes, detected_blue_boxes = [], [], [], []
                 df = results.pandas().xyxy[0]
                 for _, row in df.iterrows():
                     class_name = row['name']
-                    bbox_data = {
-                        'xyxy': [row['xmin'], row['ymin'], row['xmax'], row['ymax']],
-                        'center': (int((row['xmin'] + row['xmax']) / 2), int((row['ymin'] + row['ymax']) / 2)),
-                        'class': class_name
-                    }
+                    bbox_data = { 'xyxy': [row['xmin'], row['ymin'], row['xmax'], row['ymax']], 'center': (int((row['xmin'] + row['xmax']) / 2), int((row['ymin'] + row['ymax']) / 2)), 'class': class_name }
                     if "red_buoy" in class_name: detected_red_buoys.append(bbox_data)
                     elif "green_buoy" in class_name: detected_green_buoys.append(bbox_data)
                     if "green_box" in class_name: detected_green_boxes.append(bbox_data)
@@ -173,8 +184,6 @@ class DetectionThread(QThread):
                 if mission_name:
                     overlay_image = create_overlay_from_html(self.latest_telemetry, mission_type=mission_name)
                     snapshot_image = apply_overlay(im0.copy(), overlay_image)
-                    
-                    # --- PERUBAHAN DI SINI: Logika penamaan file sekuensial ---
                     supabase_filename = ""
                     if mission_name == "Surface Imaging":
                         supabase_filename = f"surface_{self.surface_image_count}.jpg"
@@ -182,10 +191,9 @@ class DetectionThread(QThread):
                     elif mission_name == "Underwater Imaging":
                         supabase_filename = f"underwater_{self.underwater_image_count}.jpg"
                         self.underwater_image_count += 1
-
                     ret, buffer = cv2.imencode('.jpg', snapshot_image)
                     if ret:
-                        upload_image_to_supabase(buffer, supabase_filename)
+                        upload_image_to_supabase(buffer, supabase_filename, self.config)
                     else:
                         print("🔥 Gagal meng-encode gambar ke JPEG.")
 
@@ -201,31 +209,28 @@ class DetectionThread(QThread):
                                     best_score = score
                                     best_pair = (red, green)
                     if best_pair:
-                        print("MODE: Dua Bola Terdeteksi.")
                         target_object, red_ball, green_ball = best_pair, best_pair[0], best_pair[1]
                         target_midpoint = ((red_ball['center'][0] + green_ball['center'][0]) // 2, (red_ball['center'][1] + green_ball['center'][1]) // 2)
-                        lebar_asli_cm = 200.0
+                        lebar_asli_cm = LEBAR_BOLA_GANDA_CM
                     elif detected_red_buoys or detected_green_buoys:
-                        print("MODE: Satu Bola Terdeteksi.")
                         all_balls = detected_red_buoys + detected_green_buoys
                         best_single_ball = max(all_balls, key=lambda b: self.get_score(b))
-                        target_object, target_midpoint, lebar_asli_cm = (best_single_ball,), best_single_ball['center'], 10.0
+                        target_object, target_midpoint, lebar_asli_cm = (best_single_ball,), best_single_ball['center'], LEBAR_BOLA_TUNGGAL_CM
 
                     if target_object:
                         distance_annotator = Annotator(annotated_frame, line_width=2, example="Jarak")
-                        
                         if len(target_object) == 2:
                             x1, y1 = min(target_object[0]['xyxy'][0], target_object[1]['xyxy'][0]), min(target_object[0]['xyxy'][1], target_object[1]['xyxy'][1])
                             x2, y2 = max(target_object[0]['xyxy'][2], target_object[1]['xyxy'][2]), max(target_object[0]['xyxy'][3], target_object[1]['xyxy'][3])
                         else:
                             x1, y1, x2, y2 = target_object[0]['xyxy']
                         
-                        PANJANG_FOKUS_PIKSEL, lebar_objek_piksel = 600, x2 - x1
+                        lebar_objek_piksel = x2 - x1
                         jarak_estimasi_cm = (lebar_asli_cm * PANJANG_FOKUS_PIKSEL) / lebar_objek_piksel if lebar_objek_piksel > 0 else 0
                         distance_annotator.box_label([x1, y1, x2, y2], f"Jarak: {jarak_estimasi_cm:.1f} cm")
                         annotated_frame = distance_annotator.result()
-
-                        batas_posisi_y, TARGET_JARAK_CM = im0.shape[0] * 0.5, 100.0
+                        
+                        batas_posisi_y = im0.shape[0] * 0.5
                         if jarak_estimasi_cm > 0 and jarak_estimasi_cm < TARGET_JARAK_CM and y1 > batas_posisi_y:
                             print(f"ZONA AKTIVASI TERPENUHI (Jarak: {jarak_estimasi_cm:.1f} cm). Mengikuti objek.")
                             degree = self.calculate_degree(im0, target_midpoint)

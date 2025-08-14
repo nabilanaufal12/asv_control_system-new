@@ -1,5 +1,5 @@
 # gui/components/connection_view.py
-# --- PERBAIKAN: Memperbaiki urutan inisialisasi untuk mengatasi AttributeError ---
+# --- MODIFIKASI: Menggunakan config.json untuk pengaturan default ---
 
 import serial.tools.list_ports
 from PySide6.QtWidgets import (QGroupBox, QWidget, QVBoxLayout, QLineEdit, 
@@ -12,8 +12,10 @@ class ConnectionView(QWidget):
     """
     connect_requested = Signal(dict)
 
-    def __init__(self):
+    # --- 1. Menerima objek 'config' ---
+    def __init__(self, config):
         super().__init__()
+        self.config = config # Simpan objek konfigurasi
 
         main_layout = QVBoxLayout(self)
         
@@ -37,25 +39,24 @@ class ConnectionView(QWidget):
 
         self.baud_rate_combo = QComboBox()
         self.baud_rate_combo.addItems(["9600", "57600", "115200"])
-        self.baud_rate_combo.setCurrentText("115200")
+        
+        # --- 2. Menggunakan nilai dari config.json ---
+        # Ambil baud rate default dari config, atau gunakan 115200 jika tidak ada
+        default_baud = str(self.config.get("serial_connection", {}).get("default_baud_rate", "115200"))
+        self.baud_rate_combo.setCurrentText(default_baud)
 
         serial_form.addRow("Serial Port:", port_layout)
         serial_form.addRow("Baud Rate:", self.baud_rate_combo)
         serial_group.setLayout(serial_form)
 
-        # === Tombol Aksi ===
         self.connect_button = QPushButton("Save & Connect")
         self.connect_button.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold;")
         
-        # --- PERUBAHAN UTAMA DI SINI ---
-        # Panggil fungsi refresh_serial_ports SETELAH semua tombol dibuat.
         self.refresh_serial_ports()
 
-        # Hubungkan sinyal tombol
         self.refresh_ports_button.clicked.connect(self.refresh_serial_ports)
         self.connect_button.clicked.connect(self.on_connect_clicked)
 
-        # Tambahkan semua ke layout utama
         main_layout.addWidget(backend_group)
         main_layout.addWidget(serial_group)
         main_layout.addWidget(self.connect_button)
@@ -73,7 +74,7 @@ class ConnectionView(QWidget):
         port_list = [port.device for port in ports]
         if not port_list:
             self.serial_port_combo.addItem("Tidak ada port ditemukan")
-            self.connect_button.setEnabled(False) # Sekarang ini akan berjalan tanpa error
+            self.connect_button.setEnabled(False)
         else:
             self.serial_port_combo.addItems(port_list)
             self.connect_button.setEnabled(True)

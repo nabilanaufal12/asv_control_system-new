@@ -1,5 +1,5 @@
 # gui/components/pid_view.py
-# --- MODIFIKASI: Menambahkan umpan balik visual pada tombol update ---
+# --- MODIFIKASI: Menerima 'config' dan menambahkan umpan balik visual ---
 
 from PySide6.QtWidgets import (QGroupBox, QWidget, QHBoxLayout, QVBoxLayout, 
                                QLabel, QLineEdit, QPushButton, QFormLayout)
@@ -13,8 +13,12 @@ class PidView(QGroupBox):
     """
     pid_updated = Signal(dict)
 
-    def __init__(self, title="PID Controller Settings"):
+    # --- 2. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config, title="PID Controller Settings"):
         super().__init__(title)
+        
+        # --- 3. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
 
         main_layout = QVBoxLayout()
         form_layout = QFormLayout()
@@ -36,7 +40,6 @@ class PidView(QGroupBox):
         form_layout.addRow("D (Derivative):", self.d_input)
 
         self.update_button = QPushButton("Update PID Constants")
-        # --- 2. Simpan style asli tombol ---
         self.original_button_style = "background-color: #5bc0de; color: white;"
         self.update_button.setStyleSheet(self.original_button_style)
 
@@ -48,29 +51,25 @@ class PidView(QGroupBox):
 
     def on_update_clicked(self):
         """
-        Dipanggil saat tombol update ditekan.
-        Mengambil nilai, memancarkan sinyal, dan memberikan umpan balik visual.
+        Dipanggil saat tombol update ditekan, memancarkan sinyal, dan memberikan umpan balik.
         """
         try:
             pid_values = {
-                "p": float(self.p_input.text().replace(',', '.')), # Ganti koma dengan titik
+                "p": float(self.p_input.text().replace(',', '.')),
                 "i": float(self.i_input.text().replace(',', '.')),
                 "d": float(self.d_input.text().replace(',', '.'))
             }
             self.pid_updated.emit(pid_values)
             print(f"[PID View] Sinyal pid_updated dipancarkan: {pid_values}")
 
-            # --- 3. Umpan balik visual untuk SUKSES ---
+            # Umpan balik visual untuk SUKSES
             self.update_button.setText("Updated!")
             self.update_button.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
-            
-            # Kembalikan ke semula setelah 1.5 detik
             QTimer.singleShot(1500, self.reset_button_style)
 
         except ValueError:
             print("[PID View] Error: Input tidak valid. Pastikan semua field terisi angka.")
-            
-            # --- 4. Umpan balik visual untuk GAGAL ---
+            # Umpan balik visual untuk GAGAL
             self.update_button.setText("Error! Input tidak valid")
             self.update_button.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold;")
             QTimer.singleShot(2000, self.reset_button_style)

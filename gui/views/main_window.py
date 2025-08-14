@@ -1,5 +1,5 @@
 # gui/views/main_window.py
-# --- PERBAIKAN: Memperbarui path impor untuk VideoView ---
+# --- MODIFIKASI: Menerima dan meneruskan objek 'config' ke semua komponen ---
 
 import sys
 from PySide6.QtWidgets import (QMainWindow, QWidget, QApplication, 
@@ -11,8 +11,6 @@ from PySide6.QtCore import Slot, Qt
 from gui.components.control_panel import ControlPanel 
 from gui.components.dashboard import Dashboard
 from gui.components.settings_panel import SettingsPanel
-# === PERUBAHAN DI SINI ===
-# Path impor diubah untuk menunjuk ke folder 'camera' yang baru
 from gui.components.camera.video_view import VideoView 
 from gui.components.map_view import MapView
 from gui.components.header import Header
@@ -24,21 +22,28 @@ class MainWindow(QMainWindow):
     """
     Jendela utama aplikasi yang menampung dan menghubungkan semua widget.
     """
-    def __init__(self):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config):
         super().__init__()
         self.setWindowTitle("ASV Control System - GUI")
         self.resize(1600, 900)
         
-        # Inisialisasi komponen utama
-        self.api_client = ApiClient() 
-        self.header = Header()
-        self.control_panel = ControlPanel("Vehicle Control")
-        self.system_status_panel = Dashboard("System Status")
-        self.settings_panel = SettingsPanel()
-        self.video_view = VideoView()
-        self.map_view = MapView()
-        self.waypoints_panel = WaypointsPanel()
-        self.log_panel = LogPanel()
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
+
+        # --- 3. TERUSKAN 'config' SAAT INISIALISASI KOMPONEN ---
+        # Tentukan apakah akan menggunakan mode simulasi dari config
+        use_simulation_mode = self.config.get("general", {}).get("use_simulation", False)
+
+        self.api_client = ApiClient(config=self.config, use_simulation=use_simulation_mode) 
+        self.header = Header(config=self.config)
+        self.control_panel = ControlPanel(config=self.config)
+        self.system_status_panel = Dashboard(config=self.config)
+        self.settings_panel = SettingsPanel(config=self.config)
+        self.video_view = VideoView(config=self.config)
+        self.map_view = MapView(config=self.config)
+        self.waypoints_panel = WaypointsPanel(config=self.config)
+        self.log_panel = LogPanel(config=self.config)
         
         self.active_manual_keys = set()
         
@@ -48,7 +53,7 @@ class MainWindow(QMainWindow):
 
     def setup_ui(self):
         """Mengatur tata letak semua komponen di dalam jendela utama."""
-        # Sidebar Kiri (Kontrol & Pengaturan)
+        # (Fungsi ini tidak perlu diubah)
         left_sidebar_layout = QVBoxLayout()
         left_sidebar_layout.addWidget(self.control_panel)
         left_sidebar_layout.addWidget(self.settings_panel)
@@ -56,12 +61,10 @@ class MainWindow(QMainWindow):
         left_sidebar_widget = QWidget()
         left_sidebar_widget.setLayout(left_sidebar_layout)
         
-        # Area Tengah dengan Tab (Video & Peta)
         self.center_tabs = QTabWidget()
         self.center_tabs.addTab(self.video_view, "Video Stream")
         self.center_tabs.addTab(self.map_view, "Map View")
         
-        # Sidebar Kanan (Waypoint, Status, Log)
         right_sidebar_layout = QVBoxLayout()
         right_sidebar_layout.addWidget(self.waypoints_panel)
         right_sidebar_layout.addWidget(self.system_status_panel)
@@ -70,13 +73,11 @@ class MainWindow(QMainWindow):
         right_sidebar_widget = QWidget()
         right_sidebar_widget.setLayout(right_sidebar_layout)
         
-        # Layout Kolom Utama
         main_columns_layout = QHBoxLayout()
         main_columns_layout.addWidget(left_sidebar_widget, 2)
         main_columns_layout.addWidget(self.center_tabs, 5)
         main_columns_layout.addWidget(right_sidebar_widget, 2)
         
-        # Layout Keseluruhan
         overall_layout = QVBoxLayout()
         overall_layout.addWidget(self.header)
         overall_layout.addLayout(main_columns_layout)
@@ -85,10 +86,9 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(overall_layout)
         self.setCentralWidget(central_widget)
         
-        # Status Bar di bagian bawah
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.connection_status_label = QLabel("Menunggu koneksi manual...")
+        self.connection_status_label = QLabel("Menunggu koneksi...")
         self.status_bar.addWidget(self.connection_status_label)
 
     def connect_signals(self):
@@ -96,7 +96,8 @@ class MainWindow(QMainWindow):
         # Alur Sinyal: Kontrol Pengguna -> ApiClient
         self.control_panel.mode_changed.connect(self.api_client.handle_mode_change)
         self.waypoints_panel.send_waypoints.connect(self.api_client.set_waypoints)
-        self.settings_panel.connect_requested.connect(self.api_client.connect_manual)
+        # Mengubah connect_manual menjadi connect_to_port yang lebih umum
+        self.settings_panel.connect_requested.connect(self.api_client.connect_to_port)
         
         # Alur Sinyal: Logika Visi -> ApiClient
         self.video_view.vision_status_updated.connect(self.api_client.handle_vision_status)
@@ -114,6 +115,7 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         """Menangani input keyboard untuk mode manual (WASD)."""
+        # (Fungsi ini tidak perlu diubah)
         if event.isAutoRepeat(): return
         key_map = {Qt.Key_W: 'W', Qt.Key_A: 'A', Qt.Key_S: 'S', Qt.Key_D: 'D'}
         if event.key() in key_map:
@@ -125,6 +127,7 @@ class MainWindow(QMainWindow):
 
     def keyReleaseEvent(self, event):
         """Menangani saat tombol keyboard dilepas."""
+        # (Fungsi ini tidak perlu diubah)
         if event.isAutoRepeat(): return
         key_map = {Qt.Key_W: 'W', Qt.Key_A: 'A', Qt.Key_S: 'S', Qt.Key_D: 'D'}
         if event.key() in key_map:
@@ -136,6 +139,7 @@ class MainWindow(QMainWindow):
     @Slot(bool, str)
     def update_connection_status(self, is_connected, message):
         """Mengupdate teks dan warna di status bar berdasarkan status koneksi."""
+        # (Fungsi ini tidak perlu diubah)
         self.connection_status_label.setText(message)
         if is_connected:
             self.connection_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
@@ -144,6 +148,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Memastikan semua thread dan koneksi ditutup dengan aman saat aplikasi ditutup."""
+        # (Fungsi ini tidak perlu diubah)
         print("Menutup aplikasi...")
         self.api_client.shutdown()
         self.video_view.stop_camera()

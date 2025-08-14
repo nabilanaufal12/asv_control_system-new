@@ -1,5 +1,5 @@
 # gui/components/settings_panel.py
-# Komponen yang berisi tab untuk berbagai pengaturan.
+# --- MODIFIKASI: Menerima dan meneruskan objek 'config' ke semua tab ---
 
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTabWidget, QWidget
 from PySide6.QtCore import Signal
@@ -23,18 +23,23 @@ class SettingsPanel(QGroupBox):
     debug_command_sent = Signal(str, object)
     manual_speed_changed = Signal(int) # <-- Sinyal baru
 
-    def __init__(self, title="Settings"):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config, title="Settings"):
         super().__init__(title)
+        
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
 
         main_layout = QVBoxLayout()
         self.tab_widget = QTabWidget()
 
-        # Inisialisasi semua tab
-        self.pid_tab = PidView("PID Controller Gains")
-        self.servo_tab = ServoView()
-        self.thruster_tab = ThrusterView() # <-- Buat instance ThrusterView
-        self.connection_tab = ConnectionView()
-        self.debug_tab = DebugPanel()
+        # --- 3. TERUSKAN 'config' SAAT INISIALISASI SETIAP TAB ---
+        # Catatan: PidView sekarang tidak memerlukan argumen title karena akan mengambilnya dari config
+        self.pid_tab = PidView(config=self.config) 
+        self.servo_tab = ServoView(config=self.config)
+        self.thruster_tab = ThrusterView(config=self.config)
+        self.connection_tab = ConnectionView(config=self.config)
+        self.debug_tab = DebugPanel(config=self.config)
 
         # Tambahkan semua tab ke widget tab
         self.tab_widget.addTab(self.pid_tab, "PID")
@@ -52,4 +57,3 @@ class SettingsPanel(QGroupBox):
         self.connection_tab.connect_requested.connect(self.connect_requested.emit)
         self.debug_tab.debug_command_sent.connect(self.debug_command_sent.emit)
         self.thruster_tab.speed_changed.connect(self.manual_speed_changed.emit) # <-- Teruskan sinyal kecepatan
-

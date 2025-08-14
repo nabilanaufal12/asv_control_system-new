@@ -1,5 +1,5 @@
 # gui/components/thruster_view.py
-# Komponen untuk mengatur kecepatan manual thruster.
+# --- MODIFIKASI: Menerima objek 'config' ---
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QGroupBox, QLabel, QSlider
 from PySide6.QtCore import Signal, Qt
@@ -11,8 +11,12 @@ class ThrusterView(QWidget):
     # Sinyal yang membawa nilai kecepatan baru (0-100)
     speed_changed = Signal(int)
 
-    def __init__(self):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config):
         super().__init__()
+        
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
 
         main_layout = QVBoxLayout(self)
         
@@ -39,9 +43,15 @@ class ThrusterView(QWidget):
         self.speed_slider.valueChanged.connect(self.update_speed_label)
         self.speed_slider.valueChanged.connect(self.speed_changed.emit)
 
+        # Panggil sekali di awal untuk mengeset label dengan nilai dari config
+        self.update_speed_label(0)
+
     def update_speed_label(self, value):
         """Mengupdate label kecepatan berdasarkan nilai slider."""
-        # Asumsi PWM 1500 (netral) hingga 2000 (maks)
-        pwm_value = 1500 + (value * 5)
-        self.speed_label.setText(f"Speed: {value}% | PWM: {pwm_value}")
-
+        # --- 3. MENGGUNAKAN NILAI DARI config.json ---
+        actuator_config = self.config.get("actuators", {})
+        pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
+        
+        # Asumsi rentang PWM adalah 500 (misal, dari 1500 ke 2000)
+        pwm_value = pwm_stop + (value * 5)
+        self.speed_label.setText(f"Speed: {value}% | PWM: {int(pwm_value)}")

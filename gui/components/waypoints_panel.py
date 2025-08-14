@@ -1,5 +1,5 @@
 # gui/components/waypoints_panel.py
-# --- MODIFIKASI: Menambahkan tombol untuk memuat misi A dan B ---
+# --- MODIFIKASI: Menerima objek 'config' ---
 
 from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, 
                                QLineEdit, QPushButton, QListWidget, QAbstractItemView)
@@ -10,15 +10,17 @@ class WaypointsPanel(QGroupBox):
     send_waypoints = Signal(list)
     add_current_pos_requested = Signal()
     waypoints_updated = Signal(list)
-    # --- PERUBAHAN 1: Sinyal baru untuk memuat misi ---
     load_mission_requested = Signal(str) # 'A' atau 'B'
 
-    def __init__(self, title="Waypoints"):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config, title="Waypoints"):
         super().__init__(title)
+        
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
 
         main_layout = QVBoxLayout()
         
-        # --- PERUBAHAN 2: Tambahkan GroupBox baru untuk misi ---
         mission_box = QGroupBox("Predefined Missions")
         mission_layout = QHBoxLayout()
         self.load_a_button = QPushButton("Load Lintasan A")
@@ -58,7 +60,7 @@ class WaypointsPanel(QGroupBox):
         send_layout.addStretch()
         send_layout.addWidget(self.send_all_button)
 
-        main_layout.addWidget(mission_box) # Tambahkan ke layout utama
+        main_layout.addWidget(mission_box)
         main_layout.addLayout(input_layout)
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
@@ -73,7 +75,6 @@ class WaypointsPanel(QGroupBox):
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
 
-    # --- PERUBAHAN 3: Slot baru untuk mengisi daftar dari luar ---
     @Slot(list)
     def load_waypoints_to_list(self, waypoints):
         """Menghapus daftar saat ini dan mengisinya dengan waypoint baru."""
@@ -87,13 +88,13 @@ class WaypointsPanel(QGroupBox):
         current_waypoints = self._get_all_waypoints_from_list()
         self.waypoints_updated.emit(current_waypoints)
     
-    # (Sisa kode tidak berubah)
     @Slot(float, float)
     def add_waypoint_from_pos(self, lat, lon):
         if lat is not None and lon is not None:
             waypoint_text = f"Lat: {lat:.6f}, Lon: {lon:.6f}"
             self.waypoints_list.addItem(waypoint_text)
             self._emit_updated_waypoints()
+
     def add_manual_waypoint(self):
         lat_text = self.lat_input.text().replace(',', '.')
         lon_text = self.lon_input.text().replace(',', '.')
@@ -108,12 +109,14 @@ class WaypointsPanel(QGroupBox):
                 self._emit_updated_waypoints()
             except ValueError:
                 print("Error: Input waypoint tidak valid.")
+
     def delete_waypoint(self):
         selected_items = self.waypoints_list.selectedItems()
         if not selected_items: return
         for item in selected_items:
             self.waypoints_list.takeItem(self.waypoints_list.row(item))
         self._emit_updated_waypoints()
+
     def _get_all_waypoints_from_list(self):
         all_waypoints = []
         for i in range(self.waypoints_list.count()):
@@ -126,6 +129,7 @@ class WaypointsPanel(QGroupBox):
             except (ValueError, IndexError):
                 print(f"Gagal mem-parsing item waypoint: {item_text}")
         return all_waypoints
+
     def send_all_waypoints(self):
         all_waypoints = self._get_all_waypoints_from_list()
         if all_waypoints:

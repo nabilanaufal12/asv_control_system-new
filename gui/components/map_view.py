@@ -1,13 +1,18 @@
 # gui/components/map_view.py
-# --- MODIFIKASI: Mengubah representasi kapal menjadi panah ---
+# --- MODIFIKASI: Menerima objek 'config' ---
 
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPolygonF
 from PySide6.QtCore import Slot, QPointF, QRectF, Qt
 
 class MapView(QWidget):
-    def __init__(self):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config):
         super().__init__()
+        
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
+        
         self.asv_lat = -6.9175
         self.asv_lon = 107.6191
         self.asv_heading = 0.0 # Simpan heading di sini

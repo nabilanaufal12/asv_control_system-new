@@ -1,5 +1,5 @@
 # gui/components/debug_panel.py
-# Komponen untuk debugging dan kalibrasi tingkat lanjut.
+# --- MODIFIKASI: Menerima objek 'config' ---
 
 from PySide6.QtWidgets import (QGroupBox, QWidget, QVBoxLayout, QHBoxLayout,
                                QPushButton, QFormLayout, QLineEdit)
@@ -10,12 +10,14 @@ class DebugPanel(QWidget):
     Widget yang berisi berbagai alat untuk debugging dan kalibrasi,
     diambil dari fungsionalitas GUI lama.
     """
-    # Sinyal yang akan membawa perintah debug
-    # Format: command_type (str), value (str/dict)
     debug_command_sent = Signal(str, object)
 
-    def __init__(self):
+    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
+    def __init__(self, config):
         super().__init__()
+
+        # --- 2. SIMPAN OBJEK KONFIGURASI ---
+        self.config = config
 
         main_layout = QVBoxLayout(self)
 
