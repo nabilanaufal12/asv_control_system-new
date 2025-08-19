@@ -36,9 +36,8 @@ function fetchData(config, elements) {
       updateDateTime(elements);
     })
     .catch((error) => {
-      // Jika terjadi error (misalnya, tidak ada koneksi internet), tampilkan data acak
+      // Jika terjadi error (misalnya, tidak ada koneksi internet), tampilkan pesan di konsol
       console.error("Gagal mengambil data dari Firebase:", error);
-      generateRandomData(elements);
     });
 }
 
@@ -50,27 +49,4 @@ function updateDateTime(elements) {
 
   elements.dayValue.textContent = days[now.getDay()];
   elements.dateValue.textContent = now.toLocaleDateString("id-ID", options);
-}
-
-function generateRandomData(elements) {
-  // Fungsi fallback untuk menghasilkan data acak jika koneksi Firebase gagal
-  function randomGPS() {
-    return {
-      lat: (Math.random() * 180 - 90).toFixed(6),
-      lng: (Math.random() * 360 - 180).toFixed(6),
-    };
-  }
-
-  const data = {
-    gps: randomGPS(),
-    hdg: Math.floor(Math.random() * 360),
-    cog: Math.floor(Math.random() * 360),
-    sog: (Math.random() * 5).toFixed(2),
-  };
-
-  elements.gpsValue.textContent = `${data.gps.lat}, ${data.gps.lng}`;
-  elements.hdgValue.textContent = `${data.hdg}°`;
-  elements.cogValue.textContent = `${data.cog}°`;
-  elements.sogValue.textContent = `${data.sog} m/s`;
-  updateDateTime(elements);
 }

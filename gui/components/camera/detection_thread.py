@@ -212,11 +212,51 @@ class DetectionThread(QThread):
                         target_object, red_ball, green_ball = best_pair, best_pair[0], best_pair[1]
                         target_midpoint = ((red_ball['center'][0] + green_ball['center'][0]) // 2, (red_ball['center'][1] + green_ball['center'][1]) // 2)
                         lebar_asli_cm = LEBAR_BOLA_GANDA_CM
+                    
+                    # --- MODIFIKASI DIMULAI DI SINI ---
                     elif detected_red_buoys or detected_green_buoys:
                         all_balls = detected_red_buoys + detected_green_buoys
                         best_single_ball = max(all_balls, key=lambda b: self.get_score(b))
-                        target_object, target_midpoint, lebar_asli_cm = (best_single_ball,), best_single_ball['center'], LEBAR_BOLA_TUNGGAL_CM
+                        
+                        # Tentukan apakah bola ini seharusnya di kiri atau kanan
+                        ball_class = best_single_ball['class']
+                        # Logika normal: merah di kiri, hijau di kanan
+                        is_left_buoy = 'red_buoy' in ball_class
+                        if self.is_inverted: # Jika mode 'invers' (Lintasan B), logikanya dibalik
+                            is_left_buoy = 'green_buoy' in ball_class
 
+                        # Hitung jarak ke bola untuk menentukan offset piksel
+                        x1_single, _, x2_single, _ = best_single_ball['xyxy']
+                        lebar_objek_piksel_single = x2_single - x1_single
+                        
+                        jarak_estimasi_cm_single = 0
+                        if lebar_objek_piksel_single > 0:
+                            jarak_estimasi_cm_single = (LEBAR_BOLA_TUNGGAL_CM * PANJANG_FOKUS_PIKSEL) / lebar_objek_piksel_single
+
+                        # Hitung offset piksel yang setara dengan ~100 cm (setengah jarak antar bola) pada jarak tersebut
+                        pixel_offset = 0
+                        if jarak_estimasi_cm_single > 0:
+                            pixel_offset = (100.0 * PANJANG_FOKUS_PIKSEL) / jarak_estimasi_cm_single
+
+                        # Buat titik target virtual
+                        ball_center_x, ball_center_y = best_single_ball['center']
+                        if is_left_buoy:
+                            # Jika ini bola kiri, target kita ada di kanannya
+                            virtual_target_x = ball_center_x + int(pixel_offset)
+                        else:
+                            # Jika ini bola kanan, target kita ada di kirinya
+                            virtual_target_x = ball_center_x - int(pixel_offset)
+                        
+                        # Jadikan titik virtual ini sebagai target utama
+                        target_object = (best_single_ball,)
+                        target_midpoint = (virtual_target_x, ball_center_y) # INI YANG PALING PENTING
+                        lebar_asli_cm = LEBAR_BOLA_TUNGGAL_CM
+                        
+                        # (Opsional tapi sangat disarankan) Gambar titik target virtual untuk debugging
+                        cv2.circle(annotated_frame, target_midpoint, 10, (255, 255, 0), -1)
+                        cv2.putText(annotated_frame, "Virtual Target", (target_midpoint[0] + 15, target_midpoint[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+                    # --- MODIFIKASI SELESAI ---
+                    
                     if target_object:
                         distance_annotator = Annotator(annotated_frame, line_width=2, example="Jarak")
                         if len(target_object) == 2:
