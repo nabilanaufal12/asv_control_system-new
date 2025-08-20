@@ -1,14 +1,14 @@
 # gui/views/main_window.py
-# --- FINAL: Membersihkan dan menyesuaikan koneksi sinyal untuk arsitektur baru ---
+# --- FINAL: Menerima ApiClient yang sudah ada dan menghubungkan sinyal ---
 
 import sys
-from PySide6.QtWidgets import (QMainWindow, QWidget, QApplication, 
-                               QHBoxLayout, QVBoxLayout, QTabWidget, 
+from PySide6.QtWidgets import (QMainWindow, QWidget, QApplication,
+                               QHBoxLayout, QVBoxLayout, QTabWidget,
                                QMessageBox, QStatusBar, QLabel)
 from PySide6.QtCore import Slot, Qt
 
 # Impor semua komponen kustom yang dibutuhkan
-from gui.components.control_panel import ControlPanel 
+from gui.components.control_panel import ControlPanel
 from gui.components.dashboard import Dashboard
 from gui.components.settings_panel import SettingsPanel
 from gui.components.video_view import VideoView
@@ -22,13 +22,16 @@ class MainWindow(QMainWindow):
     """
     Jendela utama aplikasi yang menampung dan menghubungkan semua widget.
     """
-    def __init__(self, config):
+    # --- 1. MODIFIKASI: Terima 'api_client' sebagai argumen ---
+    def __init__(self, config, api_client):
         super().__init__()
         self.setWindowTitle("ASV Control System - GUI")
         self.resize(1600, 900)
         
         self.config = config
-        self.api_client = ApiClient(config=self.config) 
+        # --- 2. MODIFIKASI: Gunakan instance ApiClient yang sudah ada ---
+        # Hapus baris lama: self.api_client = ApiClient(config=self.config)
+        self.api_client = api_client
         
         # Inisialisasi semua komponen UI dengan meneruskan config
         self.header = Header(config=self.config)
@@ -91,9 +94,7 @@ class MainWindow(QMainWindow):
         self.waypoints_panel.send_waypoints.connect(self.api_client.set_waypoints)
         self.settings_panel.connect_requested.connect(self.api_client.connect_to_port)
         
-        # Alur Sinyal: Kontrol Pengguna -> VideoView (untuk UI)
-        # Sinyal ini memberitahu VideoView mode saat ini, berguna jika ingin menampilkan
-        # status "AUTO" atau "MANUAL" di atas video.
+        # Alur Sinyal: Kontrol Pengguna -> VideoView (untuk memberitahu backend)
         self.control_panel.mode_changed.connect(self.video_view.set_mode)
         
         # Alur Sinyal: ApiClient (dari backend) -> UI (untuk update tampilan)
@@ -101,9 +102,8 @@ class MainWindow(QMainWindow):
         self.api_client.data_updated.connect(self.map_view.update_data)
         self.api_client.data_updated.connect(self.system_status_panel.update_data)
         self.api_client.data_updated.connect(self.log_panel.update_log)
-        
-        # Sinyal `vision_status_updated` dan `update_telemetry_in_thread` tidak lagi
-        # relevan di GUI karena semua logika visi dan geo-tagging sekarang ada di backend.
+        self.api_client.data_updated.connect(self.header.update_status) # <-- Tambahkan ini untuk update header
+
 
     def keyPressEvent(self, event):
         """Menangani input keyboard untuk mode manual (WASD)."""

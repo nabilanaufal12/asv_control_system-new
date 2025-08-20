@@ -1,41 +1,40 @@
 # backend/api/endpoints.py
-# Mendefinisikan semua rute API untuk server Flask.
+# --- MODIFIKASI: Mengimpor socketio dari extensions.py untuk mengatasi Circular Import ---
 
-from flask import Blueprint, jsonify, request, Response
 import time
+from flask import Blueprint, jsonify, request, Response, g, current_app
+# 1. Impor instance socketio dari file extensions.py yang baru, BUKAN dari main.py
+from backend.extensions import socketio
 
-# Kita akan menggunakan 'g' dari Flask untuk menyimpan instance handler
-# agar bisa diakses di semua rute.
-from flask import g
-
-# Membuat 'Blueprint', ini adalah cara Flask untuk mengorganisir rute
+# Membuat 'Blueprint' untuk mengorganisir rute HTTP (tidak berubah)
 api_blueprint = Blueprint('api', __name__)
+
+# --- 2. Event handler Socket.IO sekarang menggunakan socketio yang diimpor dari sumber yang benar ---
+@socketio.on('command')
+def handle_socket_command(json_data):
+    """
+    Menerima perintah dari GUI melalui koneksi WebSocket.
+    """
+    command = json_data.get('command')
+    payload = json_data.get('payload')
+    print(f" Menerima perintah via WebSocket: {command}")
+    
+    # Menggunakan 'g' untuk mengakses handler yang sudah ada di konteks request
+    if hasattr(g, 'asv_handler'):
+        g.asv_handler.process_command(command, payload)
+
+# --- Endpoint HTTP yang lain tidak perlu diubah ---
 
 def generate_video_frames():
     """Generator untuk video streaming."""
+    vision_service = current_app.vision_service
     while True:
-        # Mengambil frame dari vision_service yang tersimpan di 'g'
-        frame = g.vision_service.get_frame()
+        frame = vision_service.get_frame()
         if frame is None:
-            # Jika tidak ada frame, tunggu sebentar sebelum mencoba lagi
-            time.sleep(0.1)
+            time.sleep(0.05)
             continue
-        
-        # Format response untuk streaming (multipart/x-mixed-replace)
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
-@api_blueprint.route('/status', methods=['GET'])
-def get_status():
-    """Endpoint untuk mendapatkan state terbaru dari ASV."""
-    return jsonify(g.asv_handler.get_current_state())
-
-@api_blueprint.route('/command', methods=['POST'])
-def handle_command():
-    """Endpoint untuk menerima dan memproses perintah umum dari GUI."""
-    data = request.json
-    g.asv_handler.process_command(data.get("command"), data.get("payload"))
-    return jsonify({"status": "command_received"})
 
 @api_blueprint.route('/video_feed')
 def video_feed():
@@ -45,18 +44,12 @@ def video_feed():
 
 @api_blueprint.route('/list_cameras', methods=['GET'])
 def list_cameras():
-    """Endpoint untuk mendapatkan daftar indeks kamera yang tersedia di backend."""
+    """Endpoint untuk mendapatkan daftar indeks kamera yang tersedia."""
     cameras = g.vision_service.list_available_cameras()
     return jsonify({"cameras": cameras})
 
-@api_blueprint.route('/vision_command', methods=['POST'])
-def handle_vision_command():
-    """Endpoint untuk menerima perintah khusus untuk layanan visi."""
-    data = request.json
-    command = data.get("command")
-    payload = data.get("payload")
-    
-    # Teruskan perintah ke VisionService yang sudah tersimpan di 'g'
-    g.vision_service.process_command(command, payload)
-    
-    return jsonify({"status": "vision_command_received"})
+# Endpoint ini bisa disimpan untuk keperluan debugging atau akses langsung via browser
+@api_blueprint.route('/status', methods=['GET'])
+def get_status():
+    """Endpoint untuk mendapatkan state terbaru dari ASV."""
+    return jsonify(g.asv_handler.get_current_state())

@@ -1,18 +1,21 @@
 # backend/main.py
-# Titik masuk utama untuk backend server.
-# Tugasnya hanya menginisialisasi dan menjalankan server Flask.
+# --- MODIFIKASI: Mengimpor socketio dari extensions.py untuk mengatasi Circular Import ---
 
 import json
 import os
-from flask import Flask, g
+from flask import Flask, g, current_app
+# 1. Impor instance socketio dari file extensions.py yang baru
+from backend.extensions import socketio
+
 from backend.core.asv_handler import AsvHandler
 from backend.services.vision_service import VisionService
 from backend.api.endpoints import api_blueprint
 
+# (Baris 'socketio = SocketIO(...)' telah dihapus dari sini)
+
 def create_app():
     """
     Membuat dan mengkonfigurasi instance aplikasi Flask.
-    Ini adalah "pabrik" untuk aplikasi kita.
     """
     app = Flask(__name__)
 
@@ -27,19 +30,24 @@ def create_app():
         print(f"[Server] KRITIS: Gagal memuat config.json. Error: {e}")
         exit()
 
-    # Inisialisasi semua komponen utama (Handler dan Service)
-    asv_handler = AsvHandler(app.config['ASV_CONFIG'])
+    # Teruskan instance socketio yang sudah diimpor ke dalam AsvHandler
+    asv_handler = AsvHandler(app.config['ASV_CONFIG'], socketio)
     vision_service = VisionService(app.config['ASV_CONFIG'], asv_handler)
 
-    # Menyimpan instance handler dan service ke dalam 'g' (global context) Flask
-    # agar bisa diakses oleh endpoint di file lain.
+    # Menyimpan instance service di 'app' untuk stabilitas
+    app.asv_handler = asv_handler
+    app.vision_service = vision_service
+
     @app.before_request
     def before_request():
-        g.asv_handler = asv_handler
-        g.vision_service = vision_service
+        g.asv_handler = current_app.asv_handler
+        g.vision_service = current_app.vision_service
 
     # Daftarkan semua rute API dari file endpoints.py
     app.register_blueprint(api_blueprint)
+    
+    # Inisialisasi aplikasi Flask ke dalam SocketIO
+    socketio.init_app(app)
     
     # Mulai service background (kamera & deteksi)
     print("🚀 Memulai layanan visi...")
@@ -50,9 +58,7 @@ def create_app():
 if __name__ == "__main__":
     # Buat aplikasi menggunakan "pabrik" di atas
     app = create_app()
-    print("🚀 Memulai Backend Server ASV...")
+    print("🚀 Memulai Backend Server ASV dengan dukungan WebSockets...")
     
-    # Jalankan server Flask
-    # debug=False dan threaded=True adalah pengaturan yang baik untuk server
-    # yang memiliki proses background seperti layanan visi kita.
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    # Jalankan server menggunakan socketio.run, bukan app.run
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)

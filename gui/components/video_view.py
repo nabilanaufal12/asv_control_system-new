@@ -1,5 +1,5 @@
 # gui/components/video_view.py
-# --- FINAL: Menambahkan kembali kontrol kamera (Refresh, Invert, Pilih Kamera) ---
+# --- MODIFIKASI FINAL: Otomatis memilih kamera pertama yang aktif saat startup ---
 
 import cv2
 import requests
@@ -11,6 +11,7 @@ from PySide6.QtGui import QImage, QPixmap
 class VideoStreamThread(QThread):
     """Thread untuk mengambil stream video dari URL backend secara terus-menerus."""
     frame_ready = Signal(np.ndarray)
+    connection_error = Signal(str)
 
     def __init__(self, stream_url, parent=None):
         super().__init__(parent)
@@ -21,35 +22,30 @@ class VideoStreamThread(QThread):
         """Mulai mengambil stream video dan memancarkan frame."""
         self.running = True
         try:
-            with requests.get(self.stream_url, stream=True, timeout=5) as r:
-                if r.status_code != 200:
-                    print(f"Error: Gagal terhubung ke video stream (status: {r.status_code})")
-                    return
-                
+            with requests.get(self.stream_url, stream=True, timeout=(5, 10)) as r:
+                r.raise_for_status()
                 bytes_buffer = bytes()
-                for chunk in r.iter_content(chunk_size=4096):
+                for chunk in r.iter_content(chunk_size=8192):
                     if not self.running:
                         break
                     
                     bytes_buffer += chunk
-                    a = bytes_buffer.find(b'\xff\xd8')
-                    b = bytes_buffer.find(b'\xff\xd9')
+                    a = bytes_buffer.find(b'\\xff\\xd8')
+                    b = bytes_buffer.find(b'\\xff\\xd9')
                     
                     if a != -1 and b != -1:
                         jpg = bytes_buffer[a:b+2]
                         bytes_buffer = bytes_buffer[b+2:]
-                        if jpg:
-                            frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
-                            if frame is not None:
-                                self.frame_ready.emit(frame)
+                        frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                        if frame is not None:
+                            self.frame_ready.emit(frame)
         except requests.exceptions.RequestException as e:
-            print(f"Koneksi ke video stream gagal: {e}")
+            error_message = f"Koneksi video stream gagal.\\nPastikan backend berjalan di {self.stream_url.split('/video_feed')[0]}\\n"
+            self.connection_error.emit(error_message)
         finally:
-            print("Video stream thread dihentikan.")
             self.running = False
 
     def stop(self):
-        """Menghentikan thread."""
         self.running = False
 
 class VideoView(QWidget):
@@ -63,7 +59,6 @@ class VideoView(QWidget):
         self.base_url = f"http://{ip}:{port}"
         stream_url = f"{self.base_url}/video_feed"
 
-        # --- Elemen UI untuk Kontrol Kamera ---
         self.camera_selector = QComboBox()
         self.refresh_button = QPushButton("Refresh List")
         self.invert_button = QPushButton("Invert Logic")
@@ -86,72 +81,97 @@ class VideoView(QWidget):
 
         self.stream_thread = VideoStreamThread(stream_url)
         self.stream_thread.frame_ready.connect(self.set_frame)
+        self.stream_thread.connection_error.connect(self.show_error_message)
         self.stream_thread.start()
         
-        # --- Hubungkan Tombol ke Fungsi API ---
         self.refresh_button.clicked.connect(self.refresh_camera_list)
         self.invert_button.clicked.connect(self.toggle_inversion)
-        self.camera_selector.currentIndexChanged.connect(self.select_camera)
+        self.camera_selector.currentIndexChanged.connect(self.select_camera_from_dropdown)
         
-        self.refresh_camera_list() # Panggil sekali di awal untuk mengisi daftar
+        # --- PERUBAHAN UTAMA: Panggil fungsi untuk otomatisasi di sini ---
+        self.find_and_select_camera()
 
     def send_vision_command(self, command, payload=None):
         """Fungsi helper untuk mengirim perintah ke endpoint visi di backend."""
         try:
             requests.post(f"{self.base_url}/vision_command", json={"command": command, "payload": payload}, timeout=2)
         except requests.RequestException as e:
-            print(f"Gagal mengirim perintah visi: {e}")
+            print(f"Gagal mengirim perintah visi '{command}': {e}")
 
-    def refresh_camera_list(self):
-        """Meminta daftar kamera dari backend dan mengisinya ke ComboBox."""
+    def find_and_select_camera(self):
+        """
+        Secara otomatis meminta daftar kamera dari backend, lalu memilih yang pertama.
+        """
+        print("Mencari kamera aktif secara otomatis...")
         try:
             response = requests.get(f"{self.base_url}/list_cameras", timeout=3)
             if response.status_code == 200:
-                self.camera_selector.blockSignals(True) # Cegah sinyal terpicu saat daftar diisi
+                self.camera_selector.blockSignals(True)
                 self.camera_selector.clear()
                 cameras = response.json().get("cameras", [])
+                
                 if cameras:
+                    print(f"✅ Kamera ditemukan di indeks: {cameras}")
+                    # Isi dropdown untuk pilihan manual nanti
                     self.camera_selector.addItems([f"Kamera {cam}" for cam in cameras])
+                    
+                    # --- LOGIKA OTOMATISASI ---
+                    # Ambil indeks kamera pertama dari daftar dan kirim perintah ke backend
+                    first_camera_index = cameras[0]
+                    print(f"Otomatis memilih kamera pertama: Indeks {first_camera_index}")
+                    self.send_vision_command("SELECT_CAMERA", first_camera_index)
+                    # -------------------------
                 else:
+                    print("❌ Tidak ada kamera yang ditemukan oleh backend.")
                     self.camera_selector.addItem("Tidak ada kamera")
-                self.camera_selector.blockSignals(False) # Aktifkan kembali sinyal
+                
+                self.camera_selector.blockSignals(False)
             else:
                 print("Gagal mengambil daftar kamera dari backend.")
         except requests.RequestException as e:
-            print(f"Gagal terhubung ke backend untuk refresh kamera: {e}")
+            print(f"Gagal terhubung ke backend untuk mencari kamera: {e}")
+
+    def refresh_camera_list(self):
+        """Fungsi ini sekarang hanya untuk tombol Refresh manual."""
+        self.find_and_select_camera() # Cukup panggil fungsi utama lagi
 
     def toggle_inversion(self):
+        """Mengirim status tombol 'Invert' ke backend."""
         is_checked = self.invert_button.isChecked()
-        print(f"Mengirim perintah Invert Logic: {is_checked}")
         self.send_vision_command("SET_INVERT", is_checked)
         if is_checked:
             self.invert_button.setStyleSheet("background-color: #e74c3c; color: white;")
         else:
             self.invert_button.setStyleSheet("")
             
-    def select_camera(self, index):
-        """Mengirim indeks kamera yang dipilih ke backend."""
+    def select_camera_from_dropdown(self, index):
+        """Mengirim indeks kamera yang DIPILIH PENGGUNA dari dropdown ke backend."""
         if index < 0: return
         cam_text = self.camera_selector.itemText(index)
         try:
             cam_index = int(cam_text.split(" ")[1])
-            print(f"Memilih kamera indeks: {cam_index}")
+            print(f"Pengguna memilih kamera dari dropdown: Indeks {cam_index}")
             self.send_vision_command("SELECT_CAMERA", cam_index)
         except (IndexError, ValueError):
-            pass # Abaikan jika itemnya "Tidak ada kamera"
+            pass
 
     @Slot(np.ndarray)
     def set_frame(self, frame):
         if frame is None: return
         try:
-            rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w, ch = rgb_image.shape
+            h, w, ch = frame.shape
             bytes_per_line = ch * w
-            qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+            qt_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888).rgbSwapped()
             pixmap = QPixmap.fromImage(qt_image)
             self.label.setPixmap(pixmap.scaled(self.label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         except Exception:
-            pass # Abaikan error tampilan frame sesekali
+            pass
+
+    @Slot(str)
+    def show_error_message(self, message):
+        """Menampilkan pesan error jika koneksi video stream gagal."""
+        self.label.setText(message)
+        self.label.setStyleSheet("background-color: #c0392b; color: white; font-size: 14px; text-align: center;")
 
     def stop_camera(self):
         """Metode untuk menghentikan thread video saat aplikasi ditutup."""
@@ -162,5 +182,4 @@ class VideoView(QWidget):
     @Slot(str)
     def set_mode(self, mode):
         """Mengirim status mode (AUTO/MANUAL) ke backend."""
-        is_auto = (mode == "AUTO")
-        self.send_vision_command("SET_MODE", is_auto)
+        self.send_vision_command("SET_MODE", mode)
