@@ -1,5 +1,5 @@
 # gui/views/main_window.py
-# --- MODIFIKASI: Menerima dan meneruskan objek 'config' ke semua komponen ---
+# --- FINAL: Membersihkan dan menyesuaikan koneksi sinyal untuk arsitektur baru ---
 
 import sys
 from PySide6.QtWidgets import (QMainWindow, QWidget, QApplication, 
@@ -11,7 +11,7 @@ from PySide6.QtCore import Slot, Qt
 from gui.components.control_panel import ControlPanel 
 from gui.components.dashboard import Dashboard
 from gui.components.settings_panel import SettingsPanel
-from gui.components.camera.video_view import VideoView 
+from gui.components.video_view import VideoView
 from gui.components.map_view import MapView
 from gui.components.header import Header
 from gui.components.waypoints_panel import WaypointsPanel
@@ -22,20 +22,15 @@ class MainWindow(QMainWindow):
     """
     Jendela utama aplikasi yang menampung dan menghubungkan semua widget.
     """
-    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config):
         super().__init__()
         self.setWindowTitle("ASV Control System - GUI")
         self.resize(1600, 900)
         
-        # --- 2. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
-
-        # --- 3. TERUSKAN 'config' SAAT INISIALISASI KOMPONEN ---
-        # Tentukan apakah akan menggunakan mode simulasi dari config
-        use_simulation_mode = self.config.get("general", {}).get("use_simulation", False)
-
-        self.api_client = ApiClient(config=self.config, use_simulation=use_simulation_mode) 
+        self.api_client = ApiClient(config=self.config) 
+        
+        # Inisialisasi semua komponen UI dengan meneruskan config
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
         self.system_status_panel = Dashboard(config=self.config)
@@ -47,13 +42,11 @@ class MainWindow(QMainWindow):
         
         self.active_manual_keys = set()
         
-        # Atur UI dan hubungkan sinyal
         self.setup_ui()
         self.connect_signals()
 
     def setup_ui(self):
         """Mengatur tata letak semua komponen di dalam jendela utama."""
-        # (Fungsi ini tidak perlu diubah)
         left_sidebar_layout = QVBoxLayout()
         left_sidebar_layout.addWidget(self.control_panel)
         left_sidebar_layout.addWidget(self.settings_panel)
@@ -93,29 +86,27 @@ class MainWindow(QMainWindow):
 
     def connect_signals(self):
         """Menghubungkan sinyal dari satu komponen ke slot di komponen lain."""
-        # Alur Sinyal: Kontrol Pengguna -> ApiClient
+        # Alur Sinyal: Kontrol Pengguna -> ApiClient (untuk dikirim ke backend)
         self.control_panel.mode_changed.connect(self.api_client.handle_mode_change)
         self.waypoints_panel.send_waypoints.connect(self.api_client.set_waypoints)
-        # Mengubah connect_manual menjadi connect_to_port yang lebih umum
         self.settings_panel.connect_requested.connect(self.api_client.connect_to_port)
         
-        # Alur Sinyal: Logika Visi -> ApiClient
-        self.video_view.vision_status_updated.connect(self.api_client.handle_vision_status)
+        # Alur Sinyal: Kontrol Pengguna -> VideoView (untuk UI)
+        # Sinyal ini memberitahu VideoView mode saat ini, berguna jika ingin menampilkan
+        # status "AUTO" atau "MANUAL" di atas video.
+        self.control_panel.mode_changed.connect(self.video_view.set_mode)
         
-        # Alur Sinyal: ApiClient -> UI (untuk update tampilan)
+        # Alur Sinyal: ApiClient (dari backend) -> UI (untuk update tampilan)
         self.api_client.connection_status_changed.connect(self.update_connection_status)
         self.api_client.data_updated.connect(self.map_view.update_data)
         self.api_client.data_updated.connect(self.system_status_panel.update_data)
+        self.api_client.data_updated.connect(self.log_panel.update_log)
         
-        # Mengirim data sensor ke thread video untuk Geo-tagging
-        self.api_client.data_updated.connect(self.video_view.update_telemetry_in_thread)
-        
-        # Alur Sinyal: ApiClient -> VideoView (untuk sinkronisasi mode)
-        self.api_client.mode_changed_for_video.connect(self.video_view.set_mode)
+        # Sinyal `vision_status_updated` dan `update_telemetry_in_thread` tidak lagi
+        # relevan di GUI karena semua logika visi dan geo-tagging sekarang ada di backend.
 
     def keyPressEvent(self, event):
         """Menangani input keyboard untuk mode manual (WASD)."""
-        # (Fungsi ini tidak perlu diubah)
         if event.isAutoRepeat(): return
         key_map = {Qt.Key_W: 'W', Qt.Key_A: 'A', Qt.Key_S: 'S', Qt.Key_D: 'D'}
         if event.key() in key_map:
@@ -127,7 +118,6 @@ class MainWindow(QMainWindow):
 
     def keyReleaseEvent(self, event):
         """Menangani saat tombol keyboard dilepas."""
-        # (Fungsi ini tidak perlu diubah)
         if event.isAutoRepeat(): return
         key_map = {Qt.Key_W: 'W', Qt.Key_A: 'A', Qt.Key_S: 'S', Qt.Key_D: 'D'}
         if event.key() in key_map:
@@ -139,7 +129,6 @@ class MainWindow(QMainWindow):
     @Slot(bool, str)
     def update_connection_status(self, is_connected, message):
         """Mengupdate teks dan warna di status bar berdasarkan status koneksi."""
-        # (Fungsi ini tidak perlu diubah)
         self.connection_status_label.setText(message)
         if is_connected:
             self.connection_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
@@ -148,7 +137,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Memastikan semua thread dan koneksi ditutup dengan aman saat aplikasi ditutup."""
-        # (Fungsi ini tidak perlu diubah)
         print("Menutup aplikasi...")
         self.api_client.shutdown()
         self.video_view.stop_camera()

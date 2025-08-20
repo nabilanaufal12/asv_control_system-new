@@ -2,6 +2,10 @@
   "general": {
     "use_simulation": false
   },
+  "backend_connection": {
+    "ip_address": "127.0.0.1",
+    "port": 5000
+  },
   "serial_connection": {
     "default_baud_rate": 115200,
     "auto_connect_descriptors": ["Silicon Labs", "CH340", "CP210x"]

@@ -1,292 +1,115 @@
 # gui/api_client.py
-# --- FINAL: Menggunakan file konfigurasi eksternal untuk semua pengaturan ---
+# --- VERSI MIGRASI: Menjadi HTTP Client Murni ---
 
 import time
 import threading
-import serial
-import serial.tools.list_ports
-import math
+import requests
 from PySide6.QtCore import QObject, Signal, Slot
 
 class ApiClient(QObject):
     """
-    Kelas ini bertindak sebagai "otak" di sisi GUI, menjembatani antarmuka
-    dengan logika kontrol dan komunikasi perangkat keras.
+    Kelas ini sekarang bertindak sebagai jembatan antara GUI dan Backend Server.
+    Semua komunikasi dilakukan via HTTP ke server (yang berjalan di PC yang sama atau di Jetson).
     """
     data_updated = Signal(dict)
     connection_status_changed = Signal(bool, str)
-    mode_changed_for_video = Signal(str)
 
-    def __init__(self, config, use_simulation=False):
+    def __init__(self, config):
         super().__init__()
-        self.config = config # Simpan objek konfigurasi
-        self.serial_port = None
+        self.config = config
         self.running = True
-        self.use_simulation = use_simulation
         
-        self.serial_lock = threading.Lock()
-
-        # State terpusat untuk menyimpan semua data penting ASV
-        self.current_state = {
-            "control_mode": "MANUAL",
-            "latitude": -6.9180, "longitude": 107.6185, "heading": 90.0,
-            "cog": 0.0, "speed": 0.0, "battery_voltage": 12.5,
-            "status": "DISCONNECTED", "mission_time": "00:00:00",
-            "waypoints": [], "current_waypoint_index": 0,
-            "manual_keys": set(),
-        }
-        self.vision_override_active = False
+        # Ambil alamat IP backend dari config.json, default ke localhost ('127.0.0.1')
+        backend_config = self.config.get("backend_connection", {})
+        self.base_url = f"http://{backend_config.get('ip_address', '127.0.0.1')}:{backend_config.get('port', 5000)}"
         
-        if self.use_simulation:
-            self._logic_thread = threading.Thread(target=self._simulation_loop, daemon=True)
-            print("ApiClient berjalan dalam MODE SIMULASI.")
-        else:
-            self._read_thread = threading.Thread(target=self._read_from_serial, daemon=True)
-            self._logic_thread = threading.Thread(target=self._main_logic_loop, daemon=True)
-            self._read_thread.start()
-            print("ApiClient berjalan dalam MODE HARDWARE.")
-        
-        self._logic_thread.start()
+        # State hanya digunakan untuk perbandingan, sumber kebenaran ada di backend
+        self.current_state = {}
 
-    # --- Bagian Komunikasi Serial & Hardware ---
+        # Thread untuk secara terus-menerus meminta status terbaru dari backend
+        self._poll_thread = threading.Thread(target=self._poll_status_loop, daemon=True)
+        self._poll_thread.start()
+        print(f"ApiClient berjalan dalam MODE HTTP CLIENT, menargetkan backend di {self.base_url}")
 
-    def _read_from_serial(self):
-        while self.running:
-            port = None
-            with self.serial_lock:
-                if self.serial_port and self.serial_port.is_open:
-                    port = self.serial_port
-            if port:
-                try:
-                    line = port.readline().decode('utf-8', errors='ignore').strip()
-                    if line and line.startswith("T:"):
-                        self._parse_telemetry(line)
-                except (serial.SerialException, TypeError, OSError):
-                    self.disconnect_serial()
-            else:
-                time.sleep(0.5)
-
-    def _parse_telemetry(self, line):
+    def _send_command(self, endpoint, payload):
+        """Fungsi helper untuk mengirim perintah POST ke backend."""
         try:
-            parts = line.strip('T:').split(';')
-            for part in parts:
-                data = part.split(',')
-                if data[0] == "GPS":
-                    self.current_state['latitude'] = float(data[1])
-                    self.current_state['longitude'] = float(data[2])
-                elif data[0] == "COMP":
-                    self.current_state['heading'] = float(data[1])
-                elif data[0] == "SPD":
-                    self.current_state['speed'] = float(data[1])
-                elif data[0] == "BAT":
-                    self.current_state['battery_voltage'] = float(data[1])
-            self.data_updated.emit(self.current_state.copy())
-        except (ValueError, IndexError) as e:
-            print(f"Error parsing telemetri: {e} - Data: {line}")
+            url = f"{self.base_url}/{endpoint}"
+            response = requests.post(url, json=payload, timeout=2) # Timeout 2 detik
+            if response.status_code == 200:
+                print(f"Perintah '{payload.get('command')}' berhasil dikirim.")
+                return response.json()
+            else:
+                print(f"Gagal mengirim perintah: {response.status_code}")
+                self.connection_status_changed.emit(False, f"Backend Error: {response.status_code}")
+        except requests.RequestException:
+            # Error koneksi (mis. backend tidak berjalan)
+            self.connection_status_changed.emit(False, "Backend tidak terjangkau")
+        return None
+
+    def _poll_status_loop(self):
+        """Secara periodik (setiap 0.5 detik) meminta state terbaru dari backend."""
+        while self.running:
+            try:
+                response = requests.get(f"{self.base_url}/status", timeout=2)
+                if response.status_code == 200:
+                    new_state = response.json()
+                    
+                    # --- PERBAIKAN DI SINI ---
+                    # Selalu emit data_updated agar thread kamera dan komponen lain
+                    # selalu mendapat data telemetri terbaru, bahkan jika kapal diam.
+                    self.current_state = new_state
+                    self.data_updated.emit(self.current_state)
+                    # -------------------------
+                    
+                    # Tampilkan status koneksi berdasarkan data dari backend
+                    is_serial_connected = new_state.get('is_connected_to_serial', False)
+                    status_message = "Backend & Serial Terhubung" if is_serial_connected else "Backend OK (Serial Disconnected)"
+                    self.connection_status_changed.emit(True, status_message)
+                else:
+                    self.connection_status_changed.emit(False, f"Backend Error ({response.status_code})")
+            except requests.RequestException:
+                self.connection_status_changed.emit(False, "Menunggu koneksi Backend...")
+            
+            time.sleep(0.5) # Interval polling status
+
+    # --- KUMPULAN SLOT UNTUK MENANGANI SINYAL DARI GUI ---
 
     @Slot(dict)
     def connect_to_port(self, connection_details):
-        self.disconnect_serial()
-        time.sleep(0.1)
-        port_name = connection_details.get("serial_port")
-        baudrate = connection_details.get("baud_rate")
-        if port_name == "AUTO":
-            self.find_and_connect_esp32(baudrate)
-        else:
-            self.connect_manual(port_name, baudrate)
+        """Mengirim permintaan ke backend untuk terhubung ke port serial."""
+        print(f"GUI meminta koneksi serial: {connection_details}")
+        payload = {"command": "CONFIGURE_SERIAL", "payload": connection_details}
+        self._send_command("command", payload)
 
-    def connect_manual(self, port_name, baudrate):
-        try:
-            print(f"Mencoba terhubung ke {port_name}...")
-            new_port = serial.Serial(port_name, baudrate, timeout=1)
-            with self.serial_lock:
-                self.serial_port = new_port
-            self.connection_status_changed.emit(True, f"Terhubung ke {port_name}")
-            self.current_state["status"] = "CONNECTED"
-            print(f"Berhasil terhubung ke {port_name}")
-        except serial.SerialException as e:
-            self.connection_status_changed.emit(False, f"Gagal membuka {port_name}: {e}")
-            with self.serial_lock:
-                self.serial_port = None
-
-    def find_and_connect_esp32(self, baudrate):
-        ports = serial.tools.list_ports.comports()
-        esp32_port = None
-        # Gunakan deskriptor dari file config
-        descriptors = self.config.get("serial_connection", {}).get("auto_connect_descriptors", [])
-        for port in ports:
-            for desc in descriptors:
-                if desc in port.description:
-                    esp32_port = port.device
-                    break
-            if esp32_port:
-                break
-        
-        if esp32_port:
-            self.connect_manual(esp32_port, baudrate)
-        else:
-            self.connection_status_changed.emit(False, "ESP32 tidak ditemukan")
-
-    def disconnect_serial(self):
-        with self.serial_lock:
-            if self.serial_port and self.serial_port.is_open:
-                try:
-                    self.serial_port.close()
-                    print(f"Port {self.serial_port.port} berhasil ditutup.")
-                except Exception as e:
-                    print(f"Error saat menutup port: {e}")
-                self.serial_port = None
-                self.current_state["status"] = "DISCONNECTED"
-                self.connection_status_changed.emit(False, "Koneksi terputus")
-
-    def send_serial_command(self, command_string):
-        if self.use_simulation:
-            print(f"[SIMULASI] Mengirim Perintah: {command_string.strip()}")
-            return
-        with self.serial_lock:
-            if self.serial_port and self.serial_port.is_open:
-                try:
-                    self.serial_port.write(command_string.encode('utf-8'))
-                except (serial.SerialException, TypeError, OSError) as e:
-                    print(f"Gagal mengirim data: {e}")
-                    self.disconnect_serial()
-
-    # --- Bagian Logika Navigasi & Simulasi ---
-
-    def _main_logic_loop(self):
-        while self.running:
-            time.sleep(0.2)
-            if self.current_state.get("control_mode") != "AUTO" or self.vision_override_active:
-                self.current_state['cog'] = self.current_state.get('heading', 0.0)
-                continue
-            self.run_pure_pursuit_logic()
-    
-    def _simulation_loop(self):
-        start_time = time.time()
-        while self.running:
-            turn_rate, speed_ms = 0.0, 0.0
-            if self.current_state["control_mode"] == "MANUAL":
-                keys = self.current_state.get("manual_keys", set())
-                speed_ms = 1.0 if 'W' in keys else -1.0 if 'S' in keys else 0
-                turn_input = 1 if 'D' in keys else -1 if 'A' in keys else 0
-                turn_rate = turn_input * 3.0
-                self.current_state["status"] = "MANUAL CONTROL" if keys else "IDLE"
-            elif self.current_state["control_mode"] == "AUTO":
-                turn_rate = self.run_pure_pursuit_logic(is_simulation=True)
-                speed_ms = 1.2
-            
-            self.current_state["heading"] = (self.current_state["heading"] + turn_rate) % 360
-            rad_heading = math.radians(self.current_state["heading"])
-            speed_factor = speed_ms * 0.000009
-            self.current_state["latitude"] += math.cos(rad_heading) * speed_factor
-            self.current_state["longitude"] += math.sin(rad_heading) * speed_factor
-            self.current_state["speed"] = abs(speed_ms)
-            elapsed = time.time() - start_time
-            self.current_state["mission_time"] = time.strftime('%H:%M:%S', time.gmtime(elapsed))
-            self.data_updated.emit(self.current_state.copy())
-            time.sleep(0.1)
-
-    def run_pure_pursuit_logic(self, is_simulation=False):
-        waypoints = self.current_state.get("waypoints", [])
-        wp_index = self.current_state.get("current_waypoint_index", 0)
-
-        # Ambil parameter dari config
-        nav_config = self.config.get("navigation", {})
-        actuator_config = self.config.get("actuators", {})
-        
-        if not waypoints or wp_index >= len(waypoints):
-            if not is_simulation:
-                pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
-                servo_default = actuator_config.get("servo_default_angle", 90)
-                self.send_serial_command(f"S{pwm_stop};D{servo_default}\n")
-            self.current_state['cog'] = self.current_state.get('heading', 0.0)
-            return 0.0
-
-        current_lat, current_lon, current_heading = self.current_state.get("latitude", 0.0), self.current_state.get("longitude", 0.0), self.current_state.get("heading", 0.0)
-        target_wp = waypoints[wp_index]
-        target_bearing = self._get_bearing_to_point(current_lat, current_lon, target_wp['lat'], target_wp['lon'])
-        self.current_state['cog'] = target_bearing
-        
-        distance_to_wp = self._haversine_distance(current_lat, current_lon, target_wp['lat'], target_wp['lon'])
-        reach_distance = nav_config.get("waypoint_reach_distance_m", 7.0)
-
-        if distance_to_wp < reach_distance:
-            print(f"Waypoint {wp_index + 1} tercapai. Lanjut ke waypoint berikutnya.")
-            self.current_state["current_waypoint_index"] += 1
-            return 0.0
-
-        turn_error = (target_bearing - current_heading + 180) % 360 - 180
-        
-        if is_simulation:
-            speed = 1.2
-            lookahead = nav_config.get("pure_pursuit_lookahead_distance_m", 15.0)
-            turn_rate_rad = (2 * speed * math.sin(math.radians(turn_error))) / lookahead
-            turn_rate_deg = math.degrees(turn_rate_rad) * 0.1
-            return max(-4.0, min(4.0, turn_rate_deg))
-        else:
-            servo_min = actuator_config.get("servo_min_angle", 45)
-            servo_max = actuator_config.get("servo_max_angle", 135)
-            servo_default = actuator_config.get("servo_default_angle", 90)
-            
-            motor_base = actuator_config.get("motor_pwm_auto_base", 1650)
-            motor_reduction = actuator_config.get("motor_pwm_auto_reduction", 100)
-            
-            servo_angle = max(servo_min, min(servo_max, int(servo_default - (turn_error / 90.0) * (servo_default - servo_min))))
-            motor_pwm = int(motor_base - (abs(turn_error) / 90.0) * motor_reduction)
-            
-            self.send_serial_command(f"S{motor_pwm};D{servo_angle}\n")
-            return 0.0
-
-    # --- Bagian Fungsi Helper & Kalkulasi ---
-    def _haversine_distance(self, lat1, lon1, lat2, lon2):
-        R = 6371000; lat1_rad, lon1_rad, lat2_rad, lon2_rad = map(math.radians, [lat1, lon1, lat2, lon2]); dlon, dlat = lon2_rad - lon1_rad, lat2_rad - lat1_rad; a = math.sin(dlat / 2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2)**2; c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)); return R * c
-    def _get_bearing_to_point(self, lat1, lon1, lat2, lon2):
-        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2]); dLon = lon2 - lon1; y = math.sin(dLon) * math.cos(lat2); x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLon); return (math.degrees(math.atan2(y, x)) + 360) % 360
-
-    # --- Bagian Slot untuk Interaksi GUI ---
     @Slot(str)
     def handle_mode_change(self, mode):
-        print(f"--- [ApiClient] Mode diubah menjadi: {mode} ---")
-        self.current_state["control_mode"] = mode
-        self.mode_changed_for_video.emit(mode)
+        """Mengirim perubahan mode (MANUAL/AUTO) ke backend."""
+        payload = {"command": "CHANGE_MODE", "payload": mode}
+        self._send_command("command", payload)
 
     @Slot(list)
     def handle_manual_keys(self, keys):
-        if self.current_state.get("control_mode") != "MANUAL": return
-        if self.use_simulation:
-            self.current_state["manual_keys"] = set(keys)
-        else:
-            actuator_config = self.config.get("actuators", {})
-            pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
-            pwm_power = actuator_config.get("motor_pwm_manual_power", 150)
-            servo_default = actuator_config.get("servo_default_angle", 90)
-            servo_min = actuator_config.get("servo_min_angle", 45)
-
-            forward_input = 1 if 'W' in keys else -1 if 'S' in keys else 0
-            turn_input = 1 if 'D' in keys else -1 if 'A' in keys else 0
-            
-            motor_pwm = pwm_stop + forward_input * pwm_power
-            servo_angle = max(0, min(180, int(servo_default - turn_input * (servo_default - servo_min))))
-            self.send_serial_command(f"S{motor_pwm};D{servo_angle}\n")
+        """Mengirim tombol keyboard yang sedang ditekan ke backend untuk kontrol manual."""
+        payload = {"command": "MANUAL_CONTROL", "payload": keys}
+        self._send_command("command", payload)
 
     @Slot(list)
     def set_waypoints(self, waypoints):
-        print(f"Menerima {len(waypoints)} waypoints baru dari GUI.")
-        self.current_state["waypoints"] = waypoints
-        self.current_state["current_waypoint_index"] = 0
+        """Mengirim daftar waypoints baru ke backend."""
+        payload = {"command": "SET_WAYPOINTS", "payload": waypoints}
+        self._send_command("command", payload)
 
     @Slot(dict)
     def handle_vision_status(self, vision_data):
-        if self.current_state.get("control_mode") != "AUTO": return
-        status, command = vision_data.get('status'), vision_data.get('command')
-        self.vision_override_active = (status == 'ACTIVE')
-        if self.vision_override_active and command: self.send_serial_command(command)
+        """Mengirim status dari modul computer vision ke backend untuk override."""
+        payload = {"command": "VISION_OVERRIDE", "payload": vision_data}
+        self._send_command("command", payload)
 
     def shutdown(self):
+        """Memastikan thread polling berhenti saat aplikasi ditutup."""
         print("Memulai prosedur shutdown ApiClient...")
         self.running = False
-        if not self.use_simulation:
-            self.disconnect_serial()
-            if hasattr(self, '_read_thread') and self._read_thread.is_alive(): self._read_thread.join(timeout=1.0)
-        if self._logic_thread.is_alive(): self._logic_thread.join(timeout=1.0)
+        if self._poll_thread.is_alive():
+            self._poll_thread.join(timeout=1.0)
         print("ApiClient shutdown selesai.")
