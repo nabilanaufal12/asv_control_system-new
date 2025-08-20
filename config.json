@@ -29,9 +29,16 @@
     "single_ball_real_width_cm": 10.0,
     "dual_ball_real_width_cm": 200.0
   },
+  "vision": {
+    "device": "cpu",
+    "conf_threshold": 0.35,
+    "iou_threshold": 0.5,
+    "debug": true,
+    "camera_index": 0
+  },
   "api_urls": {
     "firebase_url": "https://asv-2025-default-rtdb.asia-southeast1.firebasedatabase.app/monitor.json",
     "supabase_endpoint": "https://ngmicoyombtgtlegdjzn.supabase.co/storage/v1/object/navantara/{filename}",
-    "supabase_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nbWljb3lvbWJ0Z3RsZWdkanpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5NjkwOTMsImV4cCI6MjA2OTU0NTA5M30.tz7_mfVaX_5sWO3xtSQ1h85JAIRrL6iC4ZNm0TaUTdI"
+    "supabase_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
   }
 }

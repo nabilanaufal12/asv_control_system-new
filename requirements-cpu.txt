@@ -1,0 +1,24 @@
+# Core deep learning
+torch==2.2.2+cpu
+torchvision==0.17.2+cpu
+torchaudio==2.2.2+cpu
+-f https://download.pytorch.org/whl/torch_stable.html
+
+# YOLOv5 dependencies
+opencv-python
+numpy<2.0  # kompatibel
+pandas
+matplotlib
+scipy
+seaborn
+tqdm
+pyyaml
+requests
+
+# Flask backend
+flask
+flask-socketio
+eventlet
+
+# Extra tools
+psutil

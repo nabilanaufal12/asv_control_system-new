@@ -1,17 +1,15 @@
 # backend/main.py
-# --- MODIFIKASI: Mengimpor socketio dari extensions.py untuk mengatasi Circular Import ---
+# --- FINAL: Integrasi Flask + SocketIO + VisionService (stream video ke video.html) ---
 
 import json
 import os
 from flask import Flask, g, current_app
-# 1. Impor instance socketio dari file extensions.py yang baru
-from backend.extensions import socketio
+from backend.extensions import socketio   # gunakan socketio dari extensions.py
 
 from backend.core.asv_handler import AsvHandler
 from backend.services.vision_service import VisionService
 from backend.api.endpoints import api_blueprint
 
-# (Baris 'socketio = SocketIO(...)' telah dihapus dari sini)
 
 def create_app():
     """
@@ -19,7 +17,7 @@ def create_app():
     """
     app = Flask(__name__)
 
-    # Memuat Konfigurasi dari file config.json
+    # 🔹 Muat konfigurasi dari config.json
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(script_dir, '..', 'config.json')
@@ -28,37 +26,38 @@ def create_app():
         print("[Server] File 'config.json' berhasil dimuat.")
     except Exception as e:
         print(f"[Server] KRITIS: Gagal memuat config.json. Error: {e}")
-        exit()
+        exit(1)
 
-    # Teruskan instance socketio yang sudah diimpor ke dalam AsvHandler
+    # 🔹 Buat handler utama + vision service, passing socketio
     asv_handler = AsvHandler(app.config['ASV_CONFIG'], socketio)
-    vision_service = VisionService(app.config['ASV_CONFIG'], asv_handler)
+    vision_service = VisionService(app.config['ASV_CONFIG'], asv_handler, socketio=socketio)
 
-    # Menyimpan instance service di 'app' untuk stabilitas
+    # 🔹 Simpan ke dalam app untuk akses global
     app.asv_handler = asv_handler
     app.vision_service = vision_service
 
+    # 🔹 Inject ke request context (biar bisa diakses lewat g)
     @app.before_request
     def before_request():
         g.asv_handler = current_app.asv_handler
         g.vision_service = current_app.vision_service
 
-    # Daftarkan semua rute API dari file endpoints.py
+    # 🔹 Daftarkan semua endpoint API
     app.register_blueprint(api_blueprint)
-    
-    # Inisialisasi aplikasi Flask ke dalam SocketIO
-    socketio.init_app(app)
-    
-    # Mulai service background (kamera & deteksi)
+
+    # 🔹 Integrasi Flask ke dalam SocketIO
+    socketio.init_app(app, cors_allowed_origins="*")
+
+    # 🔹 Jalankan Vision Service (kamera & deteksi)
     print("🚀 Memulai layanan visi...")
     vision_service.start()
-    
+
     return app
 
+
 if __name__ == "__main__":
-    # Buat aplikasi menggunakan "pabrik" di atas
+    # 🔹 Buat app & jalankan server dengan socketio
     app = create_app()
-    print("🚀 Memulai Backend Server ASV dengan dukungan WebSockets...")
-    
-    # Jalankan server menggunakan socketio.run, bukan app.run
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    print("🚀 Backend Server ASV aktif dengan dukungan WebSockets...")
+
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
