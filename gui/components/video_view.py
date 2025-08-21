@@ -1,185 +1,148 @@
 # gui/components/video_view.py
-# --- MODIFIKASI FINAL: Otomatis memilih kamera pertama yang aktif saat startup ---
+# --- VERSI FINAL: Disederhanakan dengan menghapus pilihan kamera manual ---
 
-import cv2
-import requests
-import numpy as np
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QComboBox
-from PySide6.QtCore import Signal, Slot, Qt, QThread
+import base64
+import socketio
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QSizePolicy
+from PySide6.QtCore import Signal, Slot, Qt, QThread, QObject
 from PySide6.QtGui import QImage, QPixmap
 
-class VideoStreamThread(QThread):
-    """Thread untuk mengambil stream video dari URL backend secara terus-menerus."""
-    frame_ready = Signal(np.ndarray)
-    connection_error = Signal(str)
+class KlienSocketIO(QObject):
+    """
+    Worker yang berjalan di thread terpisah untuk menangani komunikasi Socket.IO.
+    """
+    frame_baru = Signal(str)
+    status_koneksi = Signal(str)
 
-    def __init__(self, stream_url, parent=None):
-        super().__init__(parent)
-        self.stream_url = stream_url
-        self.running = False
+    def __init__(self, url_server):
+        super().__init__()
+        self.url_server = url_server
+        self.sio = socketio.Client(reconnection_attempts=5, reconnection_delay=1)
+        self.setup_event_handler()
 
-    def run(self):
-        """Mulai mengambil stream video dan memancarkan frame."""
-        self.running = True
+    def setup_event_handler(self):
+        """Mendefinisikan handler untuk event dari Socket.IO."""
+        @self.sio.event
+        def connect():
+            self.status_koneksi.emit("Terhubung")
+            print("GUI: Berhasil terhubung ke server WebSocket!")
+
+        @self.sio.on('video_frame')
+        def on_video_frame(data):
+            self.frame_baru.emit(data)
+
+        @self.sio.event
+        def connect_error(data):
+            self.status_koneksi.emit("Koneksi Gagal")
+            print(f"GUI: Gagal terhubung ke server: {data}")
+
+        @self.sio.event
+        def disconnect():
+            self.status_koneksi.emit("Terputus")
+            print("GUI: Terputus dari server.")
+
+    def jalankan(self):
+        """Menghubungkan ke server dan menunggu event."""
         try:
-            with requests.get(self.stream_url, stream=True, timeout=(5, 10)) as r:
-                r.raise_for_status()
-                bytes_buffer = bytes()
-                for chunk in r.iter_content(chunk_size=8192):
-                    if not self.running:
-                        break
-                    
-                    bytes_buffer += chunk
-                    a = bytes_buffer.find(b'\\xff\\xd8')
-                    b = bytes_buffer.find(b'\\xff\\xd9')
-                    
-                    if a != -1 and b != -1:
-                        jpg = bytes_buffer[a:b+2]
-                        bytes_buffer = bytes_buffer[b+2:]
-                        frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
-                        if frame is not None:
-                            self.frame_ready.emit(frame)
-        except requests.exceptions.RequestException as e:
-            error_message = f"Koneksi video stream gagal.\\nPastikan backend berjalan di {self.stream_url.split('/video_feed')[0]}\\n"
-            self.connection_error.emit(error_message)
-        finally:
-            self.running = False
+            self.sio.connect(self.url_server, transports=['websocket'])
+            self.sio.wait()
+        except socketio.exceptions.ConnectionError as e:
+            self.status_koneksi.emit("Error")
+            print(f"GUI: Terjadi kesalahan koneksi: {e}")
 
-    def stop(self):
-        self.running = False
+    def kirim_perintah(self, perintah, payload=None):
+        """Mengirim perintah ke backend melalui WebSocket."""
+        if self.sio.connected:
+            self.sio.emit('command', {'command': perintah, 'payload': payload})
+        else:
+            print(f"GUI: Tidak dapat mengirim perintah '{perintah}', koneksi tidak ada.")
+
+    def berhenti(self):
+        """Memutuskan koneksi klien."""
+        if self.sio.connected:
+            self.sio.disconnect()
+
 
 class VideoView(QWidget):
-    """Widget utama yang menampilkan video dan kontrolnya."""
+    """Widget utama yang menampilkan feed video dan kontrolnya."""
     def __init__(self, config, parent=None):
         super().__init__(parent)
         
-        backend_config = config.get("backend_connection", {})
-        ip = backend_config.get('ip_address', '127.0.0.1')
-        port = backend_config.get('port', 5000)
-        self.base_url = f"http://{ip}:{port}"
-        stream_url = f"{self.base_url}/video_feed"
+        config_backend = config.get("backend_connection", {})
+        ip = config_backend.get('ip_address', '127.0.0.1')
+        port = config_backend.get('port', 5000)
+        url_server = f"http://{ip}:{port}"
 
-        self.camera_selector = QComboBox()
-        self.refresh_button = QPushButton("Refresh List")
-        self.invert_button = QPushButton("Invert Logic")
-        self.invert_button.setCheckable(True)
+        # --- Pengaturan Tampilan (UI) yang Disederhanakan ---
+        self.tombol_invert = QPushButton("Invert Logic")
+        self.tombol_invert.setCheckable(True)
 
-        control_layout = QHBoxLayout()
-        control_layout.addWidget(QLabel("Sumber Kamera:"))
-        control_layout.addWidget(self.camera_selector, 1)
-        control_layout.addWidget(self.refresh_button)
-        control_layout.addWidget(self.invert_button)
+        layout_kontrol = QHBoxLayout()
+        layout_kontrol.addStretch() # Mendorong tombol ke kanan
+        layout_kontrol.addWidget(self.tombol_invert)
         
-        self.label = QLabel("Menghubungkan ke Video Stream...")
-        self.label.setAlignment(Qt.AlignCenter)
-        self.label.setMinimumSize(640, 480)
-        self.label.setStyleSheet("background-color: #2c3e50; color: white; font-size: 16px;")
+        self.label_video = QLabel("Menghubungkan ke Stream Video...")
+        self.label_video.setAlignment(Qt.AlignCenter)
+        self.label_video.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.label_video.setMinimumSize(640, 480)
+        self.label_video.setStyleSheet("background-color: black; color: white; font-size: 16px;")
 
-        main_layout = QVBoxLayout(self)
-        main_layout.addLayout(control_layout)
-        main_layout.addWidget(self.label, 1)
+        layout_utama = QVBoxLayout(self)
+        layout_utama.addLayout(layout_kontrol)
+        layout_utama.addWidget(self.label_video, 1)
 
-        self.stream_thread = VideoStreamThread(stream_url)
-        self.stream_thread.frame_ready.connect(self.set_frame)
-        self.stream_thread.connection_error.connect(self.show_error_message)
-        self.stream_thread.start()
+        # --- Pengaturan Thread WebSocket ---
+        self.thread_socket = QThread()
+        self.klien_socket = KlienSocketIO(url_server)
+        self.klien_socket.moveToThread(self.thread_socket)
+
+        # Hubungkan sinyal dari worker ke slot
+        self.thread_socket.started.connect(self.klien_socket.jalankan)
+        self.klien_socket.frame_baru.connect(self.update_frame_video)
+        self.klien_socket.status_koneksi.connect(self.update_status_koneksi)
         
-        self.refresh_button.clicked.connect(self.refresh_camera_list)
-        self.invert_button.clicked.connect(self.toggle_inversion)
-        self.camera_selector.currentIndexChanged.connect(self.select_camera_from_dropdown)
-        
-        # --- PERUBAHAN UTAMA: Panggil fungsi untuk otomatisasi di sini ---
-        self.find_and_select_camera()
+        # Hubungkan sinyal dari elemen UI
+        self.tombol_invert.clicked.connect(self.toggle_inversi)
 
-    def send_vision_command(self, command, payload=None):
-        """Fungsi helper untuk mengirim perintah ke endpoint visi di backend."""
-        try:
-            requests.post(f"{self.base_url}/vision_command", json={"command": command, "payload": payload}, timeout=2)
-        except requests.RequestException as e:
-            print(f"Gagal mengirim perintah visi '{command}': {e}")
-
-    def find_and_select_camera(self):
-        """
-        Secara otomatis meminta daftar kamera dari backend, lalu memilih yang pertama.
-        """
-        print("Mencari kamera aktif secara otomatis...")
-        try:
-            response = requests.get(f"{self.base_url}/list_cameras", timeout=3)
-            if response.status_code == 200:
-                self.camera_selector.blockSignals(True)
-                self.camera_selector.clear()
-                cameras = response.json().get("cameras", [])
-                
-                if cameras:
-                    print(f"✅ Kamera ditemukan di indeks: {cameras}")
-                    # Isi dropdown untuk pilihan manual nanti
-                    self.camera_selector.addItems([f"Kamera {cam}" for cam in cameras])
-                    
-                    # --- LOGIKA OTOMATISASI ---
-                    # Ambil indeks kamera pertama dari daftar dan kirim perintah ke backend
-                    first_camera_index = cameras[0]
-                    print(f"Otomatis memilih kamera pertama: Indeks {first_camera_index}")
-                    self.send_vision_command("SELECT_CAMERA", first_camera_index)
-                    # -------------------------
-                else:
-                    print("❌ Tidak ada kamera yang ditemukan oleh backend.")
-                    self.camera_selector.addItem("Tidak ada kamera")
-                
-                self.camera_selector.blockSignals(False)
-            else:
-                print("Gagal mengambil daftar kamera dari backend.")
-        except requests.RequestException as e:
-            print(f"Gagal terhubung ke backend untuk mencari kamera: {e}")
-
-    def refresh_camera_list(self):
-        """Fungsi ini sekarang hanya untuk tombol Refresh manual."""
-        self.find_and_select_camera() # Cukup panggil fungsi utama lagi
-
-    def toggle_inversion(self):
-        """Mengirim status tombol 'Invert' ke backend."""
-        is_checked = self.invert_button.isChecked()
-        self.send_vision_command("SET_INVERT", is_checked)
-        if is_checked:
-            self.invert_button.setStyleSheet("background-color: #e74c3c; color: white;")
-        else:
-            self.invert_button.setStyleSheet("")
-            
-    def select_camera_from_dropdown(self, index):
-        """Mengirim indeks kamera yang DIPILIH PENGGUNA dari dropdown ke backend."""
-        if index < 0: return
-        cam_text = self.camera_selector.itemText(index)
-        try:
-            cam_index = int(cam_text.split(" ")[1])
-            print(f"Pengguna memilih kamera dari dropdown: Indeks {cam_index}")
-            self.send_vision_command("SELECT_CAMERA", cam_index)
-        except (IndexError, ValueError):
-            pass
-
-    @Slot(np.ndarray)
-    def set_frame(self, frame):
-        if frame is None: return
-        try:
-            h, w, ch = frame.shape
-            bytes_per_line = ch * w
-            qt_image = QImage(frame.data, w, h, bytes_per_line, QImage.Format_RGB888).rgbSwapped()
-            pixmap = QPixmap.fromImage(qt_image)
-            self.label.setPixmap(pixmap.scaled(self.label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        except Exception:
-            pass
+        # Jalankan thread
+        self.thread_socket.start()
 
     @Slot(str)
-    def show_error_message(self, message):
-        """Menampilkan pesan error jika koneksi video stream gagal."""
-        self.label.setText(message)
-        self.label.setStyleSheet("background-color: #c0392b; color: white; font-size: 14px; text-align: center;")
+    def update_frame_video(self, string_base64):
+        """Mendekode string base64 dan memperbarui label video dengan frame baru."""
+        try:
+            data_gambar = base64.b64decode(string_base64)
+            gambar = QImage()
+            gambar.loadFromData(data_gambar, "JPG")
+            pixmap = QPixmap.fromImage(gambar)
+            self.label_video.setPixmap(pixmap.scaled(self.label_video.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        except Exception as e:
+            print(f"GUI Error: Gagal memproses frame video: {e}")
+            
+    @Slot(str)
+    def update_status_koneksi(self, status):
+        """Memperbarui teks label berdasarkan status koneksi."""
+        # Hanya tampilkan status jika tidak sedang menampilkan video
+        if status != "Terhubung":
+            # Periksa apakah label sedang menampilkan gambar atau tidak
+            if not self.label_video.pixmap() or self.label_video.pixmap().isNull():
+                 self.label_video.setText(f"Status Koneksi: {status}")
 
-    def stop_camera(self):
-        """Metode untuk menghentikan thread video saat aplikasi ditutup."""
-        if self.stream_thread.isRunning():
-            self.stream_thread.stop()
-            self.stream_thread.wait(2000)
-
+    def toggle_inversi(self):
+        """Mengirim status tombol 'Invert' ke backend."""
+        tercentang = self.tombol_invert.isChecked()
+        self.klien_socket.kirim_perintah("SET_INVERT", tercentang)
+        self.tombol_invert.setStyleSheet("background-color: #e74c3c; color: white;" if tercentang else "")
+            
     @Slot(str)
     def set_mode(self, mode):
-        """Mengirim status mode (AUTO/MANUAL) ke backend."""
-        self.send_vision_command("SET_MODE", mode)
+        """Mengirim mode ASV (AUTO/MANUAL) ke backend."""
+        self.klien_socket.kirim_perintah("SET_MODE", mode)
+
+    def closeEvent(self, event):
+        """Menghentikan thread WebSocket dengan bersih saat widget ditutup."""
+        print("GUI: Menutup VideoView, menghentikan klien WebSocket...")
+        self.klien_socket.berhenti()
+        self.thread_socket.quit()
+        self.thread_socket.wait(2000)
+        super().closeEvent(event)

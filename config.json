@@ -34,7 +34,7 @@
     "conf_threshold": 0.35,
     "iou_threshold": 0.5,
     "debug": true,
-    "camera_index": 0
+    "camera_index": 1
   },
   "api_urls": {
     "firebase_url": "https://asv-2025-default-rtdb.asia-southeast1.firebasedatabase.app/monitor.json",

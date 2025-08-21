@@ -1,94 +1,80 @@
-# gui/components/camera/overlay_utils.py
-# --- FINAL: Menampilkan HDG dan COG secara terpisah ---
+# backend/vision/overlay_utils.py
+# --- VERSI FINAL: Menggunakan OpenCV untuk membuat overlay, menghapus imgkit ---
 
 import cv2
 import time
-import random
-import imgkit
-import numpy as np
 from datetime import datetime
-from pathlib import Path
-
-# Konfigurasi wkhtmltoimage (pastikan path ini benar untuk sistem Anda)
-path_wkhtmltoimage = r'C:\Program Files\wkhtmltopdf\bin\wkhtmltoimage.exe'
-config = imgkit.config(wkhtmltoimage=path_wkhtmltoimage)
-
 
 def create_overlay_from_html(telemetry_data, mission_type="Surface Imaging"):
     """
-    Membuat satu gambar overlay utuh (header + info) dari template HTML.
+    Fungsi ini sekarang menjadi pembungkus untuk fungsi OpenCV yang baru.
+    Ini mempertahankan nama fungsi yang sama agar tidak perlu mengubah vision_service.py
+    secara signifikan.
+
+    Args:
+        telemetry_data: Dictionary berisi data telemetri.
+        mission_type: String nama misi (misal: "Surface Imaging").
+
+    Returns:
+        Gambar overlay kosong berukuran 640x480 jika diperlukan, atau None.
+        Logika utama dipindahkan ke vision_service untuk akses langsung ke frame.
     """
-    # --- 1. Ambil dan Format Data ---
-    now = datetime.now()
+    # Fungsi ini tidak lagi membuat gambar sendiri karena membutuhkan frame asli.
+    # Logika overlay akan dipanggil langsung dari vision_service.
+    # Namun, kita biarkan kerangkanya di sini untuk menjaga konsistensi impor.
+    return None
+
+def apply_overlay(background, telemetry_data, mission_type=""):
+    """
+    Menggambar overlay data telemetri langsung ke frame gambar menggunakan OpenCV.
+    Ini menggantikan fungsi lama dan logika imgkit.
+
+    Args:
+        background: Frame gambar (NumPy array) yang akan digambar.
+        telemetry_data: Dictionary berisi data telemetri.
+        mission_type: String nama misi (misal: "Surface Imaging").
+
+    Returns:
+        Frame gambar dengan overlay yang sudah digambar.
+    """
+    # Konfigurasi untuk tampilan teks
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.55
+    font_color = (255, 255, 255) # Putih
+    thickness = 1
+    line_type = cv2.LINE_AA
+
+    # Buat latar belakang semi-transparan untuk teks agar mudah dibaca
+    overlay = background.copy()
+    h, w, _ = background.shape
+    cv2.rectangle(overlay, (0, h - 110), (w, h), (0, 0, 0), -1) # Kotak hitam di bawah
+    alpha = 0.6 # Tingkat transparansi
+    frame_with_overlay = cv2.addWeighted(overlay, alpha, background, 1 - alpha, 0)
+
+    # Ambil dan format data telemetri
+    lat = telemetry_data.get('latitude', 0.0)
+    lon = telemetry_data.get('longitude', 0.0)
+    hdg = telemetry_data.get('heading', 0.0)
+    cog = telemetry_data.get('cog', 0.0)
+    sog_ms = telemetry_data.get('speed', 0.0)
+    sog_kts = sog_ms * 1.94384
     
-    # Ambil data dari telemetri, dengan nilai default yang cocok dengan firmware ESP32
-    lat = telemetry_data.get('latitude', -6.2088)
-    lon = telemetry_data.get('longitude', 106.8456)
-    sog_ms = telemetry_data.get('speed', 1.5)
-    heading = telemetry_data.get('heading', 0.0)      # Data HDG dari kompas
-    cog = telemetry_data.get('cog', 0.0)              # Data COG dari logika navigasi
-    battery_v = telemetry_data.get('battery_voltage', 11.5)
+    timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
-    day_map = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
+    # Siapkan teks yang akan ditampilkan
+    mission_text = f"Misi: {mission_type.upper()}"
+    lat_lon_text = f"Lat: {lat:.6f} | Lon: {lon:.6f}"
+    hdg_cog_text = f"HDG: {hdg:.2f} | COG: {cog:.2f}"
+    sog_text = f"SOG: {sog_kts:.2f} kts"
     
-    current_dir = Path(__file__).parent
-    assets_path = (current_dir.parents[1] / 'assets').as_uri()
-
-    replacements = {
-        "MISSION_TYPE": mission_type.upper(),
-        "TIME": now.strftime("%H:%M"),
-        "DATE_DAY": f"{day_map[now.weekday()]}, {now.strftime('%d/%m/%Y')}",
-        "LOCATION": "ASV NAVANTARA - UMRAH",
-        "LATITUDE": f"{abs(lat):.6f}°{'S' if lat < 0 else 'N'}",
-        "LONGITUDE": f"{abs(lon):.6f}°{'E' if lon >= 0 else 'W'}",
-        "SOG_KNOT": f"{sog_ms * 1.94384:.2f}",
-        "SOG_KMH": f"{sog_ms * 3.6:.2f}",
-        "HDG_DEG": f"{heading:.2f}", # Placeholder untuk Heading (HDG)
-        "COG_DEG": f"{cog:.2f}",   # Placeholder untuk Course Over Ground (COG)
-        "BATTERY_V": f"{battery_v:.2f} V",
-        "PHOTO_CODE": f"KKI25-{time.strftime('%H%M%S')}-{random.randint(100,999)}",
-        "ASSETS_PATH": assets_path
-    }
-
-    # --- 2. Baca Template HTML ---
-    try:
-        template_path = current_dir / "template.html"
-        with open(template_path, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-    except FileNotFoundError:
-        print(f"ERROR: File 'template.html' tidak ditemukan di {current_dir}")
-        return None
-
-    # --- 3. Ganti Placeholder ---
-    for key, value in replacements.items():
-        html_content = html_content.replace(f"{{{key}}}", str(value))
-
-    # --- 4. Konversi HTML ke Gambar ---
-    try:
-        options = {
-            'format': 'png',
-            'crop-w': '640', 'crop-h': '480',
-            'encoding': "UTF-8",
-            '--enable-local-file-access': None,
-            '--transparent': '', 
-            '--quiet': ''
-        }
-        img_bytes = imgkit.from_string(html_content, False, options=options, config=config)
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        return cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-    except Exception as e:
-        print(f"Error saat mengonversi HTML ke gambar: {e}")
-        return None
-
-def apply_overlay(background, overlay_image):
-    """Menempelkan gambar overlay ke gambar background."""
-    if overlay_image is None: return background
-    h, w, c = overlay_image.shape
-    if c < 4: return background
+    # Tulis setiap baris data ke frame
+    cv2.putText(frame_with_overlay, mission_text, (10, h - 85), font, font_scale, font_color, thickness, line_type)
+    cv2.putText(frame_with_overlay, lat_lon_text, (10, h - 60), font, font_scale, font_color, thickness, line_type)
+    cv2.putText(frame_with_overlay, hdg_cog_text, (10, h - 35), font, font_scale, font_color, thickness, line_type)
+    cv2.putText(frame_with_overlay, sog_text, (10, h - 10), font, font_scale, font_color, thickness, line_type)
     
-    alpha = overlay_image[:, :, 3] / 255.0
-    
-    for c_channel in range(0, 3):
-        background[0:h, 0:w, c_channel] = (alpha * overlay_image[:, :, c_channel] +
-                                          (1 - alpha) * background[0:h, 0:w, c_channel])
-    return background
+    # Tambahkan timestamp di pojok kanan bawah
+    (w_time, h_time), _ = cv2.getTextSize(timestamp, font, font_scale, thickness)
+    cv2.putText(frame_with_overlay, timestamp, (w - w_time - 10, h - 10), font, font_scale, font_color, thickness, line_type)
+
+    return frame_with_overlay
