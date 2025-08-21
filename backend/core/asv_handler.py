@@ -1,16 +1,23 @@
 # backend/core/asv_handler.py
-# --- MODIFIKASI: Mengirim pembaruan state melalui WebSockets ---
+# --- VERSI MODIFIKASI: Menggunakan Qt Signals, bukan WebSockets ---
 
 import threading
 import time
 from backend.services.serial_service import SerialHandler
 from backend.core.navigation import run_pure_pursuit_logic
+from PySide6.QtCore import QObject, Signal
 
-class AsvHandler:
-    # --- 1. MODIFIKASI: Terima 'socketio_instance' sebagai argumen ---
-    def __init__(self, config, socketio_instance):
+class AsvHandler(QObject):
+    """
+    Kelas 'otak' ASV yang sekarang berkomunikasi secara internal
+    menggunakan Qt Signals dalam satu aplikasi GUI.
+    """
+    # Definisikan sinyal untuk mengirim pembaruan state ke GUI
+    telemetry_updated = Signal(dict)
+
+    def __init__(self, config):
+        super().__init__()
         self.config = config
-        self.socketio = socketio_instance  # Simpan instance Socket.IO
         self.serial_handler = SerialHandler(config)
         self.running = True
         self.current_state = {
@@ -20,19 +27,20 @@ class AsvHandler:
             "current_waypoint_index": 0, "is_connected_to_serial": False,
         }
         self.vision_override_active = False
-        
+        print("[AsvHandler] Handler diinisialisasi.")
+
+    def start_threads(self):
+        """Memulai thread-thread yang berjalan di latar belakang."""
         self._read_thread = threading.Thread(target=self._read_from_serial_loop, daemon=True)
         self._logic_thread = threading.Thread(target=self._main_logic_loop, daemon=True)
         self._read_thread.start()
         self._logic_thread.start()
-        print("[AsvHandler] Handler dimulai.")
+        print("[AsvHandler] Thread-thread dimulai.")
 
-    # --- 2. MODIFIKASI: Fungsi baru untuk mengirim data via WebSocket ---
     def _update_and_emit_state(self):
-        """Fungsi helper untuk mengirim state terbaru ke semua klien GUI."""
-        # Memastikan socketio sudah siap sebelum mengirim
-        if self.socketio:
-            self.socketio.emit('telemetry_update', self.current_state)
+        """Fungsi helper untuk mengirim state terbaru melalui sinyal Qt."""
+        # Ganti socketio.emit dengan sinyal Qt
+        self.telemetry_updated.emit(self.current_state.copy())
 
     def _read_from_serial_loop(self):
         """Loop untuk membaca data telemetri dari hardware secara terus-menerus."""
@@ -46,7 +54,6 @@ class AsvHandler:
     def _parse_telemetry(self, line):
         """Mem-parsing string telemetri dan memperbarui state."""
         try:
-            # (Logika parsing tidak berubah)
             parts = line.strip('T:').split(';')
             for part in parts:
                 data = part.split(',')
@@ -56,8 +63,6 @@ class AsvHandler:
                 elif data[0] == "COMP": self.current_state['heading'] = float(data[1])
                 elif data[0] == "SPD": self.current_state['speed'] = float(data[1])
                 elif data[0] == "BAT": self.current_state['battery_voltage'] = float(data[1])
-            
-            # --- 3. MODIFIKASI: Panggil emit setelah parsing telemetri berhasil ---
             self._update_and_emit_state()
         except (ValueError, IndexError):
             pass
@@ -69,12 +74,10 @@ class AsvHandler:
             elapsed = time.time() - start_time
             self.current_state["mission_time"] = time.strftime('%H:%M:%S', time.gmtime(elapsed))
             
-            # Cek perubahan status koneksi serial
             new_connection_status = self.serial_handler.is_connected
             if self.current_state["is_connected_to_serial"] != new_connection_status:
                 self.current_state["is_connected_to_serial"] = new_connection_status
                 self.current_state["status"] = "CONNECTED" if new_connection_status else "DISCONNECTED"
-                # --- 4. MODIFIKASI: Panggil emit saat status koneksi berubah ---
                 self._update_and_emit_state()
 
             if self.current_state.get("control_mode") == "AUTO" and not self.vision_override_active:
@@ -82,10 +85,11 @@ class AsvHandler:
                 self.serial_handler.send_command(f"S{pwm};D{servo}\n")
             
             time.sleep(0.2)
+            # Panggil emit juga di sini agar mission_time selalu update di GUI
+            self._update_and_emit_state()
 
     def process_command(self, command, payload):
-        """Memproses perintah yang masuk dan mengirim state terbaru."""
-        # (Logika pemrosesan perintah tidak berubah)
+        """Memproses perintah yang masuk dari GUI."""
         if command == "CONFIGURE_SERIAL":
             port, baud = payload.get("serial_port"), payload.get("baud_rate")
             if port == "AUTO": self.serial_handler.find_and_connect_esp32(baud)
@@ -111,11 +115,16 @@ class AsvHandler:
             self.vision_override_active = (payload.get('status') == 'ACTIVE')
             if self.vision_override_active and payload.get('command'):
                 self.serial_handler.send_command(payload.get('command'))
-
-        # --- 5. MODIFIKASI: Panggil emit setelah setiap perintah dieksekusi ---
-        # Ini memastikan GUI langsung tahu tentang perubahan (misal: mode berubah)
+        
+        # Selalu kirim state terbaru ke GUI setelah memproses perintah
         self._update_and_emit_state()
 
     def get_current_state(self):
         """Mengembalikan salinan state saat ini dengan aman."""
         return self.current_state.copy()
+        
+    def stop(self):
+        """Menghentikan semua loop dan menutup koneksi serial."""
+        self.running = False
+        self.serial_handler.disconnect()
+        print("[AsvHandler] Dihentikan.")
