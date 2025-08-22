@@ -1,22 +1,32 @@
 # gui/components/pid_view.py
 # --- MODIFIKASI: Menerima 'config' dan menambahkan umpan balik visual ---
 
-from PySide6.QtWidgets import (QGroupBox, QWidget, QHBoxLayout, QVBoxLayout, 
-                               QLabel, QLineEdit, QPushButton, QFormLayout)
-from PySide6.QtCore import Signal, Slot, QTimer # <-- 1. Impor QTimer
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QFormLayout,
+)
+from PySide6.QtCore import Signal, Slot, QTimer  # <-- 1. Impor QTimer
 from PySide6.QtGui import QDoubleValidator
+
 
 class PidView(QGroupBox):
     """
     Sebuah GroupBox yang berisi input untuk konstanta P, I, D
     dan sebuah tombol untuk mengirim pembaruan.
     """
+
     pid_updated = Signal(dict)
 
     # --- 2. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config, title="PID Controller Settings"):
         super().__init__(title)
-        
+
         # --- 3. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
 
@@ -28,7 +38,7 @@ class PidView(QGroupBox):
 
         self.p_input = QLineEdit("0.0")
         self.p_input.setValidator(validator)
-        
+
         self.i_input = QLineEdit("0.0")
         self.i_input.setValidator(validator)
 
@@ -55,23 +65,29 @@ class PidView(QGroupBox):
         """
         try:
             pid_values = {
-                "p": float(self.p_input.text().replace(',', '.')),
-                "i": float(self.i_input.text().replace(',', '.')),
-                "d": float(self.d_input.text().replace(',', '.'))
+                "p": float(self.p_input.text().replace(",", ".")),
+                "i": float(self.i_input.text().replace(",", ".")),
+                "d": float(self.d_input.text().replace(",", ".")),
             }
             self.pid_updated.emit(pid_values)
             print(f"[PID View] Sinyal pid_updated dipancarkan: {pid_values}")
 
             # Umpan balik visual untuk SUKSES
             self.update_button.setText("Updated!")
-            self.update_button.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
+            self.update_button.setStyleSheet(
+                "background-color: #28a745; color: white; font-weight: bold;"
+            )
             QTimer.singleShot(1500, self.reset_button_style)
 
         except ValueError:
-            print("[PID View] Error: Input tidak valid. Pastikan semua field terisi angka.")
+            print(
+                "[PID View] Error: Input tidak valid. Pastikan semua field terisi angka."
+            )
             # Umpan balik visual untuk GAGAL
             self.update_button.setText("Error! Input tidak valid")
-            self.update_button.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold;")
+            self.update_button.setStyleSheet(
+                "background-color: #e74c3c; color: white; font-weight: bold;"
+            )
             QTimer.singleShot(2000, self.reset_button_style)
 
     def reset_button_style(self):

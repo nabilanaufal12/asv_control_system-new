@@ -1,0 +1,12 @@
+[flake8]
+# Abaikan beberapa aturan yang sering bentrok dengan formatter seperti black
+ignore = E203, E501, W503
+# Atur panjang baris maksimum (black defaultnya 88)
+max-line-length = 88
+# Abaikan folder yang tidak perlu dicek
+exclude =
+    .git,
+    __pycache__,
+    venv,
+    .venv,
+    yolov5

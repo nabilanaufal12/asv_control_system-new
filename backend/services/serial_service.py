@@ -6,6 +6,7 @@ import serial.tools.list_ports
 import threading
 import time
 
+
 class SerialHandler:
     def __init__(self, config):
         self.config = config
@@ -31,7 +32,9 @@ class SerialHandler:
 
     def find_and_connect_esp32(self, baudrate):
         ports = serial.tools.list_ports.comports()
-        descriptors = self.config.get("serial_connection", {}).get("auto_connect_descriptors", [])
+        descriptors = self.config.get("serial_connection", {}).get(
+            "auto_connect_descriptors", []
+        )
         for port in ports:
             for desc in descriptors:
                 if desc in port.description:
@@ -50,7 +53,7 @@ class SerialHandler:
         with self.serial_lock:
             if self.is_connected and self.serial_port:
                 try:
-                    self.serial_port.write(command_string.encode('utf-8'))
+                    self.serial_port.write(command_string.encode("utf-8"))
                 except Exception as e:
                     print(f"[Serial] Gagal mengirim data: {e}")
                     self.disconnect()
@@ -59,7 +62,11 @@ class SerialHandler:
         with self.serial_lock:
             if self.is_connected and self.serial_port:
                 try:
-                    return self.serial_port.readline().decode('utf-8', errors='ignore').strip()
+                    return (
+                        self.serial_port.readline()
+                        .decode("utf-8", errors="ignore")
+                        .strip()
+                    )
                 except Exception:
                     self.disconnect()
         return None

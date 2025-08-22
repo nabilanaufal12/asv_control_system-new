@@ -25,9 +25,12 @@ env/
 *.sln
 *.sw?
 
-# File yang Dihasilkan Otomatis
+# File yang Dihasilkan Otomat
 snapshots/
 *.log
+*.html
+# File di bawah ini adalah file yang dihasilkan secara otomatis dan tidak perlu dilacak
+yolov5/runs/
 
 # File Sensitif (jika ada)
 # Jangan unggah kunci API atau kredensial

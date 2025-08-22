@@ -5,11 +5,13 @@ import threading
 import socketio
 from PySide6.QtCore import QObject, Signal, Slot
 
+
 class ApiClient(QObject):
     """
     Kelas ini sekarang bertindak sebagai Klien WebSocket untuk komunikasi
     real-time dengan Backend Server. Ia tidak lagi menggunakan HTTP polling.
     """
+
     data_updated = Signal(dict)
     connection_status_changed = Signal(bool, str)
 
@@ -17,10 +19,10 @@ class ApiClient(QObject):
         super().__init__()
         backend_config = config.get("backend_connection", {})
         self.base_url = f"http://{backend_config.get('ip_address', '127.0.0.1')}:{backend_config.get('port', 5000)}"
-        
+
         # 1. Buat instance klien Socket.IO
         self.sio = socketio.Client()
-        
+
         # 2. Siapkan event handler (apa yang harus dilakukan saat menerima pesan)
         self.setup_event_handlers()
 
@@ -44,9 +46,10 @@ class ApiClient(QObject):
 
     def setup_event_handlers(self):
         """
-        Mendefinisikan fungsi (callback) yang akan dijalankan saat 
+        Mendefinisikan fungsi (callback) yang akan dijalankan saat
         menerima event tertentu dari server.
         """
+
         @self.sio.event
         def connect():
             # Saat berhasil terhubung
@@ -59,7 +62,7 @@ class ApiClient(QObject):
             self.connection_status_changed.emit(False, "Koneksi ke Backend terputus")
             print("Koneksi ke server terputus.")
 
-        @self.sio.on('telemetry_update')
+        @self.sio.on("telemetry_update")
         def on_telemetry_update(data):
             # Saat server mengirim event 'telemetry_update'
             # Kita teruskan datanya ke seluruh GUI melalui sinyal Qt
@@ -68,7 +71,7 @@ class ApiClient(QObject):
     def _send_command(self, command_name, payload_data):
         """Fungsi helper untuk mengirim perintah ke backend via event 'command'."""
         if self.sio.connected:
-            self.sio.emit('command', {'command': command_name, 'payload': payload_data})
+            self.sio.emit("command", {"command": command_name, "payload": payload_data})
         else:
             print("Tidak bisa mengirim perintah, tidak terhubung ke server.")
 

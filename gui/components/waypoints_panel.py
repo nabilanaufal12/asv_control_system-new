@@ -1,26 +1,35 @@
 # gui/components/waypoints_panel.py
 # --- MODIFIKASI: Menerima objek 'config' ---
 
-from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, 
-                               QLineEdit, QPushButton, QListWidget, QAbstractItemView)
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QListWidget,
+    QAbstractItemView,
+)
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator
+
 
 class WaypointsPanel(QGroupBox):
     send_waypoints = Signal(list)
     add_current_pos_requested = Signal()
     waypoints_updated = Signal(list)
-    load_mission_requested = Signal(str) # 'A' atau 'B'
+    load_mission_requested = Signal(str)  # 'A' atau 'B'
 
     # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config, title="Waypoints"):
         super().__init__(title)
-        
+
         # --- 2. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
 
         main_layout = QVBoxLayout()
-        
+
         mission_box = QGroupBox("Predefined Missions")
         mission_layout = QHBoxLayout()
         self.load_a_button = QPushButton("Load Lintasan A")
@@ -53,10 +62,12 @@ class WaypointsPanel(QGroupBox):
         button_layout.addWidget(self.add_manual_button)
         button_layout.addWidget(self.add_current_pos_button)
         button_layout.addWidget(self.delete_button)
-        
+
         send_layout = QHBoxLayout()
         self.send_all_button = QPushButton("Send All")
-        self.send_all_button.setStyleSheet("background-color: #2a82da; color: white; font-weight: bold;")
+        self.send_all_button.setStyleSheet(
+            "background-color: #2a82da; color: white; font-weight: bold;"
+        )
         send_layout.addStretch()
         send_layout.addWidget(self.send_all_button)
 
@@ -68,8 +79,12 @@ class WaypointsPanel(QGroupBox):
         self.setLayout(main_layout)
 
         # Hubungkan sinyal tombol
-        self.load_a_button.clicked.connect(lambda: self.load_mission_requested.emit('A'))
-        self.load_b_button.clicked.connect(lambda: self.load_mission_requested.emit('B'))
+        self.load_a_button.clicked.connect(
+            lambda: self.load_mission_requested.emit("A")
+        )
+        self.load_b_button.clicked.connect(
+            lambda: self.load_mission_requested.emit("B")
+        )
         self.add_manual_button.clicked.connect(self.add_manual_waypoint)
         self.add_current_pos_button.clicked.connect(self.add_current_pos_requested.emit)
         self.delete_button.clicked.connect(self.delete_waypoint)
@@ -82,12 +97,12 @@ class WaypointsPanel(QGroupBox):
         for wp in waypoints:
             waypoint_text = f"Lat: {wp['lat']:.6f}, Lon: {wp['lon']:.6f}"
             self.waypoints_list.addItem(waypoint_text)
-        self._emit_updated_waypoints() # Update peta
+        self._emit_updated_waypoints()  # Update peta
 
     def _emit_updated_waypoints(self):
         current_waypoints = self._get_all_waypoints_from_list()
         self.waypoints_updated.emit(current_waypoints)
-    
+
     @Slot(float, float)
     def add_waypoint_from_pos(self, lat, lon):
         if lat is not None and lon is not None:
@@ -96,8 +111,8 @@ class WaypointsPanel(QGroupBox):
             self._emit_updated_waypoints()
 
     def add_manual_waypoint(self):
-        lat_text = self.lat_input.text().replace(',', '.')
-        lon_text = self.lon_input.text().replace(',', '.')
+        lat_text = self.lat_input.text().replace(",", ".")
+        lon_text = self.lon_input.text().replace(",", ".")
         if lat_text and lon_text:
             try:
                 lat_float = float(lat_text)
@@ -112,7 +127,8 @@ class WaypointsPanel(QGroupBox):
 
     def delete_waypoint(self):
         selected_items = self.waypoints_list.selectedItems()
-        if not selected_items: return
+        if not selected_items:
+            return
         for item in selected_items:
             self.waypoints_list.takeItem(self.waypoints_list.row(item))
         self._emit_updated_waypoints()
@@ -122,9 +138,9 @@ class WaypointsPanel(QGroupBox):
         for i in range(self.waypoints_list.count()):
             item_text = self.waypoints_list.item(i).text()
             try:
-                parts = item_text.replace(" ", "").split(',')
-                lat = float(parts[0].split(':')[1])
-                lon = float(parts[1].split(':')[1])
+                parts = item_text.replace(" ", "").split(",")
+                lat = float(parts[0].split(":")[1])
+                lon = float(parts[1].split(":")[1])
                 all_waypoints.append({"lat": lat, "lon": lon})
             except (ValueError, IndexError):
                 print(f"Gagal mem-parsing item waypoint: {item_text}")

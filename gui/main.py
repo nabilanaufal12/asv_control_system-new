@@ -7,7 +7,7 @@ import json
 import warnings
 
 # Mengabaikan FutureWarning yang tidak relevan dari library lain
-warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.simplefilter(action="ignore", category=FutureWarning)
 
 from PySide6.QtWidgets import QApplication
 
@@ -19,7 +19,7 @@ try:
         sys.path.insert(0, project_root)
 except NameError:
     # Fallback jika __file__ tidak terdefinisi
-    sys.path.insert(0, '.')
+    sys.path.insert(0, ".")
 
 # --- Impor setelah path diperbaiki ---
 from gui.views.main_window import MainWindow
@@ -30,18 +30,18 @@ if __name__ == "__main__":
 
     config = {}
     try:
-        config_path = os.path.join(project_root, 'config.json')
-        with open(config_path, 'r') as f:
+        config_path = os.path.join(project_root, "config.json")
+        with open(config_path, "r") as f:
             config = json.load(f)
         print("File konfigurasi 'config.json' berhasil dimuat.")
     except Exception as e:
         print(f"KRITIS: Gagal memuat 'config.json'. Aplikasi akan berhenti. Error: {e}")
-        sys.exit(1) # Keluar jika config tidak bisa dimuat
+        sys.exit(1)  # Keluar jika config tidak bisa dimuat
 
     # Memuat dan menerapkan stylesheet untuk tema gelap (opsional)
     try:
         theme_path = os.path.join(gui_dir, "assets", "resources", "dark_theme.qss")
-        with open(theme_path, 'r') as f:
+        with open(theme_path, "r") as f:
             app.setStyleSheet(f.read())
         print("Tema gelap berhasil dimuat.")
     except Exception as e:

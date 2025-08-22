@@ -24,17 +24,19 @@ def create_app():
     # 🔹 Muat konfigurasi dari file config.json
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(script_dir, '..', 'config.json')
-        with open(config_path, 'r') as f:
-            app.config['ASV_CONFIG'] = json.load(f)
+        config_path = os.path.join(script_dir, "..", "config.json")
+        with open(config_path, "r") as f:
+            app.config["ASV_CONFIG"] = json.load(f)
         print("[Server] File 'config.json' berhasil dimuat.")
     except Exception as e:
         print(f"[Server] KRITIS: Gagal memuat config.json. Error: {e}")
         exit(1)
 
     # 🔹 Inisialisasi semua service
-    asv_handler = AsvHandler(app.config['ASV_CONFIG'], socketio)
-    vision_service = VisionService(app.config['ASV_CONFIG'], asv_handler, socketio=socketio)
+    asv_handler = AsvHandler(app.config["ASV_CONFIG"], socketio)
+    vision_service = VisionService(
+        app.config["ASV_CONFIG"], asv_handler, socketio=socketio
+    )
 
     # 🔹 Simpan instance service ke dalam konteks aplikasi
     app.asv_handler = asv_handler
@@ -69,4 +71,6 @@ app = create_app()
 if __name__ == "__main__":
     # Jalankan server normal
     print("🚀 Backend Server ASV (Mode Otonom) siap menerima koneksi...")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(
+        app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True
+    )
