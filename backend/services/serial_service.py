@@ -39,14 +39,16 @@ class SerialHandler:
             for desc in descriptors:
                 if desc in port.description:
                     return self.connect(port.device, baudrate)
-        print("[Serial] ESP32 tidak ditemukan")
+        # --- PERBAIKAN DI SINI ---
+        print("[Serial] ESP32 tidak ditemukan")  # Menghapus f'' yang tidak perlu
+        # -------------------------
         return False
 
     def disconnect(self):
         with self.serial_lock:
             if self.serial_port and self.serial_port.is_open:
                 self.serial_port.close()
-                print(f"[Serial] Port ditutup.")
+                print("[Serial] Port ditutup.")
         self.is_connected = False
 
     def send_command(self, command_string):

@@ -1,7 +1,7 @@
 # gui/components/dashboard.py
 # --- MODIFIKASI: Menambahkan status RTH dan konsistensi ---
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QGroupBox, QLabel, QFormLayout
+from PySide6.QtWidgets import QGroupBox, QLabel, QFormLayout
 from PySide6.QtCore import Slot
 from PySide6.QtGui import QFont
 
@@ -57,17 +57,21 @@ class Dashboard(QGroupBox):
         try:
             status = data.get("status", "N/A")
             self.status_label.setText(status)
-            
+
             # --- MODIFIKASI DIMULAI DI SINI ---
             if status == "NAVIGATING":
                 self.status_label.setStyleSheet("color: lightgreen;")
             elif status == "RETURNING TO HOME":
-                self.status_label.setStyleSheet("color: #3498db; font-weight: bold;") # Warna biru untuk RTH
+                self.status_label.setStyleSheet(
+                    "color: #3498db; font-weight: bold;"
+                )  # Warna biru untuk RTH
             elif status == "IDLE":
                 self.status_label.setStyleSheet("color: lightblue;")
             elif status == "CONNECTED":
-                 self.status_label.setStyleSheet("color: white;") # Warna default saat terhubung
-            else: # Mencakup DISCONNECTED, dll.
+                self.status_label.setStyleSheet(
+                    "color: white;"
+                )  # Warna default saat terhubung
+            else:  # Mencakup DISCONNECTED, dll.
                 self.status_label.setStyleSheet("color: orange;")
             # --- AKHIR MODIFIKASI ---
 

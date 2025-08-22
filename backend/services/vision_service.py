@@ -1,38 +1,42 @@
 # backend/services/vision_service.py
-# --- VERSI MODIFIKASI: Penyesuaian Logika Aktuator untuk Logging Akurat ---
+# --- VERSI MODIFIKASI: Dengan struktur impor yang sesuai Flake8 ---
 
+# 1. Impor Pustaka Standar
 import sys
 from pathlib import Path
 import os
 import traceback
 import pathlib
+import collections
+import threading
+import time
 
-# --- Patch untuk masalah PosixPath di Windows ---
+# 2. Impor Pustaka Pihak Ketiga (Third-party)
+import cv2
+import torch
+import requests
+import numpy as np
+from PySide6.QtCore import QObject, Signal, Slot
+
+# 3. Logika Penyesuaian Path (Harus sebelum impor lokal)
+# Patch untuk masalah PosixPath di Windows
 if os.name == "nt":
     pathlib.PosixPath = pathlib.WindowsPath
 
-# Menambahkan path YOLOv5 ke sistem SEBELUM impor
+# Menambahkan path YOLOv5 ke sistem SEBELUM impor lokal
 backend_dir = Path(__file__).resolve().parents[1]
 yolov5_path = backend_dir / "yolov5"
 if str(yolov5_path) not in sys.path:
     sys.path.insert(0, str(yolov5_path))
 
-import cv2
-import torch
-import threading
-import time
-import requests
-import numpy as np
-from PySide6.QtCore import QObject, Signal, Slot
-
+# 4. Impor Pustaka Lokal (dari proyek Anda dan YOLOv5)
+from utils.plots import Annotator
 from backend.vision.overlay_utils import create_overlay_from_html, apply_overlay
 
-# Impor modul YOLOv5 setelah path-nya ditambahkan
-from models.common import DetectMultiBackend
-from utils.plots import Annotator
+
+# (Sisa kode dari sini ke bawah tidak ada perubahan)
 
 
-# (Fungsi helper tidak berubah)
 def send_telemetry_to_firebase(telemetry_data, config):
     try:
         FIREBASE_URL = config.get("api_urls", {}).get("firebase_url")
@@ -48,7 +52,7 @@ def send_telemetry_to_firebase(telemetry_data, config):
             "sog": telemetry_data.get("speed", 0.0),
             "jam": time.strftime("%H:%M:%S"),
         }
-        response = requests.put(FIREBASE_URL, json=data_to_send, timeout=5)
+        requests.put(FIREBASE_URL, json=data_to_send, timeout=5)
     except Exception:
         pass
 
@@ -103,6 +107,12 @@ class VisionService(QObject):
         )
         self.camera_index = int(vision_cfg.get("camera_index", 0))
 
+        self.KNOWN_CLASSES = ["red_buoy", "green_buoy", "blue_box", "green_box"]
+        self.poi_confidence_threshold = 0.65
+        self.poi_validation_frames = 5
+        self.recent_detections = collections.deque(maxlen=self.poi_validation_frames)
+        self.investigation_in_progress = False
+
         self._initialize_model()
 
     def _initialize_model(self):
@@ -127,7 +137,7 @@ class VisionService(QObject):
             self.model.iou = self.iou_thresh
             print(f"[Vision] Model YOLOv5 berhasil dimuat di device {self.device}.")
         except Exception:
-            print(f"[Vision] KRITIS: Gagal memuat model YOLOv5.")
+            print("[Vision] KRITIS: Gagal memuat model YOLOv5.")
             traceback.print_exc()
             self.model = None
 
@@ -187,7 +197,7 @@ class VisionService(QObject):
                 cap.release()
 
             if self.restart_camera:
-                print(f"\n[Vision] Me-restart stream kamera...")
+                print("\n[Vision] Me-restart stream kamera...")
 
         print("\n[Vision] Thread layanan visi telah dihentikan.")
 
@@ -195,42 +205,77 @@ class VisionService(QObject):
         results = self.model(im0)
         annotated_frame = results.render()[0].copy()
 
-        (
-            detected_red_buoys,
-            detected_green_buoys,
-            detected_green_boxes,
-            detected_blue_boxes,
-        ) = ([], [], [], [])
+        detected_red_buoys, detected_green_buoys = [], []
+        detected_green_boxes, detected_blue_boxes = [], []
+
+        potential_pois = []
         df = results.pandas().xyxy[0]
+
         for _, row in df.iterrows():
+            class_name = row["name"]
+            confidence = row["confidence"]
+
             bbox_data = {
                 "xyxy": [row["xmin"], row["ymin"], row["xmax"], row["ymax"]],
                 "center": (
                     int((row["xmin"] + row["xmax"]) / 2),
                     int((row["ymin"] + row["ymax"]) / 2),
                 ),
-                "class": row["name"],
+                "class": class_name,
             }
-            if "red_buoy" in row["name"]:
-                detected_red_buoys.append(bbox_data)
-            elif "green_buoy" in row["name"]:
-                detected_green_buoys.append(bbox_data)
-            if "green_box" in row["name"]:
-                detected_green_boxes.append(bbox_data)
-            elif "blue_box" in row["name"]:
-                detected_blue_boxes.append(bbox_data)
+
+            if class_name in self.KNOWN_CLASSES:
+                if "red_buoy" in class_name:
+                    detected_red_buoys.append(bbox_data)
+                elif "green_buoy" in class_name:
+                    detected_green_buoys.append(bbox_data)
+                if "green_box" in class_name:
+                    detected_green_boxes.append(bbox_data)
+                elif "blue_box" in class_name:
+                    detected_blue_boxes.append(bbox_data)
+            elif confidence > self.poi_confidence_threshold:
+                potential_pois.append(bbox_data)
+
+        if potential_pois:
+            self.validate_and_trigger_investigation(potential_pois[0], im0)
 
         if detected_green_boxes or detected_blue_boxes:
             self.handle_photography_mission(
                 im0, detected_green_boxes, detected_blue_boxes
             )
 
-        if self.mode_auto:
+        if self.mode_auto and not self.investigation_in_progress:
             annotated_frame = self.handle_auto_control(
                 im0, annotated_frame, detected_red_buoys, detected_green_buoys
             )
 
         return annotated_frame
+
+    def validate_and_trigger_investigation(self, poi_data, im0):
+        """Memvalidasi POI selama beberapa frame dan mengirim perintah investigasi."""
+        if (
+            self.asv_handler.mission_phase == "PATROLLING"
+            and not self.investigation_in_progress
+        ):
+            self.recent_detections.append(poi_data["class"])
+
+            if (
+                len(self.recent_detections) == self.poi_validation_frames
+                and len(set(self.recent_detections)) == 1
+            ):
+
+                print(
+                    f"\n[Vision] 🕵️‍♂️ Anomali terdeteksi & tervalidasi: '{poi_data['class']}'. Memulai investigasi!"
+                )
+                self.investigation_in_progress = True
+                self.recent_detections.clear()
+
+                degree = self.calculate_degree(im0, poi_data["center"])
+
+                self.asv_handler.process_command(
+                    "INVESTIGATE_POI",
+                    {"class_name": poi_data["class"], "bearing_deg": degree},
+                )
 
     def handle_photography_mission(self, original_frame, green_boxes, blue_boxes):
         mission_name = (
@@ -277,10 +322,12 @@ class VisionService(QObject):
         detection_config = self.config.get("camera_detection", {})
         PANJANG_FOKUS_PIKSEL = detection_config.get("focal_length_pixels", 600)
         TARGET_JARAK_CM = detection_config.get("target_activation_distance_cm", 100.0)
-        
+
         LEBAR_BOLA_TUNGGAL_CM = detection_config.get("single_ball_real_width_cm", 10.0)
         LEBAR_BOLA_GANDA_CM = detection_config.get("dual_ball_real_width_cm", 200.0)
-        VIRTUAL_TARGET_OFFSET_CM = detection_config.get("virtual_target_offset_cm", 80.0)
+        VIRTUAL_TARGET_OFFSET_CM = detection_config.get(
+            "virtual_target_offset_cm", 80.0
+        )
 
         target_object, target_midpoint, lebar_asli_cm = None, None, 0
         keputusan = "NAVIGATING_WAYPOINT"
@@ -288,7 +335,7 @@ class VisionService(QObject):
         h, w, _ = annotated_frame.shape
         activation_y_percent = detection_config.get("activation_zone_y_percent", 0.5)
         zona_y_start = int(h * activation_y_percent)
-        
+
         if red_buoys and green_buoys:
             keputusan = "AVOIDING_BUOYS (Gerbang)"
             best_pair = max(
@@ -313,8 +360,12 @@ class VisionService(QObject):
             dist_cm = (
                 (LEBAR_BOLA_TUNGGAL_CM * PANJANG_FOKUS_PIKSEL) / w_px if w_px > 0 else 0
             )
-            
-            offset_px = (VIRTUAL_TARGET_OFFSET_CM * PANJANG_FOKUS_PIKSEL) / dist_cm if dist_cm > 0 else 0
+
+            offset_px = (
+                (VIRTUAL_TARGET_OFFSET_CM * PANJANG_FOKUS_PIKSEL) / dist_cm
+                if dist_cm > 0
+                else 0
+            )
 
             cx, cy = best_single_ball["center"]
             v_cx = cx + int(offset_px) if is_left else cx - int(offset_px)
@@ -356,11 +407,16 @@ class VisionService(QObject):
                 degree = self.calculate_degree(im0, target_midpoint)
                 servo_angle, motor_pwm = self.convert_degree_to_actuators(degree)
 
-                print(f"\n[VISION] ZONA AKTIVASI TERPENUHI (Jarak: {jarak_cm:.1f} cm). Mengambil alih kontrol.")
-                print(f"   => Perintah Dihitung: Motor PWM={motor_pwm}, Servo Angle={servo_angle}°")
-                
+                print(
+                    f"\n[VISION] ZONA AKTIVASI TERPENUHI (Jarak: {jarak_cm:.1f} cm). Mengambil alih kontrol."
+                )
+                print(
+                    f"   => Perintah Dihitung: Motor PWM={motor_pwm}, Servo Angle={servo_angle}°"
+                )
+
                 self.asv_handler.process_command(
-                    "VISION_TARGET_UPDATE", {"active": True, "degree": degree, "is_inverted": self.is_inverted}
+                    "VISION_TARGET_UPDATE",
+                    {"active": True, "degree": degree, "is_inverted": self.is_inverted},
                 )
             else:
                 self.asv_handler.process_command(
@@ -397,6 +453,9 @@ class VisionService(QObject):
     def set_mode(self, mode):
         self.mode_auto = mode == "AUTO"
         print(f"\n[Vision] Mode AUTO diatur ke: {self.mode_auto}")
+        if not self.mode_auto:
+            self.investigation_in_progress = False
+            self.recent_detections.clear()
 
     @Slot(bool)
     def set_inversion(self, is_inverted):
@@ -420,10 +479,6 @@ class VisionService(QObject):
         return int(relative_pos * 180)
 
     def convert_degree_to_actuators(self, degree):
-        """
-        Mencerminkan logika yang sama persis dengan AsvHandler
-        untuk memastikan logging yang akurat.
-        """
         error = degree - 90
         if self.is_inverted:
             error = -error
@@ -432,7 +487,7 @@ class VisionService(QObject):
         servo_def = actuators.get("servo_default_angle", 90)
         servo_min = actuators.get("servo_min_angle", 45)
         servo_max = actuators.get("servo_max_angle", 135)
-        
+
         normalized_error = error / 90.0
         if normalized_error < 0:
             servo_range = servo_def - servo_min
@@ -440,7 +495,7 @@ class VisionService(QObject):
         else:
             servo_range = servo_max - servo_def
             servo = servo_def + (normalized_error * servo_range)
-            
+
         servo = int(np.clip(servo, servo_min, servo_max))
 
         motor_base = actuators.get("motor_pwm_auto_base", 1650)

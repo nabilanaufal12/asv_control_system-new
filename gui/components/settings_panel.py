@@ -1,7 +1,7 @@
 # gui/components/settings_panel.py
 # --- MODIFIKASI: Menerima dan meneruskan objek 'config' ke semua tab ---
 
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTabWidget, QWidget
+from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTabWidget
 from PySide6.QtCore import Signal
 
 # Impor semua komponen tab

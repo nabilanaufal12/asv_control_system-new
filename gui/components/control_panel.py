@@ -1,8 +1,8 @@
 # gui/components/control_panel.py
 # --- MODIFIKASI: Menerima objek 'config' untuk konsistensi ---
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QGroupBox, QPushButton, QGridLayout
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import QVBoxLayout, QGroupBox, QPushButton, QGridLayout
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont
 
 

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QFormLayout,
 )
-from PySide6.QtCore import Signal, Slot, QTimer  # <-- 1. Impor QTimer
+from PySide6.QtCore import Signal, QTimer
 from PySide6.QtGui import QIntValidator
 
 

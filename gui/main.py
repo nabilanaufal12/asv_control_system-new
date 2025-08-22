@@ -30,6 +30,7 @@ if __name__ == "__main__":
 
     config = {}
     try:
+        # Perbaikan: gunakan project_root yang sudah didefinisikan
         config_path = os.path.join(project_root, "config.json")
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -40,6 +41,7 @@ if __name__ == "__main__":
 
     # Memuat dan menerapkan stylesheet untuk tema gelap (opsional)
     try:
+        # Perbaikan: gunakan gui_dir yang sudah didefinisikan
         theme_path = os.path.join(gui_dir, "assets", "resources", "dark_theme.qss")
         with open(theme_path, "r") as f:
             app.setStyleSheet(f.read())

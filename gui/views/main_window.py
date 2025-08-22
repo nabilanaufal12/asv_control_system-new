@@ -1,17 +1,26 @@
 # gui/views/main_window.py
 # --- VERSI MODIFIKASI: Mengintegrasikan fitur Return to Home (RTH) ---
-
 import sys
+import os
+
+# Tambahkan blok kode ini untuk memperbaiki path
+try:
+    # Cari path ke direktori root proyek (dua level di atas file ini)
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+except NameError:
+    sys.path.insert(0, ".")
+
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
-    QApplication,
     QHBoxLayout,
     QVBoxLayout,
     QTabWidget,
-    QMessageBox,
     QStatusBar,
-    QLabel,
 )
 from PySide6.QtCore import Slot, Qt, QThread
 
@@ -212,12 +221,16 @@ class MainWindow(QMainWindow):
     def handle_navigation_command(self, command: str):
         """Menangani perintah navigasi non-spesifik seperti START, PAUSE, atau RETURN."""
         if command == "RETURN":
-            print("[MainWindow] Perintah Return to Home diterima, mengirim ke AsvHandler...")
+            print(
+                "[MainWindow] Perintah Return to Home diterima, mengirim ke AsvHandler..."
+            )
             # Kirim perintah baru yang spesifik untuk RTH
             self.asv_handler.process_command("INITIATE_RTH", {})
         else:
             # Di sini Anda bisa menangani perintah "START" atau "PAUSE" jika diperlukan
-            print(f"[MainWindow] Perintah navigasi '{command}' belum diimplementasikan.")
+            print(
+                f"[MainWindow] Perintah navigasi '{command}' belum diimplementasikan."
+            )
 
     def handle_manual_keys(self):
         """Mengirim status tombol keyboard ke AsvHandler."""

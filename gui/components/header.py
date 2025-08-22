@@ -100,9 +100,9 @@ class Header(QWidget):
             )
         elif status == "RETURNING TO HOME":
             self.connection_status_label.setStyleSheet(
-                "#StatusLabel { background-color: #3498db; color: white; }" # Warna biru untuk RTH
+                "#StatusLabel { background-color: #3498db; color: white; }"  # Warna biru untuk RTH
             )
-        else: # Mencakup CONNECTED, NAVIGATING, IDLE, dll.
+        else:  # Mencakup CONNECTED, NAVIGATING, IDLE, dll.
             self.connection_status_label.setStyleSheet(
                 "#StatusLabel { background-color: #2ECC71; color: white; }"
             )

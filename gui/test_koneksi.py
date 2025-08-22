@@ -27,7 +27,9 @@ try:
     print("Port berhasil ditutup.")
 
 except serial.SerialException as e:
-    print(f"\nGAGAL: Tidak bisa membuka port.")
+    # --- PERBAIKAN DI SINI ---
+    print("\nGAGAL: Tidak bisa membuka port.")  # Menghapus f'' yang tidak perlu
+    # -------------------------
     print(f"Error: {e}")
     print(
         "\nPastikan tidak ada aplikasi lain (seperti Serial Monitor Arduino) yang sedang menggunakan port ini."
