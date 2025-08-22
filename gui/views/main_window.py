@@ -1,5 +1,5 @@
 # gui/views/main_window.py
-# --- VERSI MODIFIKASI: Kontrol manual untuk memulai/menghentikan kamera ---
+# --- VERSI MODIFIKASI: Mengintegrasikan fitur Return to Home (RTH) ---
 
 import sys
 from PySide6.QtWidgets import (
@@ -117,6 +117,9 @@ class MainWindow(QMainWindow):
         self.control_panel.mode_changed.connect(
             lambda mode: self.asv_handler.process_command("CHANGE_MODE", mode)
         )
+        # --- MODIFIKASI RTH: Hubungkan sinyal navigasi ke handler baru ---
+        self.control_panel.navigation_command.connect(self.handle_navigation_command)
+
         self.waypoints_panel.send_waypoints.connect(
             lambda wps: self.asv_handler.process_command("SET_WAYPOINTS", wps)
         )
@@ -203,6 +206,18 @@ class MainWindow(QMainWindow):
             return
 
         self.waypoints_panel.load_waypoints_to_list(waypoints)
+
+    # --- MODIFIKASI RTH: Tambahkan metode handler baru ---
+    @Slot(str)
+    def handle_navigation_command(self, command: str):
+        """Menangani perintah navigasi non-spesifik seperti START, PAUSE, atau RETURN."""
+        if command == "RETURN":
+            print("[MainWindow] Perintah Return to Home diterima, mengirim ke AsvHandler...")
+            # Kirim perintah baru yang spesifik untuk RTH
+            self.asv_handler.process_command("INITIATE_RTH", {})
+        else:
+            # Di sini Anda bisa menangani perintah "START" atau "PAUSE" jika diperlukan
+            print(f"[MainWindow] Perintah navigasi '{command}' belum diimplementasikan.")
 
     def handle_manual_keys(self):
         """Mengirim status tombol keyboard ke AsvHandler."""

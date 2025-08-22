@@ -1,5 +1,5 @@
 # backend/services/vision_service.py
-# --- VERSI FINAL: Mengintegrasikan Zona Aktivasi dan Pesan Terminal Detail ---
+# --- VERSI MODIFIKASI: Penyesuaian Logika Aktuator untuk Logging Akurat ---
 
 import sys
 from pathlib import Path
@@ -242,7 +242,7 @@ class VisionService(QObject):
             return
 
         self.asv_handler.process_command(
-            "VISION_OVERRIDE", {"status": "ACTIVE", "command": "S1500;D90\n"}
+            "VISION_TARGET_UPDATE", {"active": True, "degree": 90}
         )
         time.sleep(0.5)
 
@@ -271,35 +271,24 @@ class VisionService(QObject):
                 daemon=True,
             ).start()
 
-        self.asv_handler.process_command("VISION_OVERRIDE", {"status": "INACTIVE"})
+        self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
     def handle_auto_control(self, im0, annotated_frame, red_buoys, green_buoys):
         detection_config = self.config.get("camera_detection", {})
         PANJANG_FOKUS_PIKSEL = detection_config.get("focal_length_pixels", 600)
         TARGET_JARAK_CM = detection_config.get("target_activation_distance_cm", 100.0)
+        
         LEBAR_BOLA_TUNGGAL_CM = detection_config.get("single_ball_real_width_cm", 10.0)
         LEBAR_BOLA_GANDA_CM = detection_config.get("dual_ball_real_width_cm", 200.0)
+        VIRTUAL_TARGET_OFFSET_CM = detection_config.get("virtual_target_offset_cm", 80.0)
 
         target_object, target_midpoint, lebar_asli_cm = None, None, 0
         keputusan = "NAVIGATING_WAYPOINT"
 
-        # ### PENAMBAHAN 1: Gambar Kotak Zona Aktivasi ###
         h, w, _ = annotated_frame.shape
-        zona_y_start = int(h * 0.5)
-        overlay = annotated_frame.copy()
-        cv2.rectangle(overlay, (0, zona_y_start), (w, h), (100, 100, 100), -1)
-        alpha = 0.2
-        annotated_frame = cv2.addWeighted(overlay, alpha, annotated_frame, 1 - alpha, 0)
-        cv2.putText(
-            annotated_frame,
-            "ZONA AKTIVASI",
-            (10, zona_y_start + 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (255, 255, 255),
-            2,
-        )
-
+        activation_y_percent = detection_config.get("activation_zone_y_percent", 0.5)
+        zona_y_start = int(h * activation_y_percent)
+        
         if red_buoys and green_buoys:
             keputusan = "AVOIDING_BUOYS (Gerbang)"
             best_pair = max(
@@ -324,7 +313,8 @@ class VisionService(QObject):
             dist_cm = (
                 (LEBAR_BOLA_TUNGGAL_CM * PANJANG_FOKUS_PIKSEL) / w_px if w_px > 0 else 0
             )
-            offset_px = (150.0 * PANJANG_FOKUS_PIKSEL) / dist_cm if dist_cm > 0 else 0
+            
+            offset_px = (VIRTUAL_TARGET_OFFSET_CM * PANJANG_FOKUS_PIKSEL) / dist_cm if dist_cm > 0 else 0
 
             cx, cy = best_single_ball["center"]
             v_cx = cx + int(offset_px) if is_left else cx - int(offset_px)
@@ -362,29 +352,26 @@ class VisionService(QObject):
             annotator.box_label([x1, y1, x2, y2], f"Jarak: {jarak_cm:.1f} cm")
             annotated_frame = annotator.result()
 
-            # ### PERBAIKAN UTAMA: Mengembalikan pesan print yang lebih detail ###
             if 0 < jarak_cm < TARGET_JARAK_CM and y1 > zona_y_start:
-                # Gunakan print biasa dengan newline agar tidak tertimpa
-                print(
-                    f"\n[VISION] ZONA AKTIVASI TERPENUHI (Jarak: {jarak_cm:.1f} cm). Mengambil alih kontrol."
-                )
                 degree = self.calculate_degree(im0, target_midpoint)
-                servo, pwm = self.convert_degree_to_actuators(degree)
-                print(f"   => Perintah Dihitung: Motor PWM={pwm}, Servo Angle={servo}°")
-                cmd = f"S{pwm};D{servo}\n"
+                servo_angle, motor_pwm = self.convert_degree_to_actuators(degree)
+
+                print(f"\n[VISION] ZONA AKTIVASI TERPENUHI (Jarak: {jarak_cm:.1f} cm). Mengambil alih kontrol.")
+                print(f"   => Perintah Dihitung: Motor PWM={motor_pwm}, Servo Angle={servo_angle}°")
+                
                 self.asv_handler.process_command(
-                    "VISION_OVERRIDE", {"status": "ACTIVE", "command": cmd}
+                    "VISION_TARGET_UPDATE", {"active": True, "degree": degree, "is_inverted": self.is_inverted}
                 )
             else:
                 self.asv_handler.process_command(
-                    "VISION_OVERRIDE", {"status": "INACTIVE"}
+                    "VISION_TARGET_UPDATE", {"active": False}
                 )
                 print(
                     f"\r[VISION] STATUS: PASIF | Objek di luar jangkauan | Jarak: {jarak_cm:.1f}cm",
                     end="",
                 )
         else:
-            self.asv_handler.process_command("VISION_OVERRIDE", {"status": "INACTIVE"})
+            self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
             print(
                 f"\r[VISION] STATUS: PASIF | {keputusan} | Mengikuti Waypoint...",
                 end="",
@@ -433,6 +420,10 @@ class VisionService(QObject):
         return int(relative_pos * 180)
 
     def convert_degree_to_actuators(self, degree):
+        """
+        Mencerminkan logika yang sama persis dengan AsvHandler
+        untuk memastikan logging yang akurat.
+        """
         error = degree - 90
         if self.is_inverted:
             error = -error
@@ -440,13 +431,20 @@ class VisionService(QObject):
         actuators = self.config.get("actuators", {})
         servo_def = actuators.get("servo_default_angle", 90)
         servo_min = actuators.get("servo_min_angle", 45)
-        servo_range = servo_def - servo_min
-
-        servo = servo_def - (error / 90.0) * servo_range
-        servo = int(np.clip(servo, 0, 180))
+        servo_max = actuators.get("servo_max_angle", 135)
+        
+        normalized_error = error / 90.0
+        if normalized_error < 0:
+            servo_range = servo_def - servo_min
+            servo = servo_def + (normalized_error * servo_range)
+        else:
+            servo_range = servo_max - servo_def
+            servo = servo_def + (normalized_error * servo_range)
+            
+        servo = int(np.clip(servo, servo_min, servo_max))
 
         motor_base = actuators.get("motor_pwm_auto_base", 1650)
         reduction = actuators.get("motor_pwm_auto_reduction", 100)
-        pwm = motor_base - (abs(error) / 90.0) * reduction
+        pwm = motor_base - (abs(normalized_error) * reduction)
 
         return int(servo), int(pwm)

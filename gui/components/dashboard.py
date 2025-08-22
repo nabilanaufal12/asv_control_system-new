@@ -1,5 +1,5 @@
 # gui/components/dashboard.py
-# --- MODIFIKASI: Menerima objek 'config' ---
+# --- MODIFIKASI: Menambahkan status RTH dan konsistensi ---
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QGroupBox, QLabel, QFormLayout
 from PySide6.QtCore import Slot
@@ -11,11 +11,9 @@ class Dashboard(QGroupBox):
     Sebuah GroupBox yang berisi label-label untuk menampilkan data telemetri.
     """
 
-    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config, title="System Status"):
         super().__init__(title)
 
-        # --- 2. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
 
         label_font = QFont()
@@ -59,12 +57,19 @@ class Dashboard(QGroupBox):
         try:
             status = data.get("status", "N/A")
             self.status_label.setText(status)
+            
+            # --- MODIFIKASI DIMULAI DI SINI ---
             if status == "NAVIGATING":
                 self.status_label.setStyleSheet("color: lightgreen;")
+            elif status == "RETURNING TO HOME":
+                self.status_label.setStyleSheet("color: #3498db; font-weight: bold;") # Warna biru untuk RTH
             elif status == "IDLE":
                 self.status_label.setStyleSheet("color: lightblue;")
-            else:
+            elif status == "CONNECTED":
+                 self.status_label.setStyleSheet("color: white;") # Warna default saat terhubung
+            else: # Mencakup DISCONNECTED, dll.
                 self.status_label.setStyleSheet("color: orange;")
+            # --- AKHIR MODIFIKASI ---
 
             self.lat_label.setText(f"{float(data.get('latitude', 0)):.6f}")
             self.lon_label.setText(f"{float(data.get('longitude', 0)):.6f}")

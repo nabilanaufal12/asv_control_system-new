@@ -1,5 +1,5 @@
 # gui/components/header.py
-# --- MODIFIKASI: Menerima objek 'config' ---
+# --- MODIFIKASI: Menambahkan status RTH dan konsistensi ---
 
 import os
 from PySide6.QtWidgets import (
@@ -19,12 +19,10 @@ class Header(QWidget):
     Widget untuk header yang berisi logo, judul, dan indikator status.
     """
 
-    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config):
         super().__init__()
         self.setObjectName("Header")
 
-        # --- 2. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
 
         layout = QHBoxLayout()
@@ -95,14 +93,20 @@ class Header(QWidget):
         status = data.get("status", "DISCONNECTED")
         self.connection_status_label.setText(status)
 
+        # --- MODIFIKASI DIMULAI DI SINI ---
         if status == "DISCONNECTED":
             self.connection_status_label.setStyleSheet(
                 "#StatusLabel { background-color: #E74C3C; color: white; }"
             )
-        else:
+        elif status == "RETURNING TO HOME":
+            self.connection_status_label.setStyleSheet(
+                "#StatusLabel { background-color: #3498db; color: white; }" # Warna biru untuk RTH
+            )
+        else: # Mencakup CONNECTED, NAVIGATING, IDLE, dll.
             self.connection_status_label.setStyleSheet(
                 "#StatusLabel { background-color: #2ECC71; color: white; }"
             )
+        # --- AKHIR MODIFIKASI ---
 
         mode = data.get("control_mode", "MANUAL")
         if mode == "AUTO":

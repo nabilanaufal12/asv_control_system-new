@@ -20,12 +20,6 @@ void setup()
   servoKemudi.attach(SERVO_PIN, 500, 2500);
   motorESC.attach(MOTOR_PIN, 1000, 2000);
 
-  // Kalibrasi ESC (opsional, tapi seringkali penting)
-  // motorESC.writeMicroseconds(2000); // Full throttle
-  // delay(2000);
-  // motorESC.writeMicroseconds(1000); // Min throttle
-  // delay(2000);
-
   servoKemudi.write(90);
   motorESC.writeMicroseconds(1500); // Posisi netral
   delay(1000);
@@ -50,7 +44,6 @@ void loop()
 
 void processSerialCommand()
 {
-  // --- PERUBAHAN: Format baru adalah "S<pwm>;D<derajat>" ---
   String dataMasuk = Serial.readStringUntil('\n');
   dataMasuk.trim();
 

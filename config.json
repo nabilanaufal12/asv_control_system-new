@@ -12,7 +12,14 @@
   },
   "navigation": {
     "waypoint_reach_distance_m": 7.0,
-    "pure_pursuit_lookahead_distance_m": 15.0
+    "pure_pursuit_lookahead_distance_m": 15.0,
+    "slow_approach_distance_m": 15.0,
+    "max_turn_error_deg": 45.0,
+    "heading_pid": {
+      "kp": 1.2,
+      "ki": 0.1,
+      "kd": 0.05
+    }
   },
   "actuators": {
     "servo_min_angle": 45,
@@ -26,15 +33,26 @@
   "camera_detection": {
     "focal_length_pixels": 600,
     "target_activation_distance_cm": 100.0,
-    "single_ball_real_width_cm": 10.0,
-    "dual_ball_real_width_cm": 200.0
+    "activation_zone_y_percent": 0.5,
+    "virtual_target_offset_cm": 40.0,
+    "object_real_widths_cm": {
+      "buoy_single": 10.0,
+      "buoy_gate": 200.0,
+      "green_box": 30.0,
+      "blue_box": 30.0
+    }
   },
   "vision": {
     "device": "cpu",
     "conf_threshold": 0.2,
     "iou_threshold": 0.5,
     "debug": true,
-    "camera_index": 1
+    "camera_index": 1,
+    "vision_control_params": {
+      "motor_base_pwm": 1600,
+      "motor_reduction_factor": 100,
+      "servo_range_deg": 45
+    }
   },
   "api_urls": {
     "firebase_url": "https://asv-2025-default-rtdb.asia-southeast1.firebasedatabase.app/monitor.json",
