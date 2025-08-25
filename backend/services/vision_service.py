@@ -1,5 +1,5 @@
 # backend/services/vision_service.py
-# --- VERSI MODIFIKASI: Dengan struktur impor yang sesuai Flake8 ---
+# --- VERSI FINAL: Dengan Kesadaran Spasial Otomatis ---
 
 # 1. Impor Pustaka Standar
 import sys
@@ -32,9 +32,6 @@ if str(yolov5_path) not in sys.path:
 # 4. Impor Pustaka Lokal (dari proyek Anda dan YOLOv5)
 from utils.plots import Annotator
 from backend.vision.overlay_utils import create_overlay_from_html, apply_overlay
-
-
-# (Sisa kode dari sini ke bawah tidak ada perubahan)
 
 
 def send_telemetry_to_firebase(telemetry_data, config):
@@ -239,10 +236,12 @@ class VisionService(QObject):
         if potential_pois:
             self.validate_and_trigger_investigation(potential_pois[0], im0)
 
-        if detected_green_boxes or detected_blue_boxes:
+        # --- MODIFIKASI DIMULAI DI SINI ---
+        if self.mode_auto and (detected_green_boxes or detected_blue_boxes):
             self.handle_photography_mission(
                 im0, detected_green_boxes, detected_blue_boxes
             )
+        # --- AKHIR MODIFIKASI ---
 
         if self.mode_auto and not self.investigation_in_progress:
             annotated_frame = self.handle_auto_control(
@@ -318,120 +317,156 @@ class VisionService(QObject):
 
         self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
-    def handle_auto_control(self, im0, annotated_frame, red_buoys, green_buoys):
+    def handle_auto_control(
+        self, im0, annotated_frame, detected_red_buoys, detected_green_buoys
+    ):
+        """
+        Logika utama untuk avoidance otomatis dengan kesadaran spasial.
+        """
         detection_config = self.config.get("camera_detection", {})
-        PANJANG_FOKUS_PIKSEL = detection_config.get("focal_length_pixels", 600)
-        TARGET_JARAK_CM = detection_config.get("target_activation_distance_cm", 100.0)
+        focal_length_px = detection_config.get("focal_length_pixels", 600)
+        activation_dist_cm = detection_config.get(
+            "target_activation_distance_cm", 100.0
+        )
+        activation_y_percent = detection_config.get("activation_zone_y_percent", 0.5)
+        min_buoy_area_px = detection_config.get("min_buoy_area_px", 500)
 
-        LEBAR_BOLA_TUNGGAL_CM = detection_config.get("single_ball_real_width_cm", 10.0)
-        LEBAR_BOLA_GANDA_CM = detection_config.get("dual_ball_real_width_cm", 200.0)
-        VIRTUAL_TARGET_OFFSET_CM = detection_config.get(
-            "virtual_target_offset_cm", 80.0
+        real_width_single_cm = detection_config.get("object_real_widths_cm", {}).get(
+            "buoy_single", 10.0
+        )
+        real_width_gate_cm = detection_config.get("object_real_widths_cm", {}).get(
+            "buoy_gate", 200.0
+        )
+        virtual_target_offset_cm = detection_config.get(
+            "virtual_target_offset_cm", 40.0
         )
 
-        target_object, target_midpoint, lebar_asli_cm = None, None, 0
-        keputusan = "NAVIGATING_WAYPOINT"
+        h, w, _ = im0.shape
+        activation_y_px = int(h * activation_y_percent)
 
-        h, w, _ = annotated_frame.shape
-        activation_y_percent = detection_config.get("activation_zone_y_percent", 0.5)
-        zona_y_start = int(h * activation_y_percent)
+        # --- Filter Awal ---
+        def is_valid(buoy):
+            box = buoy["xyxy"]
+            area = (box[2] - box[0]) * (box[3] - box[1])
+            return buoy["xyxy"][3] > activation_y_px and area > min_buoy_area_px
 
-        if red_buoys and green_buoys:
-            keputusan = "AVOIDING_BUOYS (Gerbang)"
+        red_buoys_filtered = [b for b in detected_red_buoys if is_valid(b)]
+        green_buoys_filtered = [b for b in detected_green_buoys if is_valid(b)]
+
+        target_object = None
+        target_midpoint = None
+        target_real_width_cm = 0
+
+        # --- Logika Prioritas ---
+        # 1. Prioritas #1: Deteksi Gerbang & Kesadaran Spasial
+        if red_buoys_filtered and green_buoys_filtered:
             best_pair = max(
-                ((r, g) for r in red_buoys for g in green_buoys),
-                key=lambda p: self.get_score(p[0], True, p[1]),
+                ((r, g) for r in red_buoys_filtered for g in green_buoys_filtered),
+                key=lambda p: self.get_score(p[0], is_pair=True, other_ball=p[1]),
             )
-            target_object, red_ball, green_ball = best_pair, best_pair[0], best_pair[1]
+
+            # --- ANALISIS KONFIGURASI GERBANG ---
+            red_x = best_pair[0]["center"][0]
+            green_x = best_pair[1]["center"][0]
+
+            is_currently_inverted = red_x > green_x
+            if is_currently_inverted != self.is_inverted:
+                self.is_inverted = is_currently_inverted
+                print(
+                    f"\n[VISION] 🧠 Kesadaran Spasial: Konfigurasi gerbang terdeteksi sebagai {'INVERTED' if self.is_inverted else 'NORMAL'}. Status diadaptasi."
+                )
+
+            target_object = best_pair
             target_midpoint = (
-                (red_ball["center"][0] + green_ball["center"][0]) // 2,
-                (red_ball["center"][1] + green_ball["center"][1]) // 2,
+                (best_pair[0]["center"][0] + best_pair[1]["center"][0]) // 2,
+                (best_pair[0]["center"][1] + best_pair[1]["center"][1]) // 2,
             )
-            lebar_asli_cm = LEBAR_BOLA_GANDA_CM
-        elif red_buoys or green_buoys:
-            keputusan = "AVOIDING_BUOYS (Virtual)"
-            best_single_ball = max(red_buoys + green_buoys, key=self.get_score)
-            is_red = "red_buoy" in best_single_ball["class"]
-            is_left = (is_red and not self.is_inverted) or (
+            target_real_width_cm = real_width_gate_cm
+
+        # 2. Prioritas #2: Deteksi Bola Tunggal (menggunakan status is_inverted terbaru)
+        elif red_buoys_filtered or green_buoys_filtered:
+            all_buoys = red_buoys_filtered + green_buoys_filtered
+            best_buoy = max(all_buoys, key=self.get_score)
+
+            is_red = "red_buoy" in best_buoy["class"]
+            is_left_turn = (is_red and not self.is_inverted) or (
                 not is_red and self.is_inverted
             )
 
-            w_px = best_single_ball["xyxy"][2] - best_single_ball["xyxy"][0]
-            dist_cm = (
-                (LEBAR_BOLA_TUNGGAL_CM * PANJANG_FOKUS_PIKSEL) / w_px if w_px > 0 else 0
-            )
-
+            w_px = best_buoy["xyxy"][2] - best_buoy["xyxy"][0]
+            dist_cm = (real_width_single_cm * focal_length_px) / w_px if w_px > 0 else 0
             offset_px = (
-                (VIRTUAL_TARGET_OFFSET_CM * PANJANG_FOKUS_PIKSEL) / dist_cm
+                (virtual_target_offset_cm * focal_length_px) / dist_cm
                 if dist_cm > 0
                 else 0
             )
 
-            cx, cy = best_single_ball["center"]
-            v_cx = cx + int(offset_px) if is_left else cx - int(offset_px)
+            cx, cy = best_buoy["center"]
+            v_cx = cx + int(offset_px) if is_left_turn else cx - int(offset_px)
 
-            target_object, target_midpoint, lebar_asli_cm = (
-                (best_single_ball,),
-                (v_cx, cy),
-                LEBAR_BOLA_TUNGGAL_CM,
-            )
+            target_object = (best_buoy,)
+            target_midpoint = (v_cx, cy)
+            target_real_width_cm = real_width_single_cm
+
             cv2.circle(annotated_frame, target_midpoint, 10, (255, 255, 0), -1)
-            cv2.putText(
-                annotated_frame,
-                "VT",
-                (target_midpoint[0] + 15, target_midpoint[1]),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 255, 0),
-                2,
+            cv2.line(
+                annotated_frame, best_buoy["center"], target_midpoint, (255, 255, 0), 2
             )
 
-        if target_object:
-            annotator = Annotator(annotated_frame, line_width=2)
-            x1, y1 = min(t["xyxy"][0] for t in target_object), min(
-                t["xyxy"][1] for t in target_object
-            )
-            x2, y2 = max(t["xyxy"][2] for t in target_object), max(
-                t["xyxy"][3] for t in target_object
-            )
+        # --- Aktivasi Kontrol ---
+        if target_midpoint:
+            x_coords = [t["xyxy"][0] for t in target_object] + [
+                t["xyxy"][2] for t in target_object
+            ]
+            lebar_px = max(x_coords) - min(x_coords)
 
-            lebar_px = x2 - x1
             jarak_cm = (
-                (lebar_asli_cm * PANJANG_FOKUS_PIKSEL) / lebar_px if lebar_px > 0 else 0
+                (target_real_width_cm * focal_length_px) / lebar_px
+                if lebar_px > 0
+                else 0
             )
 
-            annotator.box_label([x1, y1, x2, y2], f"Jarak: {jarak_cm:.1f} cm")
+            annotator = Annotator(annotated_frame, line_width=2)
+            annotator.box_label(
+                (
+                    min(x_coords),
+                    target_object[0]["xyxy"][1],
+                    max(x_coords),
+                    target_object[0]["xyxy"][3],
+                ),
+                f"Jarak: {jarak_cm:.1f} cm",
+            )
             annotated_frame = annotator.result()
 
-            if 0 < jarak_cm < TARGET_JARAK_CM and y1 > zona_y_start:
+            if 0 < jarak_cm < activation_dist_cm:
                 degree = self.calculate_degree(im0, target_midpoint)
                 servo_angle, motor_pwm = self.convert_degree_to_actuators(degree)
 
+                print(f"\n[VISION] ZONA AKTIVASI TERPENUHI (Jarak: {jarak_cm:.1f} cm).")
                 print(
-                    f"\n[VISION] ZONA AKTIVASI TERPENUHI (Jarak: {jarak_cm:.1f} cm). Mengambil alih kontrol."
-                )
-                print(
-                    f"   => Perintah Dihitung: Motor PWM={motor_pwm}, Servo Angle={servo_angle}°"
+                    f"   => Perintah Dihitung: Motor PWM={motor_pwm}, Servo Angle={servo_angle} (Derajat Target: {degree})"
                 )
 
-                self.asv_handler.process_command(
-                    "VISION_TARGET_UPDATE",
-                    {"active": True, "degree": degree, "is_inverted": self.is_inverted},
-                )
+                payload = {
+                    "active": True,
+                    "degree": degree,
+                    "is_inverted": self.is_inverted,
+                }
+                self.asv_handler.process_command("VISION_TARGET_UPDATE", payload)
             else:
+                print(
+                    f"\r[VISION] STATUS: PASIF | Target di luar jangkauan ({jarak_cm:.1f} cm)",
+                    end="",
+                )
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE", {"active": False}
                 )
-                print(
-                    f"\r[VISION] STATUS: PASIF | Objek di luar jangkauan | Jarak: {jarak_cm:.1f}cm",
-                    end="",
-                )
         else:
-            self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
             print(
-                f"\r[VISION] STATUS: PASIF | {keputusan} | Mengikuti Waypoint...",
+                "\r[VISION] STATUS: PASIF | Tidak ada target valid, mengikuti waypoint...",
                 end="",
             )
+            self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
         return annotated_frame
 
@@ -459,10 +494,15 @@ class VisionService(QObject):
 
     @Slot(bool)
     def set_inversion(self, is_inverted):
-        self.is_inverted = is_inverted
-        print(f"\n[Vision] Logika invers diatur ke: {self.is_inverted}")
+        # Tombol manual masih bisa override, tapi sistem akan mengoreksi lagi jika melihat gerbang
+        if self.is_inverted != is_inverted:
+            self.is_inverted = is_inverted
+            print(
+                f"\n[VISION] ⚙️ Inversi diubah secara MANUAL menjadi: {self.is_inverted}"
+            )
 
     def get_score(self, ball, is_pair=False, other_ball=None):
+        """Menghitung skor untuk objek terdeteksi."""
         size = (ball["xyxy"][2] - ball["xyxy"][0]) * (ball["xyxy"][3] - ball["xyxy"][1])
         if is_pair and other_ball:
             other_size = (other_ball["xyxy"][2] - other_ball["xyxy"][0]) * (
@@ -473,33 +513,30 @@ class VisionService(QObject):
         return 0.6 * size + 0.4 * ball["center"][1]
 
     def calculate_degree(self, frame, midpoint):
+        """Mengubah posisi piksel horizontal menjadi sudut 0-180."""
         h, w, _ = frame.shape
         bar_left, bar_right = w * 0.1, w * 0.9
         relative_pos = np.clip((midpoint[0] - bar_left) / (bar_right - bar_left), 0, 1)
         return int(relative_pos * 180)
 
     def convert_degree_to_actuators(self, degree):
+        """Mengonversi sudut target menjadi perintah PWM motor dan sudut servo."""
+        vision_params = self.config.get("vision", {}).get("vision_control_params", {})
+        motor_base = vision_params.get("motor_base_pwm", 1600)
+        motor_reduction = vision_params.get("motor_reduction_factor", 100)
+        servo_range = vision_params.get("servo_range_deg", 45)
+
+        actuators_config = self.config.get("actuators", {})
+        servo_default = actuators_config.get("servo_default_angle", 90)
+
         error = degree - 90
         if self.is_inverted:
             error = -error
 
-        actuators = self.config.get("actuators", {})
-        servo_def = actuators.get("servo_default_angle", 90)
-        servo_min = actuators.get("servo_min_angle", 45)
-        servo_max = actuators.get("servo_max_angle", 135)
+        servo_angle = servo_default - (error / 90.0) * servo_range
+        servo_angle = max(0, min(180, int(servo_angle)))
 
-        normalized_error = error / 90.0
-        if normalized_error < 0:
-            servo_range = servo_def - servo_min
-            servo = servo_def + (normalized_error * servo_range)
-        else:
-            servo_range = servo_max - servo_def
-            servo = servo_def + (normalized_error * servo_range)
+        speed_reduction_factor = abs(error) / 90.0
+        motor_pwm = motor_base - (speed_reduction_factor * motor_reduction)
 
-        servo = int(np.clip(servo, servo_min, servo_max))
-
-        motor_base = actuators.get("motor_pwm_auto_base", 1650)
-        reduction = actuators.get("motor_pwm_auto_reduction", 100)
-        pwm = motor_base - (abs(normalized_error) * reduction)
-
-        return int(servo), int(pwm)
+        return int(servo_angle), int(motor_pwm)

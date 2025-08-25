@@ -35,6 +35,7 @@
     "target_activation_distance_cm": 100.0,
     "activation_zone_y_percent": 0.5,
     "virtual_target_offset_cm": 40.0,
+    "min_buoy_area_px": 500,
     "object_real_widths_cm": {
       "buoy_single": 10.0,
       "buoy_gate": 200.0,
