@@ -99,7 +99,7 @@ class VideoView(QWidget):
         self.camera_selector.clear()
         indices = []
         for i in range(5):
-            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+            cap = cv2.VideoCapture(i)
             if cap.isOpened():
                 indices.append(i)
                 cap.release()

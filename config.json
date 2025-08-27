@@ -48,7 +48,7 @@
     "conf_threshold": 0.2,
     "iou_threshold": 0.5,
     "debug": true,
-    "camera_index": 1,
+    "camera_index": 2,
     "vision_control_params": {
       "motor_base_pwm": 1600,
       "motor_reduction_factor": 100,

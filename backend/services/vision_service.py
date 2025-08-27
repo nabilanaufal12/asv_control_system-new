@@ -152,7 +152,7 @@ class VisionService(QObject):
             print(
                 f"[Vision] Mencoba membuka kamera indeks {self.camera_index} dengan backend DSHOW..."
             )
-            cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+            cap = cv2.VideoCapture(self.camera_index)
 
             if not cap.isOpened():
                 print(
@@ -161,7 +161,7 @@ class VisionService(QObject):
                 found_cam_index = self.find_working_camera()
                 if found_cam_index is not None:
                     self.camera_index = found_cam_index
-                    cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+                    cap = cv2.VideoCapture(self.camera_index)
                 else:
                     print(
                         "[Vision] ❌ Tidak ada kamera yang bisa dibuka. Mencoba lagi dalam 2 detik..."
@@ -477,7 +477,7 @@ class VisionService(QObject):
     def find_working_camera(self, max_indices=5):
         print("[Vision] Memindai kamera dengan backend DSHOW...")
         for idx in range(max_indices):
-            test_cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            test_cap = cv2.VideoCapture(idx)
             if test_cap and test_cap.isOpened():
                 print(f"[Vision]   -> Kamera ditemukan di indeks {idx}")
                 test_cap.release()
