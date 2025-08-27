@@ -1,5 +1,5 @@
 # gui/main.py
-# --- VERSI FINAL: Titik masuk tunggal untuk aplikasi All-in-One ---
+# --- VERSI FINAL: Dengan tema terang sebagai default ---
 
 import sys
 import os
@@ -30,29 +30,26 @@ if __name__ == "__main__":
 
     config = {}
     try:
-        # Perbaikan: gunakan project_root yang sudah didefinisikan
         config_path = os.path.join(project_root, "config.json")
         with open(config_path, "r") as f:
             config = json.load(f)
         print("File konfigurasi 'config.json' berhasil dimuat.")
     except Exception as e:
         print(f"KRITIS: Gagal memuat 'config.json'. Aplikasi akan berhenti. Error: {e}")
-        sys.exit(1)  # Keluar jika config tidak bisa dimuat
+        sys.exit(1)
 
-    # Memuat dan menerapkan stylesheet untuk tema gelap (opsional)
+    # --- PERBAIKAN DI SINI: Muat tema terang sebagai default ---
     try:
-        # Perbaikan: gunakan gui_dir yang sudah didefinisikan
-        theme_path = os.path.join(gui_dir, "assets", "resources", "dark_theme.qss")
+        # Ubah path untuk menunjuk ke light_theme.qss
+        theme_path = os.path.join(gui_dir, "assets", "resources", "light_theme.qss")
         with open(theme_path, "r") as f:
             app.setStyleSheet(f.read())
-        print("Tema gelap berhasil dimuat.")
+        print("Tema terang berhasil dimuat sebagai default.")
     except Exception as e:
-        print(f"Peringatan: Gagal memuat tema gelap. Error: {e}")
+        print(f"Peringatan: Gagal memuat tema terang. Error: {e}")
+    # --- AKHIR PERBAIKAN ---
 
-    # --- PERUBAHAN UTAMA: Cukup buat instance MainWindow ---
-    # MainWindow sekarang bertanggung jawab untuk menginisialisasi semua logika backend.
     window = MainWindow(config=config)
     window.show()
 
-    # Menjalankan aplikasi Qt
     sys.exit(app.exec())

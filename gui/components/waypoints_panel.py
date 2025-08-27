@@ -1,15 +1,9 @@
 # gui/components/waypoints_panel.py
-# --- MODIFIKASI: Menerima objek 'config' ---
+# --- VERSI FINAL: Dengan tata letak form yang lebih fleksibel ---
 
 from PySide6.QtWidgets import (
-    QGroupBox,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QListWidget,
-    QAbstractItemView,
+    QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QListWidget, QAbstractItemView, QFormLayout # <-- Impor QFormLayout
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator
@@ -19,15 +13,11 @@ class WaypointsPanel(QGroupBox):
     send_waypoints = Signal(list)
     add_current_pos_requested = Signal()
     waypoints_updated = Signal(list)
-    load_mission_requested = Signal(str)  # 'A' atau 'B'
+    load_mission_requested = Signal(str)
 
-    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config, title="Waypoints"):
         super().__init__(title)
-
-        # --- 2. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
-
         main_layout = QVBoxLayout()
 
         mission_box = QGroupBox("Predefined Missions")
@@ -38,19 +28,21 @@ class WaypointsPanel(QGroupBox):
         mission_layout.addWidget(self.load_b_button)
         mission_box.setLayout(mission_layout)
 
-        input_layout = QHBoxLayout()
+        # --- PERBAIKAN DI SINI: Gunakan QFormLayout untuk input Latitude/Longitude ---
+        input_form_layout = QFormLayout()
         self.lat_input = QLineEdit()
         self.lat_input.setPlaceholderText("e.g., -6.2100")
         self.lon_input = QLineEdit()
         self.lon_input.setPlaceholderText("e.g., 106.8400")
-        validator = QDoubleValidator(-90.0, 90.0, 6, self)
-        self.lat_input.setValidator(validator)
+        
+        validator_lat = QDoubleValidator(-90.0, 90.0, 6, self)
+        self.lat_input.setValidator(validator_lat)
         validator_lon = QDoubleValidator(-180.0, 180.0, 6, self)
         self.lon_input.setValidator(validator_lon)
-        input_layout.addWidget(QLabel("Latitude:"))
-        input_layout.addWidget(self.lat_input)
-        input_layout.addWidget(QLabel("Longitude:"))
-        input_layout.addWidget(self.lon_input)
+        
+        input_form_layout.addRow("Latitude:", self.lat_input)
+        input_form_layout.addRow("Longitude:", self.lon_input)
+        # --- AKHIR PERBAIKAN ---
 
         self.waypoints_list = QListWidget()
         self.waypoints_list.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -72,19 +64,15 @@ class WaypointsPanel(QGroupBox):
         send_layout.addWidget(self.send_all_button)
 
         main_layout.addWidget(mission_box)
-        main_layout.addLayout(input_layout)
+        main_layout.addLayout(input_form_layout) # <-- Gunakan layout form yang baru
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
         main_layout.addLayout(send_layout)
         self.setLayout(main_layout)
 
         # Hubungkan sinyal tombol
-        self.load_a_button.clicked.connect(
-            lambda: self.load_mission_requested.emit("A")
-        )
-        self.load_b_button.clicked.connect(
-            lambda: self.load_mission_requested.emit("B")
-        )
+        self.load_a_button.clicked.connect(lambda: self.load_mission_requested.emit("A"))
+        self.load_b_button.clicked.connect(lambda: self.load_mission_requested.emit("B"))
         self.add_manual_button.clicked.connect(self.add_manual_waypoint)
         self.add_current_pos_button.clicked.connect(self.add_current_pos_requested.emit)
         self.delete_button.clicked.connect(self.delete_waypoint)
@@ -97,7 +85,7 @@ class WaypointsPanel(QGroupBox):
         for wp in waypoints:
             waypoint_text = f"Lat: {wp['lat']:.6f}, Lon: {wp['lon']:.6f}"
             self.waypoints_list.addItem(waypoint_text)
-        self._emit_updated_waypoints()  # Update peta
+        self._emit_updated_waypoints()
 
     def _emit_updated_waypoints(self):
         current_waypoints = self._get_all_waypoints_from_list()

@@ -1,6 +1,7 @@
 # gui/components/log_panel.py
-# --- MODIFIKASI: Menerima objek 'config' ---
+# --- VERSI FINAL: Dengan perbaikan "Smart Scrolling" ---
 
+import json
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTextEdit
 from PySide6.QtCore import Slot
 from PySide6.QtGui import QFont
@@ -11,40 +12,43 @@ class LogPanel(QGroupBox):
     Panel yang menampilkan log data mentah yang diterima dari backend.
     """
 
-    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config, title="Raw Data Log"):
         super().__init__(title)
 
-        # --- 2. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
 
         main_layout = QVBoxLayout(self)
-
-        # Buat area teks untuk menampilkan log
         self.log_display = QTextEdit()
-        self.log_display.setReadOnly(True)  # Agar tidak bisa diedit oleh pengguna
+        self.log_display.setReadOnly(True)
 
-        # Atur font agar mudah dibaca
         font = QFont("Courier")
         font.setPointSize(10)
         self.log_display.setFont(font)
 
         main_layout.addWidget(self.log_display)
-        self.setLayout(main_layout)  # <-- Tambahkan baris ini untuk menerapkan layout
+        self.setLayout(main_layout)
 
     @Slot(dict)
     def update_log(self, data):
         """
-        Menerima data dictionary, mengubahnya menjadi string,
-        dan menampilkannya di area log.
+        Menerima data, menampilkannya, dan melakukan auto-scroll
+        hanya jika pengguna sudah berada di paling bawah.
         """
-        # Ubah dictionary menjadi string yang rapi
-        log_text = str(data)
+        # --- PERBAIKAN DIMULAI DI SINI ---
+        scrollbar = self.log_display.verticalScrollBar()
+        # Cek apakah scrollbar ada di posisi paling bawah sebelum menambahkan teks baru
+        # Diberi sedikit toleransi (10 piksel) untuk memastikan
+        is_at_bottom = scrollbar.value() >= (scrollbar.maximum() - 10)
+        
+        try:
+            log_text = json.dumps(data, indent=4)
+            self.log_display.append(log_text)
+            self.log_display.append("-" * 40)
+        except Exception as e:
+            self.log_display.append(str(data))
+            print(f"LogPanel Error: Gagal mengubah data ke JSON. Error: {e}")
 
-        # Tambahkan teks baru ke baris paling bawah
-        self.log_display.append(log_text)
-
-        # Auto-scroll ke bawah
-        self.log_display.verticalScrollBar().setValue(
-            self.log_display.verticalScrollBar().maximum()
-        )
+        # Hanya lakukan auto-scroll jika sebelumnya sudah di bawah
+        if is_at_bottom:
+            scrollbar.setValue(scrollbar.maximum())
+        # --- AKHIR PERBAIKAN ---

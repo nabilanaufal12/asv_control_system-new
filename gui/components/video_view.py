@@ -1,30 +1,23 @@
 # gui/components/video_view.py
-# --- VERSI FINAL: Logika tombol yang disederhanakan untuk kontrol manual ---
+# --- VERSI FINAL: Dengan SizePolicy.Ignored untuk stabilitas absolut ---
 
 import cv2
 import numpy as np
+import os # <-- Diperlukan untuk path ikon
 from PySide6.QtWidgets import (
-    QWidget,
-    QLabel,
-    QVBoxLayout,
-    QPushButton,
-    QHBoxLayout,
-    QSizePolicy,
-    QComboBox,
+    QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, 
+    QSizePolicy, QComboBox
 )
 from PySide6.QtCore import Signal, Slot, Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap, QIcon
 
 
 class VideoView(QWidget):
     """
-    Widget yang menampilkan feed video dan menyediakan kontrol kamera
-    yang terintegrasi langsung dengan VisionService.
+    Widget yang menampilkan feed video dan menyediakan kontrol kamera.
     """
-
-    # Sinyal untuk mengirim perintah ke MainWindow
     camera_changed = Signal(int)
-    toggle_camera_requested = Signal(bool)  # True untuk start, False untuk stop
+    toggle_camera_requested = Signal(bool)
     inversion_changed = Signal(bool)
 
     def __init__(self, config, parent=None):
@@ -32,13 +25,18 @@ class VideoView(QWidget):
 
         self.is_camera_running = False
 
-        # --- UI untuk Kontrol Kamera ---
         self.camera_selector = QComboBox()
         self.refresh_button = QPushButton("Refresh List")
         self.start_stop_button = QPushButton("Start Camera")
         self.invert_button = QPushButton("Invert Logic")
         self.invert_button.setCheckable(True)
-        self.invert_button.setEnabled(False)  # Diaktifkan saat kamera berjalan
+        self.invert_button.setEnabled(False)
+
+        try:
+            assets_path = os.path.join(os.path.dirname(__file__), "..", "assets")
+            self.refresh_button.setIcon(QIcon(os.path.join(assets_path, "rotate-cw.svg")))
+        except Exception as e:
+            print(f"Peringatan: Gagal memuat ikon refresh. Error: {e}")
 
         control_layout = QHBoxLayout()
         control_layout.addWidget(QLabel("Sumber Kamera:"))
@@ -47,45 +45,39 @@ class VideoView(QWidget):
         control_layout.addWidget(self.start_stop_button)
         control_layout.addWidget(self.invert_button)
 
-        # --- UI untuk Tampilan Video ---
         self.label_video = QLabel("Kamera nonaktif. Pilih sumber dan tekan 'Start'.")
         self.label_video.setAlignment(Qt.AlignCenter)
+        
+        # Kebijakan ini memberitahu label untuk mengabaikan ukuran kontennya (size hint)
+        # dan hanya mengisi ruang yang diberikan oleh layout induk (QSplitter).
         self.label_video.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.label_video.setMinimumSize(640, 480)
+        
         self.label_video.setStyleSheet(
             "background-color: black; color: white; font-size: 16px;"
         )
 
-        # --- Tata Letak Utama ---
         layout_utama = QVBoxLayout(self)
         layout_utama.addLayout(control_layout)
-        layout_utama.addWidget(self.label_video, 1)
+        layout_utama.addWidget(self.label_video, 1) 
         self.setLayout(layout_utama)
 
-        # Hubungkan sinyal dari tombol ke metode internal
         self.refresh_button.clicked.connect(self.list_available_cameras)
         self.start_stop_button.clicked.connect(self.toggle_camera_stream)
         self.invert_button.clicked.connect(self.on_inversion_toggled)
-        self.camera_selector.currentIndexChanged.connect(
-            self.on_camera_selection_changed
-        )
-
-        # Pindai kamera saat pertama kali dijalankan
+        self.camera_selector.currentIndexChanged.connect(self.on_camera_selection_changed)
         self.list_available_cameras()
 
     @Slot(np.ndarray)
     def update_frame(self, frame):
-        """Slot untuk menerima, memperbaiki warna, dan menampilkan frame baru."""
         try:
-            # Konversi warna dari BGR (OpenCV) ke RGB (Qt)
             rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_image.shape
             bytes_per_line = ch * w
             qt_image = QImage(
                 rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888
             )
-
             pixmap = QPixmap.fromImage(qt_image)
+            
             self.label_video.setPixmap(
                 pixmap.scaled(
                     self.label_video.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
@@ -95,7 +87,6 @@ class VideoView(QWidget):
             print(f"GUI Error: Gagal menampilkan frame: {e}")
 
     def list_available_cameras(self):
-        """Memindai dan menampilkan daftar kamera yang tersedia menggunakan DSHOW."""
         self.camera_selector.clear()
         indices = []
         for i in range(5):
@@ -112,19 +103,19 @@ class VideoView(QWidget):
             self.start_stop_button.setEnabled(False)
 
     def toggle_camera_stream(self):
-        """Mengirim sinyal untuk memulai atau menghentikan stream dan mengubah UI."""
         if not self.is_camera_running:
             if "Kamera" in self.camera_selector.currentText():
+                self.on_camera_selection_changed(self.camera_selector.currentIndex())
                 self.toggle_camera_requested.emit(True)
                 self.toggle_ui_controls(True)
         else:
             self.toggle_camera_requested.emit(False)
             self.toggle_ui_controls(False)
             self.label_video.setText("Kamera dihentikan.")
+            self.label_video.setStyleSheet("background-color: black; color: white;")
             self.label_video.setPixmap(QPixmap())
 
     def on_camera_selection_changed(self, index):
-        """Memberi tahu VisionService jika pilihan kamera berubah."""
         if index >= 0 and "Kamera" in self.camera_selector.currentText():
             try:
                 cam_idx = int(self.camera_selector.currentText().split(" ")[1])
@@ -133,15 +124,12 @@ class VideoView(QWidget):
                 pass
 
     def on_inversion_toggled(self):
-        """Mengirim status tombol 'Invert'."""
         is_checked = self.invert_button.isChecked()
         self.inversion_changed.emit(is_checked)
-        self.invert_button.setStyleSheet(
-            "background-color: #e74c3c; color: white;" if is_checked else ""
-        )
+        self.invert_button.setProperty("inverted", is_checked)
+        self.style().polish(self.invert_button)
 
     def toggle_ui_controls(self, is_running):
-        """Mengaktifkan/menonaktifkan tombol berdasarkan status kamera."""
         self.is_camera_running = is_running
         self.start_stop_button.setText("Stop Camera" if is_running else "Start Camera")
         self.invert_button.setEnabled(is_running)

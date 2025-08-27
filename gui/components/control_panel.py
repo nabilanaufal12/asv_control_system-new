@@ -1,5 +1,5 @@
 # gui/components/control_panel.py
-# --- MODIFIKASI: Menerima objek 'config' untuk konsistensi ---
+# --- VERSI FINAL: Dengan font yang lebih kecil dan teks multi-baris ---
 
 from PySide6.QtWidgets import QVBoxLayout, QGroupBox, QPushButton, QGridLayout
 from PySide6.QtCore import Signal
@@ -12,14 +12,16 @@ class ControlPanel(QGroupBox):
     manual_control_updated = Signal(str)
     navigation_command = Signal(str)
 
-    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config, title="Vehicle Control"):
         super().__init__(title)
 
-        # --- 2. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
-
         main_layout = QVBoxLayout()
+        main_layout.setSpacing(10) # Menambah jarak antar groupbox
+
+        # --- Buat font yang lebih kecil untuk tombol ---
+        button_font = QFont()
+        button_font.setPointSize(9) # Ukuran font diperkecil
 
         # --- Bagian Mode Control ---
         mode_box = QGroupBox("Mode")
@@ -27,16 +29,20 @@ class ControlPanel(QGroupBox):
 
         self.manual_mode_btn = QPushButton("MANUAL")
         self.manual_mode_btn.setCheckable(True)
-        self.auto_mode_btn = QPushButton("AUTO")  # Tombol AUTO yang digabungkan
+        self.manual_mode_btn.setFont(button_font)
+
+        self.auto_mode_btn = QPushButton("AUTO")
         self.auto_mode_btn.setCheckable(True)
+        self.auto_mode_btn.setFont(button_font)
 
         self.manual_mode_btn.clicked.connect(lambda: self.set_mode("MANUAL"))
         self.auto_mode_btn.clicked.connect(lambda: self.set_mode("AUTO"))
 
-        self.emergency_stop_btn = QPushButton("EMERGENCY STOP")
+        self.emergency_stop_btn = QPushButton("EMERGENCY\nSTOP")
         self.emergency_stop_btn.setStyleSheet(
             "background-color: #D32F2F; color: white; font-weight: bold;"
         )
+        self.emergency_stop_btn.setFont(button_font)
         self.emergency_stop_btn.clicked.connect(self.emergency_stop_clicked.emit)
 
         mode_layout.addWidget(self.manual_mode_btn)
@@ -44,12 +50,16 @@ class ControlPanel(QGroupBox):
         mode_layout.addWidget(self.emergency_stop_btn)
         mode_box.setLayout(mode_layout)
 
-        # (Sisa kode tidak berubah)
+        # --- Bagian Navigasi ---
         navigation_box = QGroupBox("Navigation")
         navigation_layout = QVBoxLayout()
-        self.start_mission_btn = QPushButton("Start Mission")
-        self.pause_mission_btn = QPushButton("Pause Mission")
-        self.return_home_btn = QPushButton("Return Home")
+        self.start_mission_btn = QPushButton("Start\nMission")
+        self.start_mission_btn.setFont(button_font)
+        self.pause_mission_btn = QPushButton("Pause\nMission")
+        self.pause_mission_btn.setFont(button_font)
+        self.return_home_btn = QPushButton("Return\nHome")
+        self.return_home_btn.setFont(button_font)
+        
         self.start_mission_btn.clicked.connect(
             lambda: self.navigation_command.emit("START")
         )
@@ -63,9 +73,11 @@ class ControlPanel(QGroupBox):
         navigation_layout.addWidget(self.pause_mission_btn)
         navigation_layout.addWidget(self.return_home_btn)
         navigation_box.setLayout(navigation_layout)
+
+        # --- Bagian Kontrol Manual ---
         manual_control_box = QGroupBox("Manual Control (WASD)")
         keyboard_layout = QGridLayout()
-        key_style = "padding: 10px; font-weight: bold; font-size: 14px;"
+        key_style = "padding: 8px; font-weight: bold; font-size: 12px;" # Padding & font diperkecil
         self.key_buttons = {
             "W": QPushButton("W (↑)"),
             "A": QPushButton("A (←)"),
@@ -87,7 +99,7 @@ class ControlPanel(QGroupBox):
         for button in self.key_buttons.values():
             button.released.connect(lambda: self.manual_control_updated.emit("STOP"))
             button.setStyleSheet(key_style)
-            button.setFont(QFont("Monospace", 12))
+            
         keyboard_layout.addWidget(self.key_buttons["W"], 0, 1)
         keyboard_layout.addWidget(self.key_buttons["A"], 1, 0)
         keyboard_layout.addWidget(self.key_buttons["S"], 1, 1)
