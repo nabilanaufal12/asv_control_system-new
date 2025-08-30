@@ -17,11 +17,11 @@ class ControlPanel(QGroupBox):
 
         self.config = config
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(10) # Menambah jarak antar groupbox
+        main_layout.setSpacing(10)  # Menambah jarak antar groupbox
 
         # --- Buat font yang lebih kecil untuk tombol ---
         button_font = QFont()
-        button_font.setPointSize(9) # Ukuran font diperkecil
+        button_font.setPointSize(9)  # Ukuran font diperkecil
 
         # --- Bagian Mode Control ---
         mode_box = QGroupBox("Mode")
@@ -59,7 +59,7 @@ class ControlPanel(QGroupBox):
         self.pause_mission_btn.setFont(button_font)
         self.return_home_btn = QPushButton("Return\nHome")
         self.return_home_btn.setFont(button_font)
-        
+
         self.start_mission_btn.clicked.connect(
             lambda: self.navigation_command.emit("START")
         )
@@ -77,7 +77,7 @@ class ControlPanel(QGroupBox):
         # --- Bagian Kontrol Manual ---
         manual_control_box = QGroupBox("Manual Control (WASD)")
         keyboard_layout = QGridLayout()
-        key_style = "padding: 8px; font-weight: bold; font-size: 12px;" # Padding & font diperkecil
+        key_style = "padding: 8px; font-weight: bold; font-size: 12px;"  # Padding & font diperkecil
         self.key_buttons = {
             "W": QPushButton("W (↑)"),
             "A": QPushButton("A (←)"),
@@ -99,7 +99,7 @@ class ControlPanel(QGroupBox):
         for button in self.key_buttons.values():
             button.released.connect(lambda: self.manual_control_updated.emit("STOP"))
             button.setStyleSheet(key_style)
-            
+
         keyboard_layout.addWidget(self.key_buttons["W"], 0, 1)
         keyboard_layout.addWidget(self.key_buttons["A"], 1, 0)
         keyboard_layout.addWidget(self.key_buttons["S"], 1, 1)

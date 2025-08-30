@@ -37,16 +37,20 @@ class Dashboard(QGroupBox):
 
         # Kumpulkan semua label nilai ke dalam satu list untuk di-looping
         all_value_labels = [
-            self.status_label, self.lat_label, self.lon_label,
-            self.heading_label, self.speed_label, self.voltage_label,
-            self.mission_time_label
+            self.status_label,
+            self.lat_label,
+            self.lon_label,
+            self.heading_label,
+            self.speed_label,
+            self.voltage_label,
+            self.mission_time_label,
         ]
 
         # Terapkan font dan aktifkan Word Wrap untuk semua label nilai
         # Ini adalah cara yang benar dan sudah ada sebelumnya.
         for label in all_value_labels:
             label.setFont(value_font)
-            label.setWordWrap(True) # Aktifkan word wrap di setiap QLabel
+            label.setWordWrap(True)  # Aktifkan word wrap di setiap QLabel
 
         # Tambahkan baris ke form layout
         layout.addRow("Status:", self.status_label)
@@ -71,15 +75,11 @@ class Dashboard(QGroupBox):
             if status == "NAVIGATING":
                 self.status_label.setStyleSheet("color: lightgreen;")
             elif status == "RETURNING TO HOME":
-                self.status_label.setStyleSheet(
-                    "color: #3498db; font-weight: bold;"
-                )
+                self.status_label.setStyleSheet("color: #3498db; font-weight: bold;")
             elif status == "IDLE":
                 self.status_label.setStyleSheet("color: lightblue;")
             elif status == "CONNECTED":
-                self.status_label.setStyleSheet(
-                    "color: white;"
-                )
+                self.status_label.setStyleSheet("color: white;")
             else:
                 self.status_label.setStyleSheet("color: orange;")
 

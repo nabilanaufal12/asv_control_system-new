@@ -3,7 +3,7 @@
 
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTabWidget
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QFont # <-- Impor QFont
+from PySide6.QtGui import QFont  # <-- Impor QFont
 
 # Impor semua komponen tab
 from .pid_view import PidView
@@ -36,11 +36,11 @@ class SettingsPanel(QGroupBox):
         # --- PERBAIKAN UTAMA DI SINI ---
         # 1. Buat objek font baru dengan ukuran lebih kecil
         tab_font = QFont()
-        tab_font.setPointSize(9) # Anda bisa sesuaikan ukuran ini (misalnya 8 atau 9)
+        tab_font.setPointSize(9)  # Anda bisa sesuaikan ukuran ini (misalnya 8 atau 9)
 
         # 2. Terapkan font kecil tersebut ke tab bar
         self.tab_widget.setFont(tab_font)
-        
+
         # 3. (Opsional tapi direkomendasikan) Buat tab bar bisa digulir
         self.tab_widget.tabBar().setUsesScrollButtons(True)
         # --- AKHIR PERBAIKAN ---
@@ -67,6 +67,4 @@ class SettingsPanel(QGroupBox):
         self.servo_tab.servo_settings_updated.connect(self.servo_settings_updated.emit)
         self.connection_tab.connect_requested.connect(self.connect_requested.emit)
         self.debug_tab.debug_command_sent.connect(self.debug_command_sent.emit)
-        self.thruster_tab.speed_changed.connect(
-            self.manual_speed_changed.emit
-        )
+        self.thruster_tab.speed_changed.connect(self.manual_speed_changed.emit)

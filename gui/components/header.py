@@ -3,9 +3,14 @@
 
 import os
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QLabel, QPushButton, QSpacerItem, QSizePolicy
+    QWidget,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpacerItem,
+    QSizePolicy,
 )
-from PySide6.QtCore import Slot, Qt, Signal # <-- 1. Impor Signal
+from PySide6.QtCore import Slot, Qt, Signal  # <-- 1. Impor Signal
 from PySide6.QtGui import QFont, QPixmap
 
 
@@ -13,6 +18,7 @@ class Header(QWidget):
     """
     Widget untuk header yang berisi logo, judul, dan indikator status.
     """
+
     # --- 2. Tambahkan sinyal baru di dalam kelas ---
     theme_changed_requested = Signal()
 
@@ -24,11 +30,15 @@ class Header(QWidget):
         layout.setContentsMargins(10, 5, 10, 5)
 
         self.logo_label = QLabel()
-        logo_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "assets", "logo_umrah.png"))
+        logo_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "assets", "logo_umrah.png")
+        )
 
         if os.path.exists(logo_path):
             pixmap = QPixmap(logo_path)
-            self.logo_label.setPixmap(pixmap.scaledToHeight(40, Qt.SmoothTransformation))
+            self.logo_label.setPixmap(
+                pixmap.scaledToHeight(40, Qt.SmoothTransformation)
+            )
         else:
             print(f"Peringatan: File logo tidak ditemukan di {logo_path}")
             self.logo_label.setText("[Logo]")
@@ -69,16 +79,16 @@ class Header(QWidget):
         """Menerima data dan mengupdate label status menggunakan properti dinamis."""
         status = data.get("status", "DISCONNECTED")
         self.connection_status_label.setText(status)
-        
+
         # --- PERBAIKAN: Gunakan properti dinamis, bukan setStyleSheet ---
         # Ini memungkinkan stylesheet eksternal (dark/light theme) untuk mengontrol warna
         if status == "DISCONNECTED":
             self.connection_status_label.setProperty("status", "disconnected")
         elif status == "RETURNING TO HOME":
             self.connection_status_label.setProperty("status", "rth")
-        else: # Mencakup CONNECTED, NAVIGATING, IDLE, dll.
+        else:  # Mencakup CONNECTED, NAVIGATING, IDLE, dll.
             self.connection_status_label.setProperty("status", "connected")
-        
+
         mode = data.get("control_mode", "MANUAL")
         if mode == "AUTO":
             self.mode_label.setText("Auto Mode")

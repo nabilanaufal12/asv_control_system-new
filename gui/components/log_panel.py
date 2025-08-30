@@ -39,7 +39,7 @@ class LogPanel(QGroupBox):
         # Cek apakah scrollbar ada di posisi paling bawah sebelum menambahkan teks baru
         # Diberi sedikit toleransi (10 piksel) untuk memastikan
         is_at_bottom = scrollbar.value() >= (scrollbar.maximum() - 10)
-        
+
         try:
             log_text = json.dumps(data, indent=4)
             self.log_display.append(log_text)

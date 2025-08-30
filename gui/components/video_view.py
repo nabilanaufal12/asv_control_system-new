@@ -3,10 +3,15 @@
 
 import cv2
 import numpy as np
-import os # <-- Diperlukan untuk path ikon
+import os  # <-- Diperlukan untuk path ikon
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, 
-    QSizePolicy, QComboBox
+    QWidget,
+    QLabel,
+    QVBoxLayout,
+    QPushButton,
+    QHBoxLayout,
+    QSizePolicy,
+    QComboBox,
 )
 from PySide6.QtCore import Signal, Slot, Qt
 from PySide6.QtGui import QImage, QPixmap, QIcon
@@ -16,6 +21,7 @@ class VideoView(QWidget):
     """
     Widget yang menampilkan feed video dan menyediakan kontrol kamera.
     """
+
     camera_changed = Signal(int)
     toggle_camera_requested = Signal(bool)
     inversion_changed = Signal(bool)
@@ -34,7 +40,9 @@ class VideoView(QWidget):
 
         try:
             assets_path = os.path.join(os.path.dirname(__file__), "..", "assets")
-            self.refresh_button.setIcon(QIcon(os.path.join(assets_path, "rotate-cw.svg")))
+            self.refresh_button.setIcon(
+                QIcon(os.path.join(assets_path, "rotate-cw.svg"))
+            )
         except Exception as e:
             print(f"Peringatan: Gagal memuat ikon refresh. Error: {e}")
 
@@ -47,24 +55,26 @@ class VideoView(QWidget):
 
         self.label_video = QLabel("Kamera nonaktif. Pilih sumber dan tekan 'Start'.")
         self.label_video.setAlignment(Qt.AlignCenter)
-        
+
         # Kebijakan ini memberitahu label untuk mengabaikan ukuran kontennya (size hint)
         # dan hanya mengisi ruang yang diberikan oleh layout induk (QSplitter).
         self.label_video.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        
+
         self.label_video.setStyleSheet(
             "background-color: black; color: white; font-size: 16px;"
         )
 
         layout_utama = QVBoxLayout(self)
         layout_utama.addLayout(control_layout)
-        layout_utama.addWidget(self.label_video, 1) 
+        layout_utama.addWidget(self.label_video, 1)
         self.setLayout(layout_utama)
 
         self.refresh_button.clicked.connect(self.list_available_cameras)
         self.start_stop_button.clicked.connect(self.toggle_camera_stream)
         self.invert_button.clicked.connect(self.on_inversion_toggled)
-        self.camera_selector.currentIndexChanged.connect(self.on_camera_selection_changed)
+        self.camera_selector.currentIndexChanged.connect(
+            self.on_camera_selection_changed
+        )
         self.list_available_cameras()
 
     @Slot(np.ndarray)
@@ -77,7 +87,7 @@ class VideoView(QWidget):
                 rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888
             )
             pixmap = QPixmap.fromImage(qt_image)
-            
+
             self.label_video.setPixmap(
                 pixmap.scaled(
                     self.label_video.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation

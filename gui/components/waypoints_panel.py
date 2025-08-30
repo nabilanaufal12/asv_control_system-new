@@ -2,8 +2,15 @@
 # --- VERSI FINAL: Dengan tata letak form yang lebih fleksibel ---
 
 from PySide6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QListWidget, QAbstractItemView, QFormLayout # <-- Impor QFormLayout
+    QGroupBox,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QListWidget,
+    QAbstractItemView,
+    QFormLayout,  # <-- Impor QFormLayout
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator
@@ -34,12 +41,12 @@ class WaypointsPanel(QGroupBox):
         self.lat_input.setPlaceholderText("e.g., -6.2100")
         self.lon_input = QLineEdit()
         self.lon_input.setPlaceholderText("e.g., 106.8400")
-        
+
         validator_lat = QDoubleValidator(-90.0, 90.0, 6, self)
         self.lat_input.setValidator(validator_lat)
         validator_lon = QDoubleValidator(-180.0, 180.0, 6, self)
         self.lon_input.setValidator(validator_lon)
-        
+
         input_form_layout.addRow("Latitude:", self.lat_input)
         input_form_layout.addRow("Longitude:", self.lon_input)
         # --- AKHIR PERBAIKAN ---
@@ -64,15 +71,19 @@ class WaypointsPanel(QGroupBox):
         send_layout.addWidget(self.send_all_button)
 
         main_layout.addWidget(mission_box)
-        main_layout.addLayout(input_form_layout) # <-- Gunakan layout form yang baru
+        main_layout.addLayout(input_form_layout)  # <-- Gunakan layout form yang baru
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
         main_layout.addLayout(send_layout)
         self.setLayout(main_layout)
 
         # Hubungkan sinyal tombol
-        self.load_a_button.clicked.connect(lambda: self.load_mission_requested.emit("A"))
-        self.load_b_button.clicked.connect(lambda: self.load_mission_requested.emit("B"))
+        self.load_a_button.clicked.connect(
+            lambda: self.load_mission_requested.emit("A")
+        )
+        self.load_b_button.clicked.connect(
+            lambda: self.load_mission_requested.emit("B")
+        )
         self.add_manual_button.clicked.connect(self.add_manual_waypoint)
         self.add_current_pos_button.clicked.connect(self.add_current_pos_requested.emit)
         self.delete_button.clicked.connect(self.delete_waypoint)

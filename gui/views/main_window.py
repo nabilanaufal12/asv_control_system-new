@@ -4,15 +4,24 @@ import sys
 import os
 
 try:
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 except NameError:
     sys.path.insert(0, ".")
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QTabWidget,
-    QStatusBar, QScrollArea, QApplication, QSplitter
+    QMainWindow,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QTabWidget,
+    QStatusBar,
+    QScrollArea,
+    QApplication,
+    QSplitter,
 )
 from PySide6.QtCore import Slot, Qt, QThread
 
@@ -34,11 +43,13 @@ class MainWindow(QMainWindow):
     def __init__(self, config):
         super().__init__()
         self.setWindowTitle("ASV Control System - All-in-One")
-        
+
         self.config = config
 
         self.asv_handler = AsvHandler(config=self.config)
-        self.vision_service = VisionService(config=self.config, asv_handler=self.asv_handler)
+        self.vision_service = VisionService(
+            config=self.config, asv_handler=self.asv_handler
+        )
         self.asv_handler_thread = QThread()
         self.vision_thread = QThread()
         self.header = Header(config=self.config)
@@ -50,8 +61,8 @@ class MainWindow(QMainWindow):
         self.waypoints_panel = WaypointsPanel(config=self.config)
         self.log_panel = LogPanel(config=self.config)
         self.active_manual_keys = set()
-        
-        self.current_theme = 'light'
+
+        self.current_theme = "light"
         self.themes = {}
         self._load_themes()
         self._apply_theme(self.current_theme)
@@ -59,26 +70,30 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.connect_signals()
         self.start_core_backend_thread()
-        
+
         self.showMaximized()
 
     def _load_themes(self):
         try:
             gui_dir = os.path.dirname(os.path.abspath(__file__))
-            dark_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "dark_theme.qss")
+            dark_theme_path = os.path.join(
+                gui_dir, "..", "assets", "resources", "dark_theme.qss"
+            )
             with open(dark_theme_path, "r") as f:
-                self.themes['dark'] = f.read()
-            
-            light_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "light_theme.qss")
+                self.themes["dark"] = f.read()
+
+            light_theme_path = os.path.join(
+                gui_dir, "..", "assets", "resources", "light_theme.qss"
+            )
             with open(light_theme_path, "r") as f:
-                self.themes['light'] = f.read()
+                self.themes["light"] = f.read()
         except Exception as e:
             print(f"Peringatan: Gagal memuat file tema. Error: {e}")
 
     def _apply_theme(self, theme_name):
         if theme_name in self.themes:
             QApplication.instance().setStyleSheet(self.themes[theme_name])
-            if theme_name == 'dark':
+            if theme_name == "dark":
                 self.header.theme_button.setText("Switch to Light Mode")
             else:
                 self.header.theme_button.setText("Switch to Dark Mode")
@@ -86,10 +101,10 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def toggle_theme(self):
-        if self.current_theme == 'dark':
-            self._apply_theme('light')
+        if self.current_theme == "dark":
+            self._apply_theme("light")
         else:
-            self._apply_theme('dark')
+            self._apply_theme("dark")
 
     def setup_ui(self):
         layout_sidebar_kiri = QVBoxLayout()
@@ -122,13 +137,13 @@ class MainWindow(QMainWindow):
         scroll_area_kanan.setWidgetResizable(True)
         scroll_area_kanan.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kanan.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        
+
         main_splitter = QSplitter(Qt.Horizontal)
         main_splitter.addWidget(scroll_area_kiri)
         main_splitter.addWidget(self.tab_tengah)
         main_splitter.addWidget(scroll_area_kanan)
 
-        main_splitter.setSizes([380, 800, 380]) 
+        main_splitter.setSizes([380, 800, 380])
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(2, False)
 
@@ -146,11 +161,21 @@ class MainWindow(QMainWindow):
     def connect_signals(self):
         self.header.theme_changed_requested.connect(self.toggle_theme)
         self.video_view.toggle_camera_requested.connect(self.toggle_vision_service)
-        self.control_panel.mode_changed.connect(lambda mode: self.asv_handler.process_command("CHANGE_MODE", mode))
+        self.control_panel.mode_changed.connect(
+            lambda mode: self.asv_handler.process_command("CHANGE_MODE", mode)
+        )
         self.control_panel.navigation_command.connect(self.handle_navigation_command)
-        self.waypoints_panel.send_waypoints.connect(lambda wps: self.asv_handler.process_command("SET_WAYPOINTS", wps))
-        self.settings_panel.connect_requested.connect(lambda details: self.asv_handler.process_command("CONFIGURE_SERIAL", details))
-        self.waypoints_panel.load_mission_requested.connect(self.load_predefined_mission)
+        self.waypoints_panel.send_waypoints.connect(
+            lambda wps: self.asv_handler.process_command("SET_WAYPOINTS", wps)
+        )
+        self.settings_panel.connect_requested.connect(
+            lambda details: self.asv_handler.process_command(
+                "CONFIGURE_SERIAL", details
+            )
+        )
+        self.waypoints_panel.load_mission_requested.connect(
+            self.load_predefined_mission
+        )
         self.control_panel.mode_changed.connect(self.vision_service.set_mode)
         self.video_view.inversion_changed.connect(self.vision_service.set_inversion)
         self.vision_service.frame_ready.connect(self.video_view.update_frame)
@@ -165,7 +190,7 @@ class MainWindow(QMainWindow):
                 self.asv_handler.current_state.get("longitude"),
             )
         )
-    
+
     def start_core_backend_thread(self):
         self.asv_handler.moveToThread(self.asv_handler_thread)
         self.asv_handler_thread.started.connect(self.asv_handler.run)
@@ -212,15 +237,21 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def handle_navigation_command(self, command: str):
         if command == "RETURN":
-            print("[MainWindow] Perintah Return to Home diterima, mengirim ke AsvHandler...")
+            print(
+                "[MainWindow] Perintah Return to Home diterima, mengirim ke AsvHandler..."
+            )
             self.asv_handler.process_command("INITIATE_RTH", {})
         elif command == "START":
-             self.asv_handler.process_command("START_MISSION", {})
+            self.asv_handler.process_command("START_MISSION", {})
         else:
-            print(f"[MainWindow] Perintah navigasi '{command}' belum diimplementasikan.")
+            print(
+                f"[MainWindow] Perintah navigasi '{command}' belum diimplementasikan."
+            )
 
     def handle_manual_keys(self):
-        self.asv_handler.process_command("MANUAL_CONTROL", list(self.active_manual_keys))
+        self.asv_handler.process_command(
+            "MANUAL_CONTROL", list(self.active_manual_keys)
+        )
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat():
