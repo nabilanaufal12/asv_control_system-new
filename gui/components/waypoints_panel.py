@@ -38,9 +38,18 @@ class WaypointsPanel(QGroupBox):
         # --- PERBAIKAN DI SINI: Gunakan QFormLayout untuk input Latitude/Longitude ---
         input_form_layout = QFormLayout()
         self.lat_input = QLineEdit()
-        self.lat_input.setPlaceholderText("e.g., -6.2100")
         self.lon_input = QLineEdit()
-        self.lon_input.setPlaceholderText("e.g., 106.8400")
+
+        # --- PERUBAHAN DI SINI ---
+        # Ambil pengaturan placeholder dari config
+        gui_settings = self.config.get("gui_settings", {})
+        placeholders = gui_settings.get("placeholders", {})
+        lat_placeholder = placeholders.get("latitude", "e.g., -6.2100")
+        lon_placeholder = placeholders.get("longitude", "e.g., 106.8400")
+
+        self.lat_input.setPlaceholderText(lat_placeholder)
+        self.lon_input.setPlaceholderText(lon_placeholder)
+        # --- AKHIR PERUBAHAN ---
 
         validator_lat = QDoubleValidator(-90.0, 90.0, 6, self)
         self.lat_input.setValidator(validator_lat)

@@ -143,7 +143,13 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(self.tab_tengah)
         main_splitter.addWidget(scroll_area_kanan)
 
-        main_splitter.setSizes([380, 800, 380])
+        # --- PERUBAHAN DI SINI ---
+        # Ambil pengaturan GUI dari config, dengan nilai default jika tidak ditemukan
+        gui_settings = self.config.get("gui_settings", {})
+        splitter_sizes = gui_settings.get("main_splitter_sizes", [350, 800, 350])
+        main_splitter.setSizes(splitter_sizes)
+        # --- AKHIR PERUBAHAN ---
+
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(2, False)
 
