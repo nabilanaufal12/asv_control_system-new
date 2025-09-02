@@ -1,5 +1,5 @@
 # backend/services/vision_service.py
-# --- VERSI FINAL: Dengan Kesadaran Spasial Otomatis ---
+# --- VERSI MODIFIKASI: Streaming Kondisional untuk GUI ---
 
 # 1. Impor Pustaka Standar
 import sys
@@ -19,17 +19,15 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal, Slot
 
 # 3. Logika Penyesuaian Path (Harus sebelum impor lokal)
-# Patch untuk masalah PosixPath di Windows
 if os.name == "nt":
     pathlib.PosixPath = pathlib.WindowsPath
 
-# Menambahkan path YOLOv5 ke sistem SEBELUM impor lokal
 backend_dir = Path(__file__).resolve().parents[1]
 yolov5_path = backend_dir / "yolov5"
 if str(yolov5_path) not in sys.path:
     sys.path.insert(0, str(yolov5_path))
 
-# 4. Impor Pustaka Lokal (dari proyek Anda dan YOLOv5)
+# 4. Impor Pustaka Lokal
 from utils.plots import Annotator
 from backend.vision.overlay_utils import create_overlay_from_html, apply_overlay
 
@@ -82,7 +80,8 @@ def upload_image_to_supabase(image_buffer, filename, config):
 
 
 class VisionService(QObject):
-    frame_ready = Signal(np.ndarray)
+    frame_ready_cam1 = Signal(np.ndarray)
+    frame_ready_cam2 = Signal(np.ndarray)
 
     def __init__(self, config, asv_handler):
         super().__init__()
@@ -90,9 +89,13 @@ class VisionService(QObject):
         self.asv_handler = asv_handler
         self.running = False
         self.model = None
+
+        # --- PERUBAHAN 1: Tambahkan state untuk mendengarkan GUI ---
+        self.gui_is_listening = False  # Defaultnya false, GUI harus meminta stream
+        # --------------------------------------------------------
+
         self.is_inverted = False
         self.mode_auto = False
-        self.restart_camera = False
         self.surface_image_count = 1
         self.underwater_image_count = 1
 
@@ -102,7 +105,8 @@ class VisionService(QObject):
         self.device = str(
             vision_cfg.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         )
-        self.camera_index = int(vision_cfg.get("camera_index", 0))
+        self.camera_index_1 = int(vision_cfg.get("camera_index_1", 0))
+        self.camera_index_2 = int(vision_cfg.get("camera_index_2", 1))
 
         self.KNOWN_CLASSES = ["red_buoy", "green_buoy", "blue_box", "green_box"]
         self.poi_confidence_threshold = 0.65
@@ -138,65 +142,87 @@ class VisionService(QObject):
             traceback.print_exc()
             self.model = None
 
+    # --- PERUBAHAN 2: Tambahkan Slot untuk mengontrol streaming ---
+    @Slot(bool)
+    def set_gui_listening(self, status: bool):
+        """Slot untuk mengaktifkan atau menonaktifkan pengiriman frame ke GUI."""
+        self.gui_is_listening = status
+        print(
+            f"[Vision] Pengiriman stream video ke GUI diatur ke: {self.gui_is_listening}"
+        )
+
+    # -----------------------------------------------------------
+
     @Slot()
-    def run(self):
+    def start(self):
         if self.model is None:
             print("[Vision] Model tidak tersedia, layanan visi tidak dapat dimulai.")
             return
 
         self.running = True
+        self.thread1 = threading.Thread(
+            target=self._capture_loop,
+            args=(self.camera_index_1, self.frame_ready_cam1, True),
+        )
+        self.thread2 = threading.Thread(
+            target=self._capture_loop,
+            args=(self.camera_index_2, self.frame_ready_cam2, False),
+        )
+        self.thread1.daemon = True
+        self.thread2.daemon = True
+        self.thread1.start()
+        self.thread2.start()
+        print("[Vision] Thread untuk kedua kamera telah dimulai.")
+
+    def _capture_loop(self, cam_index, frame_signal, apply_detection):
         cap = None
-
         while self.running:
-            self.restart_camera = False
-            print(
-                f"[Vision] Mencoba membuka kamera indeks {self.camera_index} dengan backend DSHOW..."
-            )
-            cap = cv2.VideoCapture(self.camera_index)
-
-            if not cap.isOpened():
-                print(
-                    f"[Vision] ERROR: Gagal membuka kamera indeks {self.camera_index}. Mencari kamera lain..."
-                )
-                found_cam_index = self.find_working_camera()
-                if found_cam_index is not None:
-                    self.camera_index = found_cam_index
-                    cap = cv2.VideoCapture(self.camera_index)
-                else:
+            try:
+                print(f"[Vision Cam-{cam_index}] Mencoba membuka kamera...")
+                cap = cv2.VideoCapture(cam_index)
+                if not cap.isOpened():
                     print(
-                        "[Vision] ❌ Tidak ada kamera yang bisa dibuka. Mencoba lagi dalam 2 detik..."
+                        f"[Vision Cam-{cam_index}] ❌ Gagal membuka kamera. Mencoba lagi dalam 5 detik..."
                     )
-                    time.sleep(2)
+                    time.sleep(5)
                     continue
 
-            print(
-                f"[Vision] Kamera {self.camera_index} berhasil dibuka. Memulai deteksi..."
-            )
-
-            while self.running and not self.restart_camera:
-                try:
+                print(
+                    f"[Vision Cam-{cam_index}] Kamera berhasil dibuka. Memulai stream..."
+                )
+                while self.running:
                     if not cap.isOpened():
                         break
-                    ret, im0 = cap.read()
+                    ret, frame = cap.read()
                     if not ret:
+                        print(
+                            f"[Vision Cam-{cam_index}] Peringatan: Gagal membaca frame."
+                        )
                         break
 
-                    annotated_frame = self.process_frame(im0)
-                    self.frame_ready.emit(annotated_frame)
-                    time.sleep(0.01)
+                    processed_frame = frame
+                    if apply_detection:
+                        # Logika deteksi tetap berjalan terus
+                        processed_frame = self.process_frame(frame)
 
-                except Exception as e:
-                    print(f"\n[Vision] ERROR di dalam loop deteksi: {e}")
-                    traceback.print_exc()
-                    break
+                    # --- PERUBAHAN 3: Kirim frame HANYA jika GUI mendengarkan ---
+                    if self.gui_is_listening:
+                        frame_signal.emit(processed_frame)
+                    # -------------------------------------------------------------
 
-            if cap and cap.isOpened():
-                cap.release()
+                    # Beri jeda sedikit agar tidak membebani CPU saat tidak ada yg melihat
+                    time.sleep(0.01 if self.gui_is_listening else 0.1)
 
-            if self.restart_camera:
-                print("\n[Vision] Me-restart stream kamera...")
-
-        print("\n[Vision] Thread layanan visi telah dihentikan.")
+            except Exception as e:
+                print(f"\n[Vision Cam-{cam_index}] ERROR di dalam loop deteksi: {e}")
+                traceback.print_exc()
+            finally:
+                if cap and cap.isOpened():
+                    cap.release()
+                print(
+                    f"[Vision Cam-{cam_index}] Stream kamera dihentikan. Akan mencoba memulai ulang."
+                )
+                time.sleep(2)
 
     def process_frame(self, im0):
         results = self.model(im0)
@@ -236,12 +262,10 @@ class VisionService(QObject):
         if potential_pois:
             self.validate_and_trigger_investigation(potential_pois[0], im0)
 
-        # --- MODIFIKASI DIMULAI DI SINI ---
         if self.mode_auto and (detected_green_boxes or detected_blue_boxes):
             self.handle_photography_mission(
                 im0, detected_green_boxes, detected_blue_boxes
             )
-        # --- AKHIR MODIFIKASI ---
 
         if self.mode_auto and not self.investigation_in_progress:
             annotated_frame = self.handle_auto_control(
@@ -251,7 +275,6 @@ class VisionService(QObject):
         return annotated_frame
 
     def validate_and_trigger_investigation(self, poi_data, im0):
-        """Memvalidasi POI selama beberapa frame dan mengirim perintah investigasi."""
         if (
             self.asv_handler.mission_phase == "PATROLLING"
             and not self.investigation_in_progress
@@ -262,7 +285,6 @@ class VisionService(QObject):
                 len(self.recent_detections) == self.poi_validation_frames
                 and len(set(self.recent_detections)) == 1
             ):
-
                 print(
                     f"\n[Vision] 🕵️‍♂️ Anomali terdeteksi & tervalidasi: '{poi_data['class']}'. Memulai investigasi!"
                 )
@@ -320,14 +342,9 @@ class VisionService(QObject):
     def handle_auto_control(
         self, im0, annotated_frame, detected_red_buoys, detected_green_buoys
     ):
-        """
-        Logika utama untuk avoidance otomatis dengan kesadaran spasial.
-        """
         detection_config = self.config.get("camera_detection", {})
         focal_length_px = detection_config.get("focal_length_pixels", 600)
-        activation_dist_cm = detection_config.get(
-            "target_activation_distance_cm", 100.0
-        )
+        activation_dist_cm = detection_config.get("target_activation_distance_cm", 50.0)
         activation_y_percent = detection_config.get("activation_zone_y_percent", 0.5)
         min_buoy_area_px = detection_config.get("min_buoy_area_px", 500)
 
@@ -344,7 +361,6 @@ class VisionService(QObject):
         h, w, _ = im0.shape
         activation_y_px = int(h * activation_y_percent)
 
-        # --- Filter Awal ---
         def is_valid(buoy):
             box = buoy["xyxy"]
             area = (box[2] - box[0]) * (box[3] - box[1])
@@ -357,42 +373,32 @@ class VisionService(QObject):
         target_midpoint = None
         target_real_width_cm = 0
 
-        # --- Logika Prioritas ---
-        # 1. Prioritas #1: Deteksi Gerbang & Kesadaran Spasial
         if red_buoys_filtered and green_buoys_filtered:
             best_pair = max(
                 ((r, g) for r in red_buoys_filtered for g in green_buoys_filtered),
                 key=lambda p: self.get_score(p[0], is_pair=True, other_ball=p[1]),
             )
-
-            # --- ANALISIS KONFIGURASI GERBANG ---
             red_x = best_pair[0]["center"][0]
             green_x = best_pair[1]["center"][0]
-
             is_currently_inverted = red_x > green_x
             if is_currently_inverted != self.is_inverted:
                 self.is_inverted = is_currently_inverted
                 print(
                     f"\n[VISION] 🧠 Kesadaran Spasial: Konfigurasi gerbang terdeteksi sebagai {'INVERTED' if self.is_inverted else 'NORMAL'}. Status diadaptasi."
                 )
-
             target_object = best_pair
             target_midpoint = (
                 (best_pair[0]["center"][0] + best_pair[1]["center"][0]) // 2,
                 (best_pair[0]["center"][1] + best_pair[1]["center"][1]) // 2,
             )
             target_real_width_cm = real_width_gate_cm
-
-        # 2. Prioritas #2: Deteksi Bola Tunggal (menggunakan status is_inverted terbaru)
         elif red_buoys_filtered or green_buoys_filtered:
             all_buoys = red_buoys_filtered + green_buoys_filtered
             best_buoy = max(all_buoys, key=self.get_score)
-
             is_red = "red_buoy" in best_buoy["class"]
             is_left_turn = (is_red and not self.is_inverted) or (
                 not is_red and self.is_inverted
             )
-
             w_px = best_buoy["xyxy"][2] - best_buoy["xyxy"][0]
             dist_cm = (real_width_single_cm * focal_length_px) / w_px if w_px > 0 else 0
             offset_px = (
@@ -400,32 +406,26 @@ class VisionService(QObject):
                 if dist_cm > 0
                 else 0
             )
-
             cx, cy = best_buoy["center"]
             v_cx = cx + int(offset_px) if is_left_turn else cx - int(offset_px)
-
             target_object = (best_buoy,)
             target_midpoint = (v_cx, cy)
             target_real_width_cm = real_width_single_cm
-
             cv2.circle(annotated_frame, target_midpoint, 10, (255, 255, 0), -1)
             cv2.line(
                 annotated_frame, best_buoy["center"], target_midpoint, (255, 255, 0), 2
             )
 
-        # --- Aktivasi Kontrol ---
         if target_midpoint:
             x_coords = [t["xyxy"][0] for t in target_object] + [
                 t["xyxy"][2] for t in target_object
             ]
             lebar_px = max(x_coords) - min(x_coords)
-
             jarak_cm = (
                 (target_real_width_cm * focal_length_px) / lebar_px
                 if lebar_px > 0
                 else 0
             )
-
             annotator = Annotator(annotated_frame, line_width=2)
             annotator.box_label(
                 (
@@ -437,16 +437,13 @@ class VisionService(QObject):
                 f"Jarak: {jarak_cm:.1f} cm",
             )
             annotated_frame = annotator.result()
-
             if 0 < jarak_cm < activation_dist_cm:
                 degree = self.calculate_degree(im0, target_midpoint)
                 servo_angle, motor_pwm = self.convert_degree_to_actuators(degree)
-
                 print(f"\n[VISION] ZONA AKTIVASI TERPENUHI (Jarak: {jarak_cm:.1f} cm).")
                 print(
                     f"   => Perintah Dihitung: Motor PWM={motor_pwm}, Servo Angle={servo_angle} (Derajat Target: {degree})"
                 )
-
                 payload = {
                     "active": True,
                     "degree": degree,
@@ -454,35 +451,17 @@ class VisionService(QObject):
                 }
                 self.asv_handler.process_command("VISION_TARGET_UPDATE", payload)
             else:
-                print(
-                    f"\r[VISION] STATUS: PASIF | Target di luar jangkauan ({jarak_cm:.1f} cm)",
-                    end="",
-                )
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE", {"active": False}
                 )
         else:
-            print(
-                "\r[VISION] STATUS: PASIF | Tidak ada target valid, mengikuti waypoint...",
-                end="",
-            )
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
         return annotated_frame
 
     def stop(self):
         self.running = False
-        print("\n[Vision] Perintah stop diterima.")
-
-    def find_working_camera(self, max_indices=5):
-        print("[Vision] Memindai kamera dengan backend DSHOW...")
-        for idx in range(max_indices):
-            test_cap = cv2.VideoCapture(idx)
-            if test_cap and test_cap.isOpened():
-                print(f"[Vision]   -> Kamera ditemukan di indeks {idx}")
-                test_cap.release()
-                return idx
-        return None
+        print("\n[Vision] Perintah stop diterima. Menghentikan semua thread kamera.")
 
     @Slot(str)
     def set_mode(self, mode):
@@ -494,7 +473,6 @@ class VisionService(QObject):
 
     @Slot(bool)
     def set_inversion(self, is_inverted):
-        # Tombol manual masih bisa override, tapi sistem akan mengoreksi lagi jika melihat gerbang
         if self.is_inverted != is_inverted:
             self.is_inverted = is_inverted
             print(
@@ -502,7 +480,6 @@ class VisionService(QObject):
             )
 
     def get_score(self, ball, is_pair=False, other_ball=None):
-        """Menghitung skor untuk objek terdeteksi."""
         size = (ball["xyxy"][2] - ball["xyxy"][0]) * (ball["xyxy"][3] - ball["xyxy"][1])
         if is_pair and other_ball:
             other_size = (other_ball["xyxy"][2] - other_ball["xyxy"][0]) * (
@@ -513,28 +490,28 @@ class VisionService(QObject):
         return 0.6 * size + 0.4 * ball["center"][1]
 
     def calculate_degree(self, frame, midpoint):
-        """Mengubah posisi piksel horizontal menjadi sudut 0-180."""
         h, w, _ = frame.shape
         bar_left, bar_right = w * 0.1, w * 0.9
         relative_pos = np.clip((midpoint[0] - bar_left) / (bar_right - bar_left), 0, 1)
         return int(relative_pos * 180)
 
     def convert_degree_to_actuators(self, degree):
-        """Mengonversi sudut target menjadi perintah PWM motor dan sudut servo."""
         vision_params = self.config.get("vision", {}).get("vision_control_params", {})
         motor_base = vision_params.get("motor_base_pwm", 1600)
-        motor_reduction = vision_params.get("motor_reduction_factor", 100)
-        servo_range = vision_params.get("servo_range_deg", 45)
+        motor_reduction = vision_params.get("motor_reduction_factor", 50)
+        servo_range = vision_params.get("servo_range_deg", 60)
 
         actuators_config = self.config.get("actuators", {})
         servo_default = actuators_config.get("servo_default_angle", 90)
+        servo_min = actuators_config.get("servo_min_angle", 45)
+        servo_max = actuators_config.get("servo_max_angle", 135)
 
         error = degree - 90
         if self.is_inverted:
             error = -error
 
         servo_angle = servo_default - (error / 90.0) * servo_range
-        servo_angle = max(0, min(180, int(servo_angle)))
+        servo_angle = int(max(servo_min, min(servo_max, servo_angle)))
 
         speed_reduction_factor = abs(error) / 90.0
         motor_pwm = motor_base - (speed_reduction_factor * motor_reduction)

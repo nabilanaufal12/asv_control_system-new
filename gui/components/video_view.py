@@ -1,9 +1,9 @@
 # gui/components/video_view.py
-# --- VERSI FINAL: Dengan SizePolicy.Ignored untuk stabilitas absolut ---
+# --- VERSI MODIFIKASI: Mendukung dua stream video berdampingan ---
 
 import cv2
 import numpy as np
-import os  # <-- Diperlukan untuk path ikon
+import os
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QSizePolicy,
     QComboBox,
+    QSplitter,  # <-- Impor QSplitter
 )
 from PySide6.QtCore import Signal, Slot, Qt
 from PySide6.QtGui import QImage, QPixmap, QIcon
@@ -19,7 +20,8 @@ from PySide6.QtGui import QImage, QPixmap, QIcon
 
 class VideoView(QWidget):
     """
-    Widget yang menampilkan feed video dan menyediakan kontrol kamera.
+    Widget yang menampilkan DUA feed video secara berdampingan
+    dan menyediakan kontrol kamera.
     """
 
     camera_changed = Signal(int)
@@ -33,7 +35,7 @@ class VideoView(QWidget):
 
         self.camera_selector = QComboBox()
         self.refresh_button = QPushButton("Refresh List")
-        self.start_stop_button = QPushButton("Start Camera")
+        self.start_stop_button = QPushButton("Start Cameras")
         self.invert_button = QPushButton("Invert Logic")
         self.invert_button.setCheckable(True)
         self.invert_button.setEnabled(False)
@@ -47,26 +49,37 @@ class VideoView(QWidget):
             print(f"Peringatan: Gagal memuat ikon refresh. Error: {e}")
 
         control_layout = QHBoxLayout()
-        control_layout.addWidget(QLabel("Sumber Kamera:"))
+        control_layout.addWidget(QLabel("Sumber Kamera Utama:"))
         control_layout.addWidget(self.camera_selector, 1)
         control_layout.addWidget(self.refresh_button)
         control_layout.addWidget(self.start_stop_button)
         control_layout.addWidget(self.invert_button)
 
-        self.label_video = QLabel("Kamera nonaktif. Pilih sumber dan tekan 'Start'.")
-        self.label_video.setAlignment(Qt.AlignCenter)
-
-        # Kebijakan ini memberitahu label untuk mengabaikan ukuran kontennya (size hint)
-        # dan hanya mengisi ruang yang diberikan oleh layout induk (QSplitter).
-        self.label_video.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-
-        self.label_video.setStyleSheet(
+        # --- PERUBAHAN 1: Buat dua QLabel untuk video ---
+        self.label_video_1 = QLabel(
+            "Kamera Atas Nonaktif.\nPilih sumber dan tekan 'Start'."
+        )
+        self.label_video_1.setAlignment(Qt.AlignCenter)
+        self.label_video_1.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.label_video_1.setStyleSheet(
             "background-color: black; color: white; font-size: 16px;"
         )
 
+        self.label_video_2 = QLabel("Kamera Bawah Nonaktif.")
+        self.label_video_2.setAlignment(Qt.AlignCenter)
+        self.label_video_2.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.label_video_2.setStyleSheet(
+            "background-color: black; color: white; font-size: 16px;"
+        )
+
+        # --- PERUBAHAN 2: Gunakan QSplitter untuk tata letak berdampingan ---
+        video_splitter = QSplitter(Qt.Horizontal)
+        video_splitter.addWidget(self.label_video_1)
+        video_splitter.addWidget(self.label_video_2)
+
         layout_utama = QVBoxLayout(self)
         layout_utama.addLayout(control_layout)
-        layout_utama.addWidget(self.label_video, 1)
+        layout_utama.addWidget(video_splitter, 1)  # Tambahkan splitter ke layout
         self.setLayout(layout_utama)
 
         self.refresh_button.clicked.connect(self.list_available_cameras)
@@ -77,8 +90,19 @@ class VideoView(QWidget):
         )
         self.list_available_cameras()
 
+    # --- PERUBAHAN 3: Buat slot terpisah untuk setiap frame kamera ---
     @Slot(np.ndarray)
-    def update_frame(self, frame):
+    def update_frame_1(self, frame):
+        """Menerima dan menampilkan frame untuk kamera 1 (kiri)."""
+        self._display_frame(frame, self.label_video_1)
+
+    @Slot(np.ndarray)
+    def update_frame_2(self, frame):
+        """Menerima dan menampilkan frame untuk kamera 2 (kanan)."""
+        self._display_frame(frame, self.label_video_2)
+
+    def _display_frame(self, frame, label_widget):
+        """Fungsi helper untuk mengubah numpy array ke QPixmap dan menampilkannya."""
         try:
             rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_image.shape
@@ -88,9 +112,9 @@ class VideoView(QWidget):
             )
             pixmap = QPixmap.fromImage(qt_image)
 
-            self.label_video.setPixmap(
+            label_widget.setPixmap(
                 pixmap.scaled(
-                    self.label_video.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+                    label_widget.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
             )
         except Exception as e:
@@ -121,9 +145,11 @@ class VideoView(QWidget):
         else:
             self.toggle_camera_requested.emit(False)
             self.toggle_ui_controls(False)
-            self.label_video.setText("Kamera dihentikan.")
-            self.label_video.setStyleSheet("background-color: black; color: white;")
-            self.label_video.setPixmap(QPixmap())
+            # Reset kedua label
+            self.label_video_1.setText("Kamera dihentikan.")
+            self.label_video_1.setPixmap(QPixmap())
+            self.label_video_2.setText("Kamera dihentikan.")
+            self.label_video_2.setPixmap(QPixmap())
 
     def on_camera_selection_changed(self, index):
         if index >= 0 and "Kamera" in self.camera_selector.currentText():
@@ -141,7 +167,9 @@ class VideoView(QWidget):
 
     def toggle_ui_controls(self, is_running):
         self.is_camera_running = is_running
-        self.start_stop_button.setText("Stop Camera" if is_running else "Start Camera")
+        self.start_stop_button.setText(
+            "Stop Cameras" if is_running else "Start Cameras"
+        )
         self.invert_button.setEnabled(is_running)
         self.camera_selector.setEnabled(not is_running)
         self.refresh_button.setEnabled(not is_running)

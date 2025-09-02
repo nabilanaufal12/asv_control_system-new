@@ -1,5 +1,5 @@
 # gui/components/control_panel.py
-# --- VERSI FINAL: Dengan font yang lebih kecil dan teks multi-baris ---
+# --- VERSI MODIFIKASI: AUTO sebagai default dan di urutan pertama ---
 
 from PySide6.QtWidgets import QVBoxLayout, QGroupBox, QPushButton, QGridLayout
 from PySide6.QtCore import Signal
@@ -17,26 +17,27 @@ class ControlPanel(QGroupBox):
 
         self.config = config
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)  # Menambah jarak antar groupbox
+        main_layout.setSpacing(10)
 
-        # --- Buat font yang lebih kecil untuk tombol ---
         button_font = QFont()
-        button_font.setPointSize(9)  # Ukuran font diperkecil
+        button_font.setPointSize(9)
 
         # --- Bagian Mode Control ---
         mode_box = QGroupBox("Mode")
         mode_layout = QVBoxLayout()
 
-        self.manual_mode_btn = QPushButton("MANUAL")
-        self.manual_mode_btn.setCheckable(True)
-        self.manual_mode_btn.setFont(button_font)
-
+        # --- PERUBAHAN 1: Tukar urutan tombol ---
         self.auto_mode_btn = QPushButton("AUTO")
         self.auto_mode_btn.setCheckable(True)
         self.auto_mode_btn.setFont(button_font)
 
-        self.manual_mode_btn.clicked.connect(lambda: self.set_mode("MANUAL"))
+        self.manual_mode_btn = QPushButton("MANUAL")
+        self.manual_mode_btn.setCheckable(True)
+        self.manual_mode_btn.setFont(button_font)
+
+        # --- PERUBAHAN 2: Sesuaikan koneksi sinyal ---
         self.auto_mode_btn.clicked.connect(lambda: self.set_mode("AUTO"))
+        self.manual_mode_btn.clicked.connect(lambda: self.set_mode("MANUAL"))
 
         self.emergency_stop_btn = QPushButton("EMERGENCY\nSTOP")
         self.emergency_stop_btn.setStyleSheet(
@@ -45,12 +46,13 @@ class ControlPanel(QGroupBox):
         self.emergency_stop_btn.setFont(button_font)
         self.emergency_stop_btn.clicked.connect(self.emergency_stop_clicked.emit)
 
-        mode_layout.addWidget(self.manual_mode_btn)
+        # --- PERUBAHAN 3: Tambahkan tombol ke layout sesuai urutan baru ---
         mode_layout.addWidget(self.auto_mode_btn)
+        mode_layout.addWidget(self.manual_mode_btn)
         mode_layout.addWidget(self.emergency_stop_btn)
         mode_box.setLayout(mode_layout)
 
-        # --- Bagian Navigasi ---
+        # --- (Sisa dari file tidak berubah) ---
         navigation_box = QGroupBox("Navigation")
         navigation_layout = QVBoxLayout()
         self.start_mission_btn = QPushButton("Start\nMission")
@@ -74,10 +76,9 @@ class ControlPanel(QGroupBox):
         navigation_layout.addWidget(self.return_home_btn)
         navigation_box.setLayout(navigation_layout)
 
-        # --- Bagian Kontrol Manual ---
         manual_control_box = QGroupBox("Manual Control (WASD)")
         keyboard_layout = QGridLayout()
-        key_style = "padding: 8px; font-weight: bold; font-size: 12px;"  # Padding & font diperkecil
+        key_style = "padding: 8px; font-weight: bold; font-size: 12px;"
         self.key_buttons = {
             "W": QPushButton("W (↑)"),
             "A": QPushButton("A (←)"),
@@ -112,7 +113,8 @@ class ControlPanel(QGroupBox):
         main_layout.addStretch()
         self.setLayout(main_layout)
 
-        self.set_mode("MANUAL")
+        # --- PERUBAHAN 4: Set mode default ke AUTO ---
+        self.set_mode("AUTO")
 
     def set_mode(self, mode):
         is_manual = mode == "MANUAL"

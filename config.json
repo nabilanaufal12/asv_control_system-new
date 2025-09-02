@@ -36,7 +36,7 @@
   },
   "camera_detection": {
     "focal_length_pixels": 600,
-    "target_activation_distance_cm": 100.0,
+    "target_activation_distance_cm": 50.0,
     "activation_zone_y_percent": 0.5,
     "virtual_target_offset_cm": 40.0,
     "min_buoy_area_px": 500,
@@ -52,11 +52,12 @@
     "conf_threshold": 0.2,
     "iou_threshold": 0.5,
     "debug": true,
-    "camera_index": 2,
+    "camera_index_1": 0,
+    "camera_index_2": 2,
     "vision_control_params": {
       "motor_base_pwm": 1600,
-      "motor_reduction_factor": 100,
-      "servo_range_deg": 45
+      "motor_reduction_factor": 50,
+      "servo_range_deg": 60
     }
   },
   "api_urls": {

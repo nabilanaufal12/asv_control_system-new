@@ -1,5 +1,6 @@
 # gui/views/main_window.py
-# --- VERSI FINAL: Menggunakan QSplitter untuk tata letak yang stabil ---
+# --- VERSI MODIFIKASI: Kontrol Tampilan, Bukan Logika ---
+
 import sys
 import os
 
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QSplitter,
 )
-from PySide6.QtCore import Slot, Qt, QThread
+from PySide6.QtCore import Slot, Qt, QThread, Signal  # <-- Impor Signal
 
 from gui.components.control_panel import ControlPanel
 from gui.components.dashboard import Dashboard
@@ -40,6 +41,10 @@ from backend.services.vision_service import VisionService
 
 
 class MainWindow(QMainWindow):
+    # --- PERUBAHAN 1: Tambahkan sinyal baru untuk komunikasi antar thread ---
+    set_stream_listening_requested = Signal(bool)
+    # ----------------------------------------------------------------------
+
     def __init__(self, config):
         super().__init__()
         self.setWindowTitle("ASV Control System - All-in-One")
@@ -51,7 +56,6 @@ class MainWindow(QMainWindow):
             config=self.config, asv_handler=self.asv_handler
         )
         self.asv_handler_thread = QThread()
-        self.vision_thread = QThread()
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
         self.system_status_panel = Dashboard(config=self.config)
@@ -69,7 +73,10 @@ class MainWindow(QMainWindow):
 
         self.setup_ui()
         self.connect_signals()
-        self.start_core_backend_thread()
+
+        # --- PERUBAHAN 2: Pindahkan proses start backend ke sini ---
+        self.start_backend_services()
+        # ----------------------------------------------------------
 
         self.showMaximized()
 
@@ -143,12 +150,9 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(self.tab_tengah)
         main_splitter.addWidget(scroll_area_kanan)
 
-        # --- PERUBAHAN DI SINI ---
-        # Ambil pengaturan GUI dari config, dengan nilai default jika tidak ditemukan
         gui_settings = self.config.get("gui_settings", {})
         splitter_sizes = gui_settings.get("main_splitter_sizes", [350, 800, 350])
         main_splitter.setSizes(splitter_sizes)
-        # --- AKHIR PERUBAHAN ---
 
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(2, False)
@@ -165,8 +169,17 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Aplikasi Siap.")
 
     def connect_signals(self):
+        # --- PERUBAHAN 3: Hubungkan sinyal baru ke slot di VisionService ---
+        self.set_stream_listening_requested.connect(
+            self.vision_service.set_gui_listening
+        )
+        # --------------------------------------------------------------------
+
         self.header.theme_changed_requested.connect(self.toggle_theme)
-        self.video_view.toggle_camera_requested.connect(self.toggle_vision_service)
+
+        # Tombol di VideoView sekarang akan memanggil on_toggle_gui_stream
+        self.video_view.toggle_camera_requested.connect(self.on_toggle_gui_stream)
+
         self.control_panel.mode_changed.connect(
             lambda mode: self.asv_handler.process_command("CHANGE_MODE", mode)
         )
@@ -184,7 +197,10 @@ class MainWindow(QMainWindow):
         )
         self.control_panel.mode_changed.connect(self.vision_service.set_mode)
         self.video_view.inversion_changed.connect(self.vision_service.set_inversion)
-        self.vision_service.frame_ready.connect(self.video_view.update_frame)
+
+        self.vision_service.frame_ready_cam1.connect(self.video_view.update_frame_1)
+        self.vision_service.frame_ready_cam2.connect(self.video_view.update_frame_2)
+
         self.asv_handler.telemetry_updated.connect(self.system_status_panel.update_data)
         self.asv_handler.telemetry_updated.connect(self.map_view.update_data)
         self.asv_handler.telemetry_updated.connect(self.log_panel.update_log)
@@ -197,34 +213,44 @@ class MainWindow(QMainWindow):
             )
         )
 
-    def start_core_backend_thread(self):
+    def start_backend_services(self):
+        """Memulai semua layanan backend (ASV & Visi) di thread terpisah."""
+        # Start AsvHandler
         self.asv_handler.moveToThread(self.asv_handler_thread)
         self.asv_handler_thread.started.connect(self.asv_handler.run)
         self.asv_handler_thread.start()
         print("Thread untuk AsvHandler dimulai.")
 
+        # --- PERUBAHAN 4: VisionService juga dimulai otomatis ---
+        print("Memulai layanan Visi di latar belakang...")
+        self.vision_service.start()
+        # --------------------------------------------------------
+
+    # --- PERUBAHAN 5: Logika toggle_vision_service diubah total ---
     @Slot(bool)
-    def toggle_vision_service(self, start):
-        if start:
-            if not self.vision_thread.isRunning():
-                self.vision_service.moveToThread(self.vision_thread)
-                self.vision_thread.started.connect(self.vision_service.run)
-                self.vision_service.running = True
-                self.vision_thread.start()
-                print("Thread VisionService dimulai oleh pengguna.")
-        else:
-            if self.vision_thread.isRunning():
-                self.vision_service.stop()
-                self.vision_thread.quit()
-                self.vision_thread.wait(3000)
-                print("Thread VisionService dihentikan oleh pengguna.")
+    def on_toggle_gui_stream(self, show_video: bool):
+        """
+        Slot ini dipanggil oleh tombol di VideoView.
+        Fungsinya hanya untuk meminta backend mengirim atau berhenti mengirim frame.
+        """
+        print(
+            f"GUI meminta untuk {'menampilkan' if show_video else 'menyembunyikan'} stream video."
+        )
+        # Menggunakan sinyal untuk komunikasi thread-safe ke VisionService
+        self.set_stream_listening_requested.emit(show_video)
+
+    # -----------------------------------------------------------------
 
     def closeEvent(self, event):
         print("Menutup aplikasi...")
-        self.toggle_vision_service(False)
+        # Hentikan semua service di backend
+        self.vision_service.stop()
         self.asv_handler.stop()
+
+        # Hentikan thread utama AsvHandler
         self.asv_handler_thread.quit()
         self.asv_handler_thread.wait(3000)
+
         print("Semua thread backend telah dihentikan.")
         super().closeEvent(event)
 

@@ -20,9 +20,9 @@ class AsvHandler(QObject):
         self.serial_handler = SerialHandler(config)
         self.running = True
 
-        # --- PERUBAHAN 1: Penambahan state baru untuk investigasi ---
+        # --- PERUBAHAN DI SINI: Mengubah mode default ke AUTO ---
         self.current_state = {
-            "control_mode": "MANUAL",
+            "control_mode": "AUTO",  # <-- NILAI DEFAULT DIUBAH MENJADI "AUTO"
             "latitude": -6.9180,
             "longitude": 107.6185,
             "heading": 90.0,
@@ -117,22 +117,18 @@ class AsvHandler(QObject):
                     "CONNECTED" if new_connection_status else "DISCONNECTED"
                 )
 
-            # --- PERUBAHAN 2: Logika utama sekarang menangani fase investigasi ---
             if self.mission_phase == "INVESTIGATING":
-                # Jika waypoint investigasi tercapai (ASV berhenti di dekat POI)
                 if self.current_state["current_waypoint_index"] >= len(
                     self.current_state["waypoints"]
                 ):
                     print(
                         "[AsvHandler] 📸 Tiba di lokasi POI. Memulai dokumentasi selama 5 detik..."
                     )
-                    # Di aplikasi nyata, ini akan memicu kamera untuk mengambil gambar
-                    time.sleep(5)  # Simulasikan waktu untuk dokumentasi
+                    time.sleep(5)
                     print("[AsvHandler] Dokumentasi selesai. Kembali ke rute patroli.")
-                    self._resume_patrol()  # Memulai proses kembali ke rute
+                    self._resume_patrol()
 
             self._check_mission_phase_transition()
-            # --------------------------------------------------------------------
 
             if self.current_state.get("control_mode") == "AUTO":
                 servo, pwm = 0, 0
@@ -177,7 +173,6 @@ class AsvHandler(QObject):
     def _check_mission_phase_transition(self):
         current_wp_index = self.current_state["current_waypoint_index"]
 
-        # Logika transisi lama tetap ada jika diperlukan
         if self.mission_phase == "NAVIGATING_GATES":
             transition_index = self.phase_transition_wp_index["NAVIGATING_GATES"]
             if current_wp_index >= transition_index:
@@ -188,7 +183,6 @@ class AsvHandler(QObject):
             and not self.is_returning_home
             and current_wp_index >= len(self.current_state["waypoints"])
         ):
-            # Jangan set ke MISSION_COMPLETE jika sedang investigasi
             if self.mission_phase != "INVESTIGATING":
                 self._set_mission_phase("MISSION_COMPLETE")
 
@@ -199,9 +193,7 @@ class AsvHandler(QObject):
             self.current_state["status"] = self.mission_phase
 
             if new_phase == "PATROLLING":
-                self.mission_target_changed.emit(
-                    "ANOMALY"
-                )  # Beri tahu VisionService untuk mencari anomali
+                self.mission_target_changed.emit("ANOMALY")
             elif new_phase == "NAVIGATING_GATES":
                 self.mission_target_changed.emit("BUOYS")
             elif new_phase == "SEARCHING_GREEN_BOX":
@@ -215,7 +207,6 @@ class AsvHandler(QObject):
                 self.mission_target_changed.emit("NONE")
 
     def process_command(self, command, payload):
-        # --- PERUBAHAN 3: Tambahkan handler untuk perintah investigasi baru ---
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
             "CHANGE_MODE": self._handle_mode_change,
@@ -225,9 +216,8 @@ class AsvHandler(QObject):
             "INITIATE_RTH": self._handle_initiate_rth,
             "START_MISSION": self._handle_start_mission,
             "PHOTOGRAPHY_COMPLETE": self._handle_photography_complete,
-            "INVESTIGATE_POI": self._handle_investigate_poi,  # Handler baru
+            "INVESTIGATE_POI": self._handle_investigate_poi,
         }
-        # -------------------------------------------------------------------
 
         handler = command_handlers.get(command)
         if handler:
@@ -236,12 +226,9 @@ class AsvHandler(QObject):
         else:
             print(f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'")
 
-    # --- PERUBAHAN 4: Buat handler dan fungsi pendukung untuk investigasi ---
     def _handle_investigate_poi(self, payload):
-        """Menangani perintah dari VisionService untuk menginvestigasi POI."""
         print("[AsvHandler] Menerima perintah investigasi. Menginterupsi patroli...")
 
-        # 1. Simpan konteks patroli saat ini
         self.current_state["original_patrol_waypoints"] = list(
             self.current_state["waypoints"]
         )
@@ -249,19 +236,14 @@ class AsvHandler(QObject):
             "current_waypoint_index"
         ]
 
-        # 2. Hitung koordinat POI (dengan asumsi jarak)
-        investigation_distance_m = 10.0  # Jarak asumsi ke target
-        approach_distance_m = 5.0  # Jarak aman untuk berhenti
-
+        investigation_distance_m = 10.0
+        approach_distance_m = 5.0
         target_bearing_rad = math.radians(payload.get("bearing_deg"))
 
-        # Kalkulasi koordinat target sementara
-        # Ini adalah penyederhanaan; pustaka geospasial akan lebih akurat
-        R = 6371000  # Radius bumi
+        R = 6371000
         lat1 = math.radians(self.current_state["latitude"])
         lon1 = math.radians(self.current_state["longitude"])
 
-        # Hitung titik investigasi (5m sebelum target)
         d = investigation_distance_m - approach_distance_m
         lat2 = math.asin(
             math.sin(lat1) * math.cos(d / R)
@@ -275,36 +257,24 @@ class AsvHandler(QObject):
         investigation_waypoint = {"lat": math.degrees(lat2), "lon": math.degrees(lon2)}
         print(f"[AsvHandler] Waypoint investigasi dibuat di: {investigation_waypoint}")
 
-        # 3. Ganti rute ASV dengan rute investigasi
         self.current_state["waypoints"] = [investigation_waypoint]
         self.current_state["current_waypoint_index"] = 0
         self.pid_controller.reset()
-
-        # 4. Ubah fase misi
         self._set_mission_phase("INVESTIGATING")
 
     def _resume_patrol(self):
-        """Mengembalikan ASV ke rute patroli aslinya."""
-        # 1. Kembalikan waypoint patroli
         self.current_state["waypoints"] = list(
             self.current_state["original_patrol_waypoints"]
         )
         self.current_state["current_waypoint_index"] = self.current_state[
             "last_patrol_waypoint_index"
         ]
-
-        # 2. Hapus data sementara
         self.current_state["original_patrol_waypoints"] = []
-
-        # 3. Reset PID dan ubah fase misi kembali ke patroli
         self.pid_controller.reset()
         self._set_mission_phase("PATROLLING")
         print("[AsvHandler] Melanjutkan patroli dari waypoint terakhir.")
 
-    # --------------------------------------------------------------------
-
     def _handle_start_mission(self, payload):
-        """Memulai misi dari fase pertama."""
         if not self.current_state["waypoints"]:
             print(
                 "[AsvHandler] Tidak bisa memulai misi: Tidak ada waypoint yang dimuat."
@@ -313,7 +283,6 @@ class AsvHandler(QObject):
         print("[AsvHandler] Misi Patroli Dimulai!")
         self.current_state["control_mode"] = "AUTO"
         self.pid_controller.reset()
-        # Misi utama sekarang adalah PATROLLING
         self._set_mission_phase("PATROLLING")
 
     def _handle_photography_complete(self, payload):

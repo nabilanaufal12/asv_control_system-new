@@ -4,7 +4,6 @@
 import json
 import os
 
-# import sys # <-- DIHAPUS
 from flask import Flask, g, current_app
 
 # 1. Impor instance socketio dari extensions.py
@@ -34,12 +33,8 @@ def create_app():
         exit(1)
 
     # 🔹 Inisialisasi semua service
-    asv_handler = AsvHandler(
-        app.config["ASV_CONFIG"]
-    )  # Dihapus socketio karena tidak digunakan di constructor
-    vision_service = VisionService(
-        app.config["ASV_CONFIG"], asv_handler
-    )  # Dihapus socketio karena tidak digunakan di constructor
+    asv_handler = AsvHandler(app.config["ASV_CONFIG"])
+    vision_service = VisionService(app.config["ASV_CONFIG"], asv_handler)
 
     # 🔹 Simpan instance service ke dalam konteks aplikasi
     app.asv_handler = asv_handler
@@ -61,7 +56,7 @@ def create_app():
     # 🔹 Jalankan Vision Service secara langsung saat aplikasi dibuat.
     # Ini memastikan deteksi selalu aktif, bahkan tanpa GUI.
     print("🚀 Memulai layanan visi secara otomatis untuk mode otonom...")
-    vision_service.start()  # Asumsi method start ada di VisionService
+    vision_service.start()  # Memanggil metode start dari VisionService
     # --------------------------------
 
     print("[Server] Konfigurasi aplikasi selesai.")
