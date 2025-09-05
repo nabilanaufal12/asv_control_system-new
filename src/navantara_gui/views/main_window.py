@@ -26,15 +26,15 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Slot, Qt, QThread, Signal  # <-- Impor Signal
 
-from gui.components.control_panel import ControlPanel
-from gui.components.dashboard import Dashboard
-from gui.components.settings_panel import SettingsPanel
-from gui.components.video_view import VideoView
-from gui.components.map_view import MapView
-from gui.components.header import Header
-from gui.components.waypoints_panel import WaypointsPanel
-from gui.components.log_panel import LogPanel
-from gui.missions import get_lintasan_a, get_lintasan_b
+from navantara_gui.components.control_panel import ControlPanel
+from navantara_gui.components.dashboard import Dashboard
+from navantara_gui.components.settings_panel import SettingsPanel
+from navantara_gui.components.video_view import VideoView
+from navantara_gui.components.map_view import MapView
+from navantara_gui.components.header import Header
+from navantara_gui.components.waypoints_panel import WaypointsPanel
+from navantara_gui.components.log_panel import LogPanel
+from navantara_gui.missions import get_lintasan_a, get_lintasan_b
 
 from navantara_backend.core.asv_handler import AsvHandler
 from navantara_backend.services.vision_service import VisionService

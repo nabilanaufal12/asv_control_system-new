@@ -121,7 +121,8 @@ QComboBox::drop-down {
 }
 
 QComboBox::down-arrow {
-    image: url(gui/assets/arrow_down_light.svg); /* Assume you have a light arrow icon */
+    /* --- PERBAIKAN PATH DI SINI --- */
+    image: url(src/navantara_gui/assets/arrow_down_light.svg);
     width: 12px;
     height: 12px;
 }

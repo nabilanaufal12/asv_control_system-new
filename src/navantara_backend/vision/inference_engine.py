@@ -1,15 +1,33 @@
 # navantara_backend/vision/inference_engine.py
-"""
-Modul ini mengenkapsulasi semua logika inferensi model.
-Ia secara cerdas memilih antara backend TensorRT (jika tersedia) atau PyTorch,
-menyembunyikan kompleksitas dari layanan utama.
-"""
+# --- VERSI DENGAN PATH MODEL YANG ROBUST ---
 
 import torch
 import numpy as np
 import traceback
 import cv2
 from pathlib import Path
+import os
+import sys
+
+# --- BLOK BARU: Pencarian Path yang Dinamis ---
+# Mencari direktori root proyek (yang berisi folder 'src') secara dinamis
+def find_project_root(marker_folder="src"):
+    current_path = Path(__file__).resolve()
+    for parent in current_path.parents:
+        if (parent / marker_folder).is_dir():
+            return parent
+    # Fallback jika struktur tidak terduga, gunakan direktori kerja saat ini
+    print(f"[Engine] PERINGATAN: Tidak dapat menemukan root proyek (folder '{marker_folder}'). Menggunakan direktori kerja saat ini.")
+    return Path.cwd()
+
+PROJECT_ROOT = find_project_root()
+YOLOV5_PATH = PROJECT_ROOT / "src" / "navantara_backend" / "yolov5"
+
+# Menambahkan path yolov5 ke sys.path jika belum ada, penting untuk torch.hub.load
+if str(YOLOV5_PATH) not in sys.path:
+    sys.path.insert(0, str(YOLOV5_PATH))
+# --- AKHIR BLOK BARU ---
+
 
 # Cek ketersediaan TensorRT secara aman
 try:
@@ -71,9 +89,9 @@ class InferenceEngine:
     Kelas utama yang menangani semua logika inferensi.
     Secara otomatis memilih backend terbaik yang tersedia (TensorRT atau PyTorch).
     """
-    def __init__(self, config, yolov5_path):
+    def __init__(self, config): # Argumen yolov5_path dihapus
         self.config = config
-        self.yolov5_path = yolov5_path
+        self.yolov5_path = YOLOV5_PATH # Menggunakan path yang ditemukan secara dinamis
         self.model = None
         self.use_tensorrt = TENSORRT_AVAILABLE
         
@@ -81,8 +99,6 @@ class InferenceEngine:
         self.conf_thresh = float(vision_cfg.get("conf_threshold", 0.25))
         self.iou_thresh = float(vision_cfg.get("iou_threshold", 0.45))
         
-        # Nama kelas harus sesuai dengan urutan saat training model
-        # Ini penting untuk post-processing TensorRT
         self.class_names = vision_cfg.get("class_names", [])
 
         self._initialize_model()
@@ -131,27 +147,17 @@ class InferenceEngine:
         """
         Melakukan inferensi pada sebuah frame. Metode ini menangani semua
         langkah pre-processing, inferensi, dan post-processing.
-
-        Args:
-            frame (np.ndarray): Frame gambar dari OpenCV (format BGR).
-
-        Returns:
-            tuple: (detections, annotated_frame)
-                   'detections' adalah list of dict.
-                   'annotated_frame' adalah frame dengan bounding box.
         """
         if self.model is None:
             return [], frame
 
         if self.use_tensorrt:
-            # Alur kerja untuk TensorRT
             preprocessed_image, ratio, (dw, dh) = self._preprocess_trt(frame)
             raw_output = self.model.infer(preprocessed_image)
             detections = self._postprocess_trt(raw_output, ratio, (dw, dh))
             annotated_frame = self._annotate_frame(frame, detections)
             return detections, annotated_frame
         else:
-            # Alur kerja untuk PyTorch
             results = self.model(frame)
             annotated_frame = results.render()[0]
             detections = self._pandas_to_dict(results.pandas().xyxy[0])
@@ -162,18 +168,15 @@ class InferenceEngine:
         input_h, input_w = self.model.input_shape[2], self.model.input_shape[3]
         h, w, _ = img.shape
         
-        # Hitung rasio dan padding (letterbox)
         ratio = min(input_w / w, input_h / h)
         new_w, new_h = int(w * ratio), int(h * ratio)
         dw, dh = (input_w - new_w) / 2, (input_h - new_h) / 2
 
-        # Resize dan pad
         resized_img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
         padded_img = cv2.copyMakeBorder(resized_img, int(dh), int(dh) + (input_h - new_h) % 2,
                                         int(dw), int(dw) + (input_w - new_w) % 2,
                                         cv2.BORDER_CONSTANT, value=(114, 114, 114))
         
-        # Normalisasi dan transpose (BGR to RGB, HWC to CHW)
         blob = padded_img.transpose(2, 0, 1)
         blob = np.ascontiguousarray(blob, dtype=np.float32)
         blob /= 255.0
@@ -181,26 +184,20 @@ class InferenceEngine:
 
     def _postprocess_trt(self, output, ratio, pad):
         """Post-process output mentah dari TensorRT, termasuk NMS."""
-        # Output YOLO biasanya [batch, num_boxes, 5 + num_classes]
-        # 5 = [cx, cy, w, h, confidence]
-        # Reshape output ke bentuk yang lebih mudah diolah
         num_boxes = output.shape[0] // (5 + len(self.class_names))
         output = output.reshape(1, num_boxes, 5 + len(self.class_names))
         
         boxes = []
         for det in output[0]:
             confidence = det[4]
-            if confidence < self.conf_thresh:
-                continue
+            if confidence < self.conf_thresh: continue
 
             class_scores = det[5:]
             class_id = np.argmax(class_scores)
             max_score = class_scores[class_id]
             
-            if max_score * confidence < self.conf_thresh:
-                continue
+            if max_score * confidence < self.conf_thresh: continue
             
-            # Konversi cx, cy, w, h ke x1, y1, x2, y2
             cx, cy, w, h = det[0:4]
             x1 = (cx - w / 2 - pad[0]) / ratio
             y1 = (cy - h / 2 - pad[1]) / ratio
@@ -209,7 +206,6 @@ class InferenceEngine:
             
             boxes.append([x1, y1, x2, y2, confidence * max_score, class_id])
         
-        # Lakukan Non-Maximum Suppression
         final_boxes = self._non_max_suppression(np.array(boxes))
 
         detections = []
@@ -225,19 +221,15 @@ class InferenceEngine:
 
     def _non_max_suppression(self, boxes):
         """Implementasi sederhana dari Non-Maximum Suppression."""
-        if len(boxes) == 0:
-            return []
+        if len(boxes) == 0: return []
         
-        # Urutkan box berdasarkan confidence score
         boxes = boxes[boxes[:, 4].argsort()[::-1]]
         
         keep = []
         while len(boxes) > 0:
-            # Ambil box dengan confidence tertinggi
             best_box = boxes[0]
             keep.append(best_box)
             
-            # Hitung IoU (Intersection over Union) dengan box lainnya
             xA = np.maximum(best_box[0], boxes[1:, 0])
             yA = np.maximum(best_box[1], boxes[1:, 1])
             xB = np.minimum(best_box[2], boxes[1:, 2])
@@ -249,7 +241,6 @@ class InferenceEngine:
             
             iou = inter_area / (boxA_area + boxB_area - inter_area)
             
-            # Buang box yang memiliki IoU di atas threshold
             boxes = boxes[1:][iou < self.iou_thresh]
             
         return np.array(keep)

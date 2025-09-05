@@ -57,7 +57,12 @@ class SimpleEKF:
         y = self.normalize_angle(y)
         S = H @ self.P @ H.T + self.R_comp
         K = self.P @ H.T @ np.linalg.inv(S)
-        self.state = self.state + K @ y
+        
+        # --- PERBAIKAN DI SINI ---
+        # Menggunakan perkalian skalar (*), bukan perkalian matriks (@)
+        self.state = self.state + (K * y).flatten()
+        # --- AKHIR PERBAIKAN ---
+
         self.P = (np.eye(5) - K @ H) @ self.P
 
     def update_imu(self, z_imu):

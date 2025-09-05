@@ -36,16 +36,28 @@
   },
   "camera_detection": {
     "focal_length_pixels": 600,
-    "target_activation_distance_cm": 50.0,
-    "activation_zone_y_percent": 0.5,
-    "virtual_target_offset_cm": 40.0,
-    "min_buoy_area_px": 500,
     "object_real_widths_cm": {
-      "buoy_single": 10.0,
+      "red_buoy": 20.0,
+      "green_buoy": 20.0,
       "buoy_gate": 200.0,
       "green_box": 30.0,
       "blue_box": 30.0
     }
+  },
+  "dwa_params": {
+    "max_speed_mps": 1.5,
+    "min_speed_mps": 0.0,
+    "max_yaw_rate_dps": 40.0,
+    "max_accel_mps2": 0.5,
+    "max_dyaw_rate_dps2": 40.0,
+    "v_resolution": 0.1,
+    "yaw_rate_resolution_dps": 1.0,
+    "dt_seconds": 0.2,
+    "predict_time_seconds": 2.0,
+    "robot_radius_meters": 0.5,
+    "goal_cost_gain": 1.0,
+    "speed_cost_gain": 0.5,
+    "obstacle_cost_gain": 1.5
   },
   "vision": {
     "device": "cpu",
@@ -54,11 +66,9 @@
     "debug": true,
     "camera_index_1": 0,
     "camera_index_2": 2,
-    "vision_control_params": {
-      "motor_base_pwm": 1600,
-      "motor_reduction_factor": 50,
-      "servo_range_deg": 60
-    }
+    "known_classes": ["red_buoy", "green_buoy", "green_box", "blue_box"],
+    "poi_confidence_threshold": 0.65,
+    "poi_validation_frames": 5
   },
   "api_urls": {
     "firebase_url": "https://asv-2025-default-rtdb.asia-southeast1.firebasedatabase.app/monitor.json",

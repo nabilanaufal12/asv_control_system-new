@@ -1,5 +1,5 @@
 # backend/vision/overlay_utils.py
-# --- VERSI FINAL: Teks overlay profesional dengan bayangan (Pure OpenCV) ---
+# --- VERSI DENGAN PATH ASET YANG DIPERBAIKI ---
 
 import cv2
 import time
@@ -17,9 +17,17 @@ def add_transparent_logo(background, logo, top_left_corner):
     x, y = top_left_corner
     if x < 0 or y < 0:
         return background
-    h, w, _ = logo.shape
-    if x + w > background.shape[1] or y + h > background.shape[0]:
+    
+    # Memastikan logo tidak keluar dari batas gambar
+    h, w, channels = logo.shape
+    if channels < 4:
+        return background # Hanya proses jika ada alpha channel
+        
+    bg_h, bg_w, _ = background.shape
+    if x + w > bg_w or y + h > bg_h:
         return background
+
+    # Ekstrak alpha channel dan buat overlay
     alpha = logo[:, :, 3] / 255.0
     for c in range(0, 3):
         background[y : y + h, x : x + w, c] = (
@@ -34,16 +42,22 @@ def get_logo(name, size):
     if cache_key in loaded_logos:
         return loaded_logos[cache_key]
     try:
-        assets_dir = Path(__file__).parent.parent / "assets"
+        # --- PERBAIKAN UTAMA DI SINI ---
+        # Path sekarang dibangun dari file ini, naik ke 'src', lalu turun ke 'navantara_gui/assets'
+        assets_dir = Path(__file__).resolve().parents[2] / "navantara_gui" / "assets"
         logo_path = assets_dir / name
+        # --- AKHIR PERBAIKAN ---
+
         logo = cv2.imread(str(logo_path), cv2.IMREAD_UNCHANGED)
         if logo is None:
             raise FileNotFoundError(f"File logo tidak ditemukan di: {logo_path}")
+        
         resized_logo = cv2.resize(logo, size, interpolation=cv2.INTER_AREA)
         loaded_logos[cache_key] = resized_logo
         return resized_logo
     except Exception as e:
         print(f"Peringatan: Gagal memuat logo '{name}'. Error: {e}")
+        # Kembalikan placeholder transparan jika gagal
         placeholder = np.zeros((size[1], size[0], 4), dtype=np.uint8)
         loaded_logos[cache_key] = placeholder
         return placeholder
@@ -70,7 +84,7 @@ def putText_with_shadow(
 
 
 def create_overlay_from_html(telemetry_data, mission_type="Surface Imaging"):
-    # Fungsi dummy untuk kompatibilitas
+    # Fungsi dummy untuk kompatibilitas, data langsung dilewatkan
     return telemetry_data, mission_type
 
 
@@ -88,7 +102,7 @@ def apply_overlay(background_frame, overlay_data):
     color_grey = (200, 200, 200)
 
     # === 2. GAMBAR HEADER ===
-    # Logo Sponsor
+    # Logo Sponsor (Sekarang akan dicari di path yang benar)
     logo_sponsor1 = get_logo("logo_sponsor1.png", size=(90, 28))
     logo_sponsor2 = get_logo("logo_sponsor2.png", size=(28, 28))
     logo_sponsor3 = get_logo("logo_sponsor3.png", size=(28, 28))
