@@ -1,13 +1,17 @@
 # backend/core/asv_handler.py
-# --- VERSI MODIFIKASI: Dengan State Machine Patroli & Investigasi ---
+# --- VERSI MODIFIKASI LENGKAP: Integrasi EKF & Logger ---
 
 import threading
 import time
-import math  # Diperlukan untuk kalkulasi waypoint investigasi
+import math
+import numpy as np
+from PySide6.QtCore import QObject, Signal, Slot
+
+# Impor kelas-kelas baru
 from navantara_backend.services.serial_service import SerialHandler
 from navantara_backend.core.navigation import run_navigation_logic, PIDController
-from PySide6.QtCore import QObject, Signal, Slot
-import numpy as np
+from navantara_backend.core.kalman_filter import SimpleEKF
+from navantara_backend.core.mission_logger import MissionLogger
 
 
 class AsvHandler(QObject):
@@ -20,9 +24,8 @@ class AsvHandler(QObject):
         self.serial_handler = SerialHandler(config)
         self.running = True
 
-        # --- PERUBAHAN DI SINI: Mengubah mode default ke AUTO ---
         self.current_state = {
-            "control_mode": "AUTO",  # <-- NILAI DEFAULT DIUBAH MENJADI "AUTO"
+            "control_mode": "AUTO",
             "latitude": -6.9180,
             "longitude": 107.6185,
             "heading": 90.0,
@@ -34,22 +37,19 @@ class AsvHandler(QObject):
             "waypoints": [],
             "current_waypoint_index": 0,
             "is_connected_to_serial": False,
-            # State baru untuk menyimpan data POI dan status patroli
             "last_patrol_waypoint_index": 0,
             "original_patrol_waypoints": [],
             "points_of_interest": [],
+            # State baru untuk data IMU mentah
+            "gyro_z": 0.0,
+            "accel_x": 0.0,
         }
-        # -----------------------------------------------------------
 
         self.vision_target = {"active": False, "degree": 90}
         self.is_returning_home = False
         self.rth_paused_until = 0
-
-        # Fase misi sekarang mencakup mode patroli dan investigasi
-        self.mission_phase = "IDLE"  # State: IDLE, PATROLLING, INVESTIGATING, RESUMING
-        self.phase_transition_wp_index = {
-            "NAVIGATING_GATES": 7,
-        }
+        self.mission_phase = "IDLE"
+        self.phase_transition_wp_index = {"NAVIGATING_GATES": 7}
 
         pid_config = self.config.get("navigation", {}).get("heading_pid", {})
         self.pid_controller = PIDController(
@@ -57,8 +57,18 @@ class AsvHandler(QObject):
             Ki=pid_config.get("ki", 0.0),
             Kd=pid_config.get("kd", 0.0),
         )
+
+        # Inisialisasi EKF
+        initial_state = np.zeros(5)  # [x, y, heading, v, omega]
+        initial_covariance = np.eye(5) * 0.1
+        self.ekf = SimpleEKF(initial_state, initial_covariance)
+        self.last_ekf_update_time = time.time()
+
+        # Inisialisasi Logger
+        self.logger = MissionLogger()
+        self.logger.log_event("AsvHandler diinisialisasi.")
         print(
-            "[AsvHandler] Handler diinisialisasi dengan Kontroler PID dan logika Investigasi."
+            "[AsvHandler] Handler diinisialisasi dengan Kontroler PID, EKF, Logger, dan logika Investigasi."
         )
 
     @Slot()
@@ -99,12 +109,37 @@ class AsvHandler(QObject):
                     self.current_state["speed"] = float(data[1])
                 elif data[0] == "BAT":
                     self.current_state["battery_voltage"] = float(data[1])
+                # Tambahkan parsing untuk data IMU baru dari ESP32
+                elif data[0] == "IMU":
+                    self.current_state["accel_x"] = float(data[1])
+                    self.current_state["gyro_z"] = float(data[2])
         except (ValueError, IndexError):
             pass
 
     def _main_logic_loop(self):
         start_time = time.time()
         while self.running:
+            # --- BLOK LOGIKA EKF ---
+            current_time = time.time()
+            dt = current_time - self.last_ekf_update_time
+            if dt > 0:
+                self.last_ekf_update_time = current_time
+                # 1. Tahap Prediksi EKF
+                self.ekf.predict(dt)
+
+                # 2. Tahap Update EKF dengan pengukuran sensor
+                self.ekf.update_compass(np.radians(self.current_state["heading"]))
+                self.ekf.update_imu(np.array([self.current_state["speed"], np.radians(self.current_state["gyro_z"])]))
+                
+                # 3. Ambil hasil fusi dari EKF
+                fused_heading_rad = self.ekf.state[2]
+                fused_speed = self.ekf.state[3]
+                
+                # 4. Ganti nilai di state utama dengan hasil fusi yang lebih stabil
+                self.current_state["heading"] = (np.degrees(fused_heading_rad) + 360) % 360
+                self.current_state["speed"] = fused_speed
+            # --- AKHIR BLOK EKF ---
+
             elapsed = time.time() - start_time
             self.current_state["mission_time"] = time.strftime(
                 "%H:%M:%S", time.gmtime(elapsed)
@@ -113,18 +148,17 @@ class AsvHandler(QObject):
             new_connection_status = self.serial_handler.is_connected
             if self.current_state["is_connected_to_serial"] != new_connection_status:
                 self.current_state["is_connected_to_serial"] = new_connection_status
-                self.current_state["status"] = (
-                    "CONNECTED" if new_connection_status else "DISCONNECTED"
-                )
+                status = "CONNECTED" if new_connection_status else "DISCONNECTED"
+                self.current_state["status"] = status
+                self.logger.log_event(f"Status Koneksi Serial: {status}")
+
 
             if self.mission_phase == "INVESTIGATING":
-                if self.current_state["current_waypoint_index"] >= len(
-                    self.current_state["waypoints"]
-                ):
-                    print(
-                        "[AsvHandler] 📸 Tiba di lokasi POI. Memulai dokumentasi selama 5 detik..."
-                    )
+                if self.current_state["current_waypoint_index"] >= len(self.current_state["waypoints"]):
+                    self.logger.log_event("Tiba di lokasi POI. Memulai dokumentasi.")
+                    print("[AsvHandler] 📸 Tiba di lokasi POI. Memulai dokumentasi selama 5 detik...")
                     time.sleep(5)
+                    self.logger.log_event("Dokumentasi POI selesai.")
                     print("[AsvHandler] Dokumentasi selesai. Kembali ke rute patroli.")
                     self._resume_patrol()
 
@@ -132,66 +166,49 @@ class AsvHandler(QObject):
 
             if self.current_state.get("control_mode") == "AUTO":
                 servo, pwm = 0, 0
-
-                if (
-                    self.is_returning_home
-                    and self.vision_target["active"]
-                    and time.time() > self.rth_paused_until
-                ):
-                    servo = self.config.get("actuators", {}).get(
-                        "servo_default_angle", 90
-                    )
+                if (self.is_returning_home and self.vision_target["active"] and time.time() > self.rth_paused_until):
+                    servo = self.config.get("actuators", {}).get("servo_default_angle", 90)
                     pwm = self.config.get("actuators", {}).get("motor_pwm_stop", 1500)
                     self.rth_paused_until = time.time() + 5
-
                 elif time.time() < self.rth_paused_until:
-                    servo = self.config.get("actuators", {}).get(
-                        "servo_default_angle", 90
-                    )
+                    servo = self.config.get("actuators", {}).get("servo_default_angle", 90)
                     pwm = self.config.get("actuators", {}).get("motor_pwm_stop", 1500)
-
                 elif self.vision_target["active"]:
                     servo, pwm = self.convert_degree_to_actuators(
-                        self.vision_target["degree"],
-                        self.vision_target.get("is_inverted", False),
+                        self.vision_target["degree"], self.vision_target.get("is_inverted", False)
                     )
-
                 else:
                     servo, pwm = run_navigation_logic(
                         self.current_state, self.config, self.pid_controller
                     )
-                    if self.is_returning_home and self.current_state[
-                        "current_waypoint_index"
-                    ] >= len(self.current_state["waypoints"]):
+                    if (self.is_returning_home and self.current_state["current_waypoint_index"] >= len(self.current_state["waypoints"])):
                         self._stop_rth()
-
                 self.serial_handler.send_command(f"S{pwm};D{servo}\n")
+
+            # Log data telemetri di setiap iterasi
+            self.logger.log_telemetry(self.current_state)
 
             time.sleep(0.2)
             self._update_and_emit_state()
 
     def _check_mission_phase_transition(self):
+        # ... (fungsi tidak berubah)
         current_wp_index = self.current_state["current_waypoint_index"]
-
         if self.mission_phase == "NAVIGATING_GATES":
             transition_index = self.phase_transition_wp_index["NAVIGATING_GATES"]
             if current_wp_index >= transition_index:
                 self._set_mission_phase("SEARCHING_GREEN_BOX")
-
-        if (
-            self.mission_phase not in ["IDLE", "MISSION_COMPLETE"]
-            and not self.is_returning_home
-            and current_wp_index >= len(self.current_state["waypoints"])
-        ):
+        if (self.mission_phase not in ["IDLE", "MISSION_COMPLETE"] and not self.is_returning_home and current_wp_index >= len(self.current_state["waypoints"])):
             if self.mission_phase != "INVESTIGATING":
                 self._set_mission_phase("MISSION_COMPLETE")
+
 
     def _set_mission_phase(self, new_phase):
         if self.mission_phase != new_phase:
             self.mission_phase = new_phase
+            self.logger.log_event(f"Fase misi diubah ke: {self.mission_phase}")
             print(f"[AsvHandler] Fase misi diubah ke: {self.mission_phase}")
             self.current_state["status"] = self.mission_phase
-
             if new_phase == "PATROLLING":
                 self.mission_target_changed.emit("ANOMALY")
             elif new_phase == "NAVIGATING_GATES":
@@ -207,6 +224,7 @@ class AsvHandler(QObject):
                 self.mission_target_changed.emit("NONE")
 
     def process_command(self, command, payload):
+        # ... (fungsi tidak berubah)
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
             "CHANGE_MODE": self._handle_mode_change,
@@ -218,7 +236,6 @@ class AsvHandler(QObject):
             "PHOTOGRAPHY_COMPLETE": self._handle_photography_complete,
             "INVESTIGATE_POI": self._handle_investigate_poi,
         }
-
         handler = command_handlers.get(command)
         if handler:
             handler(payload)
@@ -227,65 +244,54 @@ class AsvHandler(QObject):
             print(f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'")
 
     def _handle_investigate_poi(self, payload):
+        self.logger.log_event(f"Menerima perintah investigasi untuk POI: {payload.get('class_name')}")
         print("[AsvHandler] Menerima perintah investigasi. Menginterupsi patroli...")
-
-        self.current_state["original_patrol_waypoints"] = list(
-            self.current_state["waypoints"]
-        )
-        self.current_state["last_patrol_waypoint_index"] = self.current_state[
-            "current_waypoint_index"
-        ]
-
+        self.current_state["original_patrol_waypoints"] = list(self.current_state["waypoints"])
+        self.current_state["last_patrol_waypoint_index"] = self.current_state["current_waypoint_index"]
+        
         investigation_distance_m = 10.0
         approach_distance_m = 5.0
         target_bearing_rad = math.radians(payload.get("bearing_deg"))
-
+        
         R = 6371000
         lat1 = math.radians(self.current_state["latitude"])
         lon1 = math.radians(self.current_state["longitude"])
-
+        
         d = investigation_distance_m - approach_distance_m
-        lat2 = math.asin(
-            math.sin(lat1) * math.cos(d / R)
-            + math.cos(lat1) * math.sin(d / R) * math.cos(target_bearing_rad)
-        )
-        lon2 = lon1 + math.atan2(
-            math.sin(target_bearing_rad) * math.sin(d / R) * math.cos(lat1),
-            math.cos(d / R) - math.sin(lat1) * math.sin(lat2),
-        )
-
+        lat2 = math.asin(math.sin(lat1) * math.cos(d / R) + math.cos(lat1) * math.sin(d / R) * math.cos(target_bearing_rad))
+        lon2 = lon1 + math.atan2(math.sin(target_bearing_rad) * math.sin(d / R) * math.cos(lat1), math.cos(d / R) - math.sin(lat1) * math.sin(lat2))
+        
         investigation_waypoint = {"lat": math.degrees(lat2), "lon": math.degrees(lon2)}
+        self.logger.log_event(f"Waypoint investigasi dibuat di: {investigation_waypoint}")
         print(f"[AsvHandler] Waypoint investigasi dibuat di: {investigation_waypoint}")
-
+        
         self.current_state["waypoints"] = [investigation_waypoint]
         self.current_state["current_waypoint_index"] = 0
         self.pid_controller.reset()
         self._set_mission_phase("INVESTIGATING")
 
     def _resume_patrol(self):
-        self.current_state["waypoints"] = list(
-            self.current_state["original_patrol_waypoints"]
-        )
-        self.current_state["current_waypoint_index"] = self.current_state[
-            "last_patrol_waypoint_index"
-        ]
+        self.current_state["waypoints"] = list(self.current_state["original_patrol_waypoints"])
+        self.current_state["current_waypoint_index"] = self.current_state["last_patrol_waypoint_index"]
         self.current_state["original_patrol_waypoints"] = []
         self.pid_controller.reset()
         self._set_mission_phase("PATROLLING")
+        self.logger.log_event("Melanjutkan patroli dari waypoint terakhir.")
         print("[AsvHandler] Melanjutkan patroli dari waypoint terakhir.")
 
     def _handle_start_mission(self, payload):
         if not self.current_state["waypoints"]:
-            print(
-                "[AsvHandler] Tidak bisa memulai misi: Tidak ada waypoint yang dimuat."
-            )
+            print("[AsvHandler] Tidak bisa memulai misi: Tidak ada waypoint yang dimuat.")
+            self.logger.log_event("Gagal memulai misi: tidak ada waypoint.")
             return
+        self.logger.log_event("Misi Patroli Dimulai.")
         print("[AsvHandler] Misi Patroli Dimulai!")
         self.current_state["control_mode"] = "AUTO"
         self.pid_controller.reset()
         self._set_mission_phase("PATROLLING")
 
     def _handle_photography_complete(self, payload):
+        # ... (fungsi tidak berubah)
         object_type = payload.get("object")
         print(f"[AsvHandler] Menerima konfirmasi fotografi untuk: {object_type}")
         if object_type == "green_box":
@@ -294,6 +300,7 @@ class AsvHandler(QObject):
             self._set_mission_phase("RACING_TO_FINISH")
 
     def _handle_serial_configuration(self, payload):
+        # ... (fungsi tidak berubah)
         port, baud = payload.get("serial_port"), payload.get("baud_rate")
         if port == "AUTO":
             self.serial_handler.find_and_connect_esp32(baud)
@@ -301,15 +308,15 @@ class AsvHandler(QObject):
             self.serial_handler.connect(port, baud)
 
     def _handle_mode_change(self, payload):
-        if (
-            self.mission_phase not in ["IDLE", "MISSION_COMPLETE"]
-            and not self.is_returning_home
-        ):
+        if (self.mission_phase not in ["IDLE", "MISSION_COMPLETE"] and not self.is_returning_home):
+            self.logger.log_event(f"Gagal mengubah mode ke {payload} saat misi aktif.")
             print("[AsvHandler] Tidak bisa mengubah mode saat misi aktif.")
             return
         self.current_state["control_mode"] = payload
+        self.logger.log_event(f"Mode kontrol diubah ke: {payload}")
 
     def _handle_manual_control(self, payload):
+        # ... (fungsi tidak berubah)
         if self.current_state.get("control_mode") != "MANUAL":
             return
         keys = set(payload)
@@ -328,25 +335,26 @@ class AsvHandler(QObject):
         self.current_state["waypoints"] = payload
         self.current_state["current_waypoint_index"] = 0
         self.mission_phase = "IDLE"
+        self.logger.log_event(f"Waypoints baru dimuat. Jumlah: {len(payload)}")
 
     def _handle_vision_target_update(self, payload):
+        # ... (fungsi tidak berubah)
         self.vision_target["active"] = payload.get("active", False)
         self.vision_target["degree"] = payload.get("degree", 90)
         self.vision_target["is_inverted"] = payload.get("is_inverted", False)
 
     def _handle_initiate_rth(self, payload):
         if not self.current_state["is_connected_to_serial"]:
+            self.logger.log_event("Gagal memulai RTH: Tidak terhubung ke hardware.")
             print("[AsvHandler] Tidak bisa memulai RTH: Tidak terhubung ke hardware.")
             return
+        self.logger.log_event("Memulai sekuens Return to Home.")
         print("[AsvHandler] Memulai sekuens Return to Home...")
         home_point = None
         if self.current_state["waypoints"]:
             home_point = self.current_state["waypoints"][0]
         else:
-            home_point = {
-                "lat": self.current_state["latitude"],
-                "lon": self.current_state["longitude"],
-            }
+            home_point = {"lat": self.current_state["latitude"], "lon": self.current_state["longitude"]}
         rth_waypoints = [home_point]
         self.current_state["waypoints"] = rth_waypoints
         self.current_state["current_waypoint_index"] = 0
@@ -358,6 +366,7 @@ class AsvHandler(QObject):
         print(f"[AsvHandler] RTH diaktifkan. Target: {home_point}")
 
     def _stop_rth(self):
+        self.logger.log_event("RTH selesai. Kembali ke mode MANUAL.")
         self.is_returning_home = False
         self.rth_paused_until = 0
         self.current_state["control_mode"] = "MANUAL"
@@ -367,6 +376,7 @@ class AsvHandler(QObject):
         self.serial_handler.send_command(f"S{stop_pwm};D{default_servo}\n")
 
     def convert_degree_to_actuators(self, degree, is_inverted):
+        # ... (fungsi tidak berubah)
         error = degree - 90
         if is_inverted:
             error = -error
@@ -381,10 +391,13 @@ class AsvHandler(QObject):
         pwm = motor_base - (abs(error) / 90.0) * reduction
         return int(servo), int(pwm)
 
+
     def get_current_state(self):
         return self.current_state.copy()
 
     def stop(self):
         self.running = False
         self.serial_handler.disconnect()
+        self.logger.log_event("AsvHandler dihentikan.")
+        self.logger.stop()  # Pastikan logger ditutup dengan benar
         print("[AsvHandler] Dihentikan.")

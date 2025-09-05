@@ -24,7 +24,7 @@ def create_app():
     # 🔹 Muat konfigurasi dari file config.json
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(script_dir, "..", "config.json")
+        config_path = os.path.join(script_dir, "..", "..", "config", "config.json")
         with open(config_path, "r") as f:
             app.config["ASV_CONFIG"] = json.load(f)
         print("[Server] File 'config.json' berhasil dimuat.")
