@@ -7,12 +7,12 @@ import os
 from flask import Flask, g, current_app
 
 # 1. Impor instance socketio dari extensions.py
-from backend.extensions import socketio
+from navantara_backend.extensions import socketio
 
 # 2. Impor semua komponen utama
-from backend.core.asv_handler import AsvHandler
-from backend.services.vision_service import VisionService
-from backend.api.endpoints import api_blueprint
+from navantara_backend.core.asv_handler import AsvHandler
+from navantara_backend.services.vision_service import VisionService
+from navantara_backend.api.endpoints import api_blueprint
 
 
 def create_app():

@@ -29,7 +29,7 @@ if str(yolov5_path) not in sys.path:
 
 # 4. Impor Pustaka Lokal
 from utils.plots import Annotator
-from backend.vision.overlay_utils import create_overlay_from_html, apply_overlay
+from navantara_backend.vision.overlay_utils import create_overlay_from_html, apply_overlay
 
 
 def send_telemetry_to_firebase(telemetry_data, config):

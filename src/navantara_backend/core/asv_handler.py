@@ -4,8 +4,8 @@
 import threading
 import time
 import math  # Diperlukan untuk kalkulasi waypoint investigasi
-from backend.services.serial_service import SerialHandler
-from backend.core.navigation import run_navigation_logic, PIDController
+from navantara_backend.services.serial_service import SerialHandler
+from navantara_backend.core.navigation import run_navigation_logic, PIDController
 from PySide6.QtCore import QObject, Signal, Slot
 import numpy as np
 

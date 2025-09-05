@@ -3,7 +3,7 @@
 from flask import Blueprint, jsonify, g, current_app
 
 # 1. Impor HANYA socketio dari extensions untuk menghindari impor melingkar
-from backend.extensions import socketio
+from navantara_backend.extensions import socketio
 
 api_blueprint = Blueprint("api", __name__)
 

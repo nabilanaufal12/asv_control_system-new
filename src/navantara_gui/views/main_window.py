@@ -36,8 +36,8 @@ from gui.components.waypoints_panel import WaypointsPanel
 from gui.components.log_panel import LogPanel
 from gui.missions import get_lintasan_a, get_lintasan_b
 
-from backend.core.asv_handler import AsvHandler
-from backend.services.vision_service import VisionService
+from navantara_backend.core.asv_handler import AsvHandler
+from navantara_backend.services.vision_service import VisionService
 
 
 class MainWindow(QMainWindow):
