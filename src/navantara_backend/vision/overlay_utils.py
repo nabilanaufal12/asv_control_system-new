@@ -17,12 +17,12 @@ def add_transparent_logo(background, logo, top_left_corner):
     x, y = top_left_corner
     if x < 0 or y < 0:
         return background
-    
+
     # Memastikan logo tidak keluar dari batas gambar
     h, w, channels = logo.shape
     if channels < 4:
-        return background # Hanya proses jika ada alpha channel
-        
+        return background  # Hanya proses jika ada alpha channel
+
     bg_h, bg_w, _ = background.shape
     if x + w > bg_w or y + h > bg_h:
         return background
@@ -51,7 +51,7 @@ def get_logo(name, size):
         logo = cv2.imread(str(logo_path), cv2.IMREAD_UNCHANGED)
         if logo is None:
             raise FileNotFoundError(f"File logo tidak ditemukan di: {logo_path}")
-        
+
         resized_logo = cv2.resize(logo, size, interpolation=cv2.INTER_AREA)
         loaded_logos[cache_key] = resized_logo
         return resized_logo

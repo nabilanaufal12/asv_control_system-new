@@ -40,7 +40,7 @@ def run():
         # Menemukan path root proyek secara dinamis dari lokasi file ini
         gui_dir = os.path.dirname(os.path.abspath(__file__))
         # Dari 'src/navantara_gui', kita naik DUA tingkat untuk mencapai root proyek
-        project_root = os.path.dirname(os.path.dirname(gui_dir)) 
+        project_root = os.path.dirname(os.path.dirname(gui_dir))
         config_path = os.path.join(project_root, "config", "config.json")
         # --- AKHIR PERBAIKAN ---
 

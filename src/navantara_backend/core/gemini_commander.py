@@ -2,18 +2,19 @@
 import google.generativeai as genai
 import os
 
+
 class GeminiCommander:
     def __init__(self, config):
-        self.api_key = os.environ.get('GEMINI_API_KEY')
+        self.api_key = os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY environment variable not set.")
-        
+
         genai.configure(api_key=self.api_key)
-        
+
         # Konfigurasi model Gemini Pro
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel("gemini-pro")
         self.chat = self.model.start_chat(history=[])
-        
+
         # Prompt sistem untuk memberikan konteks dan peran pada AI
         self.system_prompt = """
         Anda adalah AI Komandan untuk sebuah Autonomous Surface Vehicle (ASV) bernama NAVANTARA dalam sebuah kompetisi.
@@ -42,19 +43,18 @@ class GeminiCommander:
 
     def analyze_and_decide(self, asv_state, detections):
         """Menganalisis data dan menghasilkan keputusan taktis."""
-        
+
         # Buat prompt input dari data real-time
-        input_data = {
-            "state": asv_state,
-            "detections": detections
-        }
-        
+        input_data = {"state": asv_state, "detections": detections}
+
         prompt = f"Data sensor saat ini: {input_data}. Apa perintah Anda?"
-        
+
         try:
             response = self.chat.send_message(prompt)
             # Membersihkan output untuk memastikan hanya JSON yang valid
-            cleaned_response = response.text.strip().replace('```json', '').replace('```', '')
+            cleaned_response = (
+                response.text.strip().replace("```json", "").replace("```", "")
+            )
             return cleaned_response
         except Exception as e:
             print(f"[GeminiCommander] Error saat berkomunikasi dengan API: {e}")
