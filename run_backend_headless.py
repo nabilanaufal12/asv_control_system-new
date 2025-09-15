@@ -1,6 +1,13 @@
 # run_backend_headless.py
+import eventlet
 import os
 import sys
+
+# --- PERUBAHAN KRUSIAL: Monkey patch harus dieksekusi sebelum impor lainnya ---
+# Baris ini secara dinamis mengganti pustaka standar Python dengan implementasi
+# yang kooperatif dari eventlet. Ini adalah kunci untuk memungkinkan ribuan
+# green threads berjalan secara efisien dalam satu proses.
+eventlet.monkey_patch()
 
 # Menambahkan path src ke sys.path agar impor dari backend berhasil
 try:
@@ -19,7 +26,11 @@ app = create_app()
 
 if __name__ == "__main__":
     print("🚀 Menjalankan Backend Server ASV dalam Mode Otonom/Headless...")
-    # Gunakan eventlet atau gevent untuk production, atau werkzeug untuk debug
+    
+    # --- PERUBAHAN: Menjalankan server menggunakan eventlet ---
+    # Flask-SocketIO akan secara otomatis menggunakan server eventlet karena
+    # monkey_patch() telah dipanggil. Ini adalah cara yang direkomendasikan
+    # untuk production. Argumen 'allow_unsafe_werkzeug' tidak lagi diperlukan.
     socketio.run(
-        app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True
+        app, host="0.0.0.0", port=5000, debug=False
     )

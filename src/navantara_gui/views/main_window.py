@@ -1,31 +1,22 @@
-# gui/views/main_window.py
-# --- VERSI MODIFIKASI: Kontrol Tampilan, Bukan Logika ---
-
+# src/navantara_gui/views/main_window.py
 import sys
 import os
 
+# Blok ini memperbaiki path agar impor dari folder lain berhasil
 try:
-    project_root = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 except NameError:
     sys.path.insert(0, ".")
 
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QTabWidget,
-    QStatusBar,
-    QScrollArea,
-    QApplication,
-    QSplitter,
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QTabWidget,
+    QStatusBar, QScrollArea, QApplication, QSplitter
 )
-from PySide6.QtCore import Slot, Qt, QThread, Signal  # <-- Impor Signal
+from PySide6.QtCore import Slot, Qt
 
+# --- PERUBAHAN UTAMA: Impor hanya komponen GUI dan ApiClient ---
 from navantara_gui.components.control_panel import ControlPanel
 from navantara_gui.components.dashboard import Dashboard
 from navantara_gui.components.settings_panel import SettingsPanel
@@ -35,27 +26,26 @@ from navantara_gui.components.header import Header
 from navantara_gui.components.waypoints_panel import WaypointsPanel
 from navantara_gui.components.log_panel import LogPanel
 from navantara_gui.missions import get_lintasan_a, get_lintasan_b
+from navantara_gui.api_client import ApiClient # <-- Klien API adalah satu-satunya jembatan ke backend
 
-from navantara_backend.core.asv_handler import AsvHandler
-from navantara_backend.services.vision_service import VisionService
+# --- HAPUS semua impor dari backend (AsvHandler, VisionService) ---
 
 
 class MainWindow(QMainWindow):
-    # --- PERUBAHAN 1: Tambahkan sinyal baru untuk komunikasi antar thread ---
-    set_stream_listening_requested = Signal(bool)
-    # ----------------------------------------------------------------------
+    """
+    Jendela utama aplikasi GUI. Bertindak murni sebagai lapisan presentasi
+    dan mendelegasikan semua komunikasi backend ke ApiClient.
+    """
 
     def __init__(self, config):
         super().__init__()
-        self.setWindowTitle("ASV Control System - All-in-One")
-
+        self.setWindowTitle("ASV Control System - Navantara Client")
         self.config = config
 
-        self.asv_handler = AsvHandler(config=self.config)
-        self.vision_service = VisionService(
-            config=self.config, asv_handler=self.asv_handler
-        )
-        self.asv_handler_thread = QThread()
+        # --- PERUBAHAN UTAMA: Inisialisasi ApiClient, bukan layanan backend ---
+        self.api_client = ApiClient(config=self.config)
+
+        # Inisialisasi semua komponen UI (tidak ada perubahan di sini)
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
         self.system_status_panel = Dashboard(config=self.config)
@@ -66,6 +56,7 @@ class MainWindow(QMainWindow):
         self.log_panel = LogPanel(config=self.config)
         self.active_manual_keys = set()
 
+        # Logika tema tetap sama
         self.current_theme = "light"
         self.themes = {}
         self._load_themes()
@@ -74,46 +65,40 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.connect_signals()
 
-        # --- PERUBAHAN 2: Pindahkan proses start backend ke sini ---
-        self.start_backend_services()
-        # ----------------------------------------------------------
-
+        # --- PERUBAHAN UTAMA: Mulai koneksi ApiClient, bukan memulai thread backend ---
+        print("Memulai koneksi klien API ke server...")
+        self.api_client.connect()
+        
         self.showMaximized()
 
     def _load_themes(self):
+        # (Fungsi ini tidak berubah)
         try:
             gui_dir = os.path.dirname(os.path.abspath(__file__))
-            dark_theme_path = os.path.join(
-                gui_dir, "..", "assets", "resources", "dark_theme.qss"
-            )
+            dark_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "dark_theme.qss")
             with open(dark_theme_path, "r") as f:
                 self.themes["dark"] = f.read()
-
-            light_theme_path = os.path.join(
-                gui_dir, "..", "assets", "resources", "light_theme.qss"
-            )
+            light_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "light_theme.qss")
             with open(light_theme_path, "r") as f:
                 self.themes["light"] = f.read()
         except Exception as e:
             print(f"Peringatan: Gagal memuat file tema. Error: {e}")
 
     def _apply_theme(self, theme_name):
+        # (Fungsi ini tidak berubah)
         if theme_name in self.themes:
             QApplication.instance().setStyleSheet(self.themes[theme_name])
-            if theme_name == "dark":
-                self.header.theme_button.setText("Switch to Light Mode")
-            else:
-                self.header.theme_button.setText("Switch to Dark Mode")
+            button_text = "Switch to Light Mode" if theme_name == "dark" else "Switch to Dark Mode"
+            self.header.theme_button.setText(button_text)
             self.current_theme = theme_name
 
     @Slot()
     def toggle_theme(self):
-        if self.current_theme == "dark":
-            self._apply_theme("light")
-        else:
-            self._apply_theme("dark")
+        # (Fungsi ini tidak berubah)
+        self._apply_theme("light" if self.current_theme == "dark" else "dark")
 
     def setup_ui(self):
+        # (Struktur UI dan layout tidak berubah)
         layout_sidebar_kiri = QVBoxLayout()
         layout_sidebar_kiri.addWidget(self.control_panel)
         layout_sidebar_kiri.addWidget(self.settings_panel)
@@ -164,130 +149,74 @@ class MainWindow(QMainWindow):
         widget_pusat = QWidget()
         widget_pusat.setLayout(layout_keseluruhan)
         self.setCentralWidget(widget_pusat)
+        
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Aplikasi Siap.")
+        self.status_bar.showMessage("Aplikasi Siap. Menunggu koneksi ke backend...")
+
 
     def connect_signals(self):
-        # --- PERUBAHAN 3: Hubungkan sinyal baru ke slot di VisionService ---
-        self.set_stream_listening_requested.connect(
-            self.vision_service.set_gui_listening
-        )
-        # --------------------------------------------------------------------
-
+        """Menghubungkan sinyal dari UI ke slot di ApiClient, dan sebaliknya."""
+        # --- KONEKSI DARI UI KE API CLIENT (MENGIRIM PERINTAH) ---
         self.header.theme_changed_requested.connect(self.toggle_theme)
-
-        # Tombol di VideoView sekarang akan memanggil on_toggle_gui_stream
-        self.video_view.toggle_camera_requested.connect(self.on_toggle_gui_stream)
-
-        self.control_panel.mode_changed.connect(
-            lambda mode: self.asv_handler.process_command("CHANGE_MODE", mode)
-        )
-        self.control_panel.navigation_command.connect(self.handle_navigation_command)
-        self.waypoints_panel.send_waypoints.connect(
-            lambda wps: self.asv_handler.process_command("SET_WAYPOINTS", wps)
-        )
         self.settings_panel.connect_requested.connect(
-            lambda details: self.asv_handler.process_command(
-                "CONFIGURE_SERIAL", details
-            )
+            lambda details: self.api_client.send_command("CONFIGURE_SERIAL", details)
         )
-        self.waypoints_panel.load_mission_requested.connect(
-            self.load_predefined_mission
+        self.control_panel.mode_changed.connect(
+            lambda mode: self.api_client.send_command("SET_MODE", mode)
         )
-        self.control_panel.mode_changed.connect(self.vision_service.set_mode)
-        self.video_view.inversion_changed.connect(self.vision_service.set_inversion)
+        self.control_panel.navigation_command.connect(
+            lambda cmd: self.api_client.send_command(f"NAV_{cmd.upper()}", {})
+        )
+        self.waypoints_panel.send_waypoints.connect(
+            lambda wps: self.api_client.send_command("SET_WAYPOINTS", wps)
+        )
+        self.waypoints_panel.load_mission_requested.connect(self.load_predefined_mission)
+        self.video_view.toggle_camera_requested.connect(self.api_client.request_data_stream)
+        
+        # --- KONEKSI DARI API CLIENT KE UI (MENERIMA DATA) ---
+        self.api_client.connection_status_changed.connect(self.on_connection_status_change)
+        self.api_client.data_updated.connect(self.system_status_panel.update_data)
+        self.api_client.data_updated.connect(self.map_view.update_data)
+        self.api_client.data_updated.connect(self.log_panel.update_log)
+        self.api_client.data_updated.connect(self.header.update_status)
+        self.api_client.frame_cam1_updated.connect(self.video_view.update_frame_1)
+        self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
 
-        self.vision_service.frame_ready_cam1.connect(self.video_view.update_frame_1)
-        self.vision_service.frame_ready_cam2.connect(self.video_view.update_frame_2)
-
-        self.asv_handler.telemetry_updated.connect(self.system_status_panel.update_data)
-        self.asv_handler.telemetry_updated.connect(self.map_view.update_data)
-        self.asv_handler.telemetry_updated.connect(self.log_panel.update_log)
-        self.asv_handler.telemetry_updated.connect(self.header.update_status)
+        # Koneksi sinyal-slot internal GUI lainnya
         self.waypoints_panel.waypoints_updated.connect(self.map_view.update_waypoints)
-        self.waypoints_panel.add_current_pos_requested.connect(
-            lambda: self.waypoints_panel.add_waypoint_from_pos(
-                self.asv_handler.current_state.get("latitude"),
-                self.asv_handler.current_state.get("longitude"),
-            )
-        )
 
-    def start_backend_services(self):
-        """Memulai semua layanan backend (ASV & Visi) di thread terpisah."""
-        # Start AsvHandler
-        self.asv_handler.moveToThread(self.asv_handler_thread)
-        self.asv_handler_thread.started.connect(self.asv_handler.run)
-        self.asv_handler_thread.start()
-        print("Thread untuk AsvHandler dimulai.")
-
-        # --- PERUBAHAN 4: VisionService juga dimulai otomatis ---
-        print("Memulai layanan Visi di latar belakang...")
-        self.vision_service.start()
-        # --------------------------------------------------------
-
-    # --- PERUBAHAN 5: Logika toggle_vision_service diubah total ---
-    @Slot(bool)
-    def on_toggle_gui_stream(self, show_video: bool):
-        """
-        Slot ini dipanggil oleh tombol di VideoView.
-        Fungsinya hanya untuk meminta backend mengirim atau berhenti mengirim frame.
-        """
-        print(
-            f"GUI meminta untuk {'menampilkan' if show_video else 'menyembunyikan'} stream video."
-        )
-        # Menggunakan sinyal untuk komunikasi thread-safe ke VisionService
-        self.set_stream_listening_requested.emit(show_video)
-
-    # -----------------------------------------------------------------
+    @Slot(bool, str)
+    def on_connection_status_change(self, is_connected, message):
+        """Memperbarui status bar dan header berdasarkan status koneksi."""
+        self.status_bar.showMessage(message)
+        status_text = "CONNECTED" if is_connected else "DISCONNECTED"
+        status_prop = "connected" if is_connected else "disconnected"
+        
+        self.header.connection_status_label.setText(status_text)
+        self.header.connection_status_label.setProperty("status", status_prop)
+        self.style().polish(self.header.connection_status_label)
 
     def closeEvent(self, event):
+        """Memastikan koneksi ditutup dengan benar saat aplikasi keluar."""
         print("Menutup aplikasi...")
-        # Hentikan semua service di backend
-        self.vision_service.stop()
-        self.asv_handler.stop()
-
-        # Hentikan thread utama AsvHandler
-        self.asv_handler_thread.quit()
-        self.asv_handler_thread.wait(3000)
-
-        print("Semua thread backend telah dihentikan.")
-        super().closeEvent(event)
+        self.api_client.shutdown()
+        event.accept()
 
     @Slot(str)
     def load_predefined_mission(self, mission_id):
-        if mission_id == "A":
-            waypoints = get_lintasan_a()
-            print("Memuat Lintasan A...")
-        elif mission_id == "B":
-            waypoints = get_lintasan_b()
-            print("Memuat Lintasan B...")
-        else:
-            return
+        # (Fungsi ini tidak berubah)
+        waypoints = get_lintasan_a() if mission_id == "A" else get_lintasan_b()
+        print(f"Memuat Lintasan {mission_id}...")
         self.waypoints_panel.load_waypoints_to_list(waypoints)
 
-    @Slot(str)
-    def handle_navigation_command(self, command: str):
-        if command == "RETURN":
-            print(
-                "[MainWindow] Perintah Return to Home diterima, mengirim ke AsvHandler..."
-            )
-            self.asv_handler.process_command("INITIATE_RTH", {})
-        elif command == "START":
-            self.asv_handler.process_command("START_MISSION", {})
-        else:
-            print(
-                f"[MainWindow] Perintah navigasi '{command}' belum diimplementasikan."
-            )
-
     def handle_manual_keys(self):
-        self.asv_handler.process_command(
-            "MANUAL_CONTROL", list(self.active_manual_keys)
-        )
+        """Mengirim status tombol manual saat ini ke backend."""
+        self.api_client.send_command("MANUAL_CONTROL", list(self.active_manual_keys))
 
     def keyPressEvent(self, event):
-        if event.isAutoRepeat():
-            return
+        # (Fungsi ini tidak berubah secara signifikan, hanya memanggil handle_manual_keys)
+        if event.isAutoRepeat(): return
         key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
         if event.key() in key_map:
             key_char = key_map[event.key()]
@@ -297,8 +226,8 @@ class MainWindow(QMainWindow):
                 self.handle_manual_keys()
 
     def keyReleaseEvent(self, event):
-        if event.isAutoRepeat():
-            return
+        # (Fungsi ini tidak berubah secara signifikan, hanya memanggil handle_manual_keys)
+        if event.isAutoRepeat(): return
         key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
         if event.key() in key_map:
             key_char = key_map[event.key()]

@@ -1,30 +1,19 @@
-# gui/components/video_view.py
-# --- VERSI MODIFIKASI: Mendukung dua stream video berdampingan ---
-
+# src/navantara_gui/components/video_view.py
 import cv2
 import numpy as np
 import os
 from PySide6.QtWidgets import (
-    QWidget,
-    QLabel,
-    QVBoxLayout,
-    QPushButton,
-    QHBoxLayout,
-    QSizePolicy,
-    QComboBox,
-    QSplitter,  # <-- Impor QSplitter
+    QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QSizePolicy, QSplitter
 )
 from PySide6.QtCore import Signal, Slot, Qt
 from PySide6.QtGui import QImage, QPixmap, QIcon
 
-
 class VideoView(QWidget):
     """
-    Widget yang menampilkan DUA feed video secara berdampingan
-    dan menyediakan kontrol kamera.
+    Widget yang menampilkan DUA feed video dari backend secara berdampingan
+    dan menyediakan satu tombol untuk mengontrol stream.
     """
-
-    camera_changed = Signal(int)
+    # Sinyal untuk memberi tahu MainWindow bahwa pengguna ingin memulai/menghentikan stream
     toggle_camera_requested = Signal(bool)
     inversion_changed = Signal(bool)
 
@@ -33,143 +22,99 @@ class VideoView(QWidget):
 
         self.is_camera_running = False
 
-        self.camera_selector = QComboBox()
-        self.refresh_button = QPushButton("Refresh List")
+        # --- PERUBAHAN UTAMA: Hapus ComboBox dan tombol Refresh ---
+        # Hanya ada tombol untuk memulai/menghentikan dan inversi
         self.start_stop_button = QPushButton("Start Cameras")
         self.invert_button = QPushButton("Invert Logic")
         self.invert_button.setCheckable(True)
         self.invert_button.setEnabled(False)
 
+        # Coba muat ikon untuk tombol agar lebih intuitif
         try:
             assets_path = os.path.join(os.path.dirname(__file__), "..", "assets")
-            self.refresh_button.setIcon(
-                QIcon(os.path.join(assets_path, "rotate-cw.svg"))
-            )
+            self.play_icon = QIcon(os.path.join(assets_path, "play-circle.svg"))
+            self.pause_icon = QIcon(os.path.join(assets_path, "pause-circle.svg"))
+            self.start_stop_button.setIcon(self.play_icon)
         except Exception as e:
-            print(f"Peringatan: Gagal memuat ikon refresh. Error: {e}")
+            print(f"Peringatan: Gagal memuat ikon play/pause. Error: {e}")
 
+        # Tata letak untuk tombol kontrol di pojok kanan atas
         control_layout = QHBoxLayout()
-        control_layout.addWidget(QLabel("Sumber Kamera Utama:"))
-        control_layout.addWidget(self.camera_selector, 1)
-        control_layout.addWidget(self.refresh_button)
-        control_layout.addWidget(self.start_stop_button)
+        control_layout.addStretch() 
         control_layout.addWidget(self.invert_button)
+        control_layout.addWidget(self.start_stop_button)
 
-        # --- PERUBAHAN 1: Buat dua QLabel untuk video ---
-        self.label_video_1 = QLabel(
-            "Kamera Atas Nonaktif.\nPilih sumber dan tekan 'Start'."
-        )
+        # Label untuk menampilkan video
+        self.label_video_1 = QLabel("Kamera Atas Nonaktif.\nTekan 'Start Cameras' untuk memulai stream.")
         self.label_video_1.setAlignment(Qt.AlignCenter)
         self.label_video_1.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.label_video_1.setStyleSheet(
-            "background-color: black; color: white; font-size: 16px;"
-        )
+        self.label_video_1.setStyleSheet("background-color: black; color: white; font-size: 16px;")
 
         self.label_video_2 = QLabel("Kamera Bawah Nonaktif.")
         self.label_video_2.setAlignment(Qt.AlignCenter)
         self.label_video_2.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.label_video_2.setStyleSheet(
-            "background-color: black; color: white; font-size: 16px;"
-        )
+        self.label_video_2.setStyleSheet("background-color: black; color: white; font-size: 16px;")
 
-        # --- PERUBAHAN 2: Gunakan QSplitter untuk tata letak berdampingan ---
+        # Splitter untuk memisahkan dua tampilan video
         video_splitter = QSplitter(Qt.Horizontal)
         video_splitter.addWidget(self.label_video_1)
         video_splitter.addWidget(self.label_video_2)
 
+        # Tata letak utama untuk seluruh widget
         layout_utama = QVBoxLayout(self)
         layout_utama.addLayout(control_layout)
-        layout_utama.addWidget(video_splitter, 1)  # Tambahkan splitter ke layout
+        layout_utama.addWidget(video_splitter, 1)
         self.setLayout(layout_utama)
 
-        self.refresh_button.clicked.connect(self.list_available_cameras)
+        # Hubungkan sinyal dari tombol ke fungsi internal
         self.start_stop_button.clicked.connect(self.toggle_camera_stream)
         self.invert_button.clicked.connect(self.on_inversion_toggled)
-        self.camera_selector.currentIndexChanged.connect(
-            self.on_camera_selection_changed
-        )
-        self.list_available_cameras()
 
-    # --- PERUBAHAN 3: Buat slot terpisah untuk setiap frame kamera ---
     @Slot(np.ndarray)
     def update_frame_1(self, frame):
-        """Menerima dan menampilkan frame untuk kamera 1 (kiri)."""
+        """Menerima frame dari ApiClient dan menampilkannya di label pertama."""
         self._display_frame(frame, self.label_video_1)
 
     @Slot(np.ndarray)
     def update_frame_2(self, frame):
-        """Menerima dan menampilkan frame untuk kamera 2 (kanan)."""
+        """Menerima frame dari ApiClient dan menampilkannya di label kedua."""
         self._display_frame(frame, self.label_video_2)
 
     def _display_frame(self, frame, label_widget):
-        """Fungsi helper untuk mengubah numpy array ke QPixmap dan menampilkannya."""
+        """Helper untuk mengubah frame OpenCV (numpy) ke format Qt (QPixmap)."""
         try:
             rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_image.shape
             bytes_per_line = ch * w
-            qt_image = QImage(
-                rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888
-            )
+            qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
             pixmap = QPixmap.fromImage(qt_image)
-
             label_widget.setPixmap(
-                pixmap.scaled(
-                    label_widget.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
+                pixmap.scaled(label_widget.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             )
         except Exception as e:
             print(f"GUI Error: Gagal menampilkan frame: {e}")
 
-    def list_available_cameras(self):
-        self.camera_selector.clear()
-        indices = []
-        for i in range(5):
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                indices.append(i)
-                cap.release()
-
-        if indices:
-            self.camera_selector.addItems([f"Kamera {idx}" for idx in indices])
-            self.start_stop_button.setEnabled(True)
-        else:
-            self.camera_selector.addItem("Tidak ada kamera ditemukan")
-            self.start_stop_button.setEnabled(False)
+    # --- FUNGSI list_available_cameras() DIHAPUS TOTAL ---
 
     def toggle_camera_stream(self):
+        """Mengubah status streaming dan memancarkan sinyal ke MainWindow."""
+        self.is_camera_running = not self.is_camera_running
+        self.toggle_camera_requested.emit(self.is_camera_running)
+        self.toggle_ui_controls(self.is_camera_running)
+        
+        # Jika stream dihentikan, bersihkan tampilan video
         if not self.is_camera_running:
-            if "Kamera" in self.camera_selector.currentText():
-                self.on_camera_selection_changed(self.camera_selector.currentIndex())
-                self.toggle_camera_requested.emit(True)
-                self.toggle_ui_controls(True)
-        else:
-            self.toggle_camera_requested.emit(False)
-            self.toggle_ui_controls(False)
-            # Reset kedua label
-            self.label_video_1.setText("Kamera dihentikan.")
+            self.label_video_1.setText("Stream dihentikan.")
             self.label_video_1.setPixmap(QPixmap())
-            self.label_video_2.setText("Kamera dihentikan.")
+            self.label_video_2.setText("Stream dihentikan.")
             self.label_video_2.setPixmap(QPixmap())
 
-    def on_camera_selection_changed(self, index):
-        if index >= 0 and "Kamera" in self.camera_selector.currentText():
-            try:
-                cam_idx = int(self.camera_selector.currentText().split(" ")[1])
-                self.camera_changed.emit(cam_idx)
-            except (ValueError, IndexError):
-                pass
-
     def on_inversion_toggled(self):
-        is_checked = self.invert_button.isChecked()
-        self.inversion_changed.emit(is_checked)
-        self.invert_button.setProperty("inverted", is_checked)
-        self.style().polish(self.invert_button)
+        """Memancarkan sinyal saat tombol inversi ditekan."""
+        self.inversion_changed.emit(self.invert_button.isChecked())
 
     def toggle_ui_controls(self, is_running):
-        self.is_camera_running = is_running
-        self.start_stop_button.setText(
-            "Stop Cameras" if is_running else "Start Cameras"
-        )
+        """Memperbarui tampilan tombol berdasarkan status streaming."""
+        self.start_stop_button.setText("Stop Cameras" if is_running else "Start Cameras")
+        self.start_stop_button.setIcon(self.pause_icon if is_running else self.play_icon)
         self.invert_button.setEnabled(is_running)
-        self.camera_selector.setEnabled(not is_running)
-        self.refresh_button.setEnabled(not is_running)

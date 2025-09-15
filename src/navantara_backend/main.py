@@ -1,8 +1,7 @@
-# backend/main.py
-# --- VERSI FINAL: Memastikan VisionService berjalan secara independen untuk operasi otonom ---
-
+# src/navantara_backend/main.py
 import json
 import os
+import eventlet
 
 from flask import Flask, g, current_app
 
@@ -32,9 +31,10 @@ def create_app():
         print(f"[Server] KRITIS: Gagal memuat config.json. Error: {e}")
         exit(1)
 
-    # 🔹 Inisialisasi semua service
-    asv_handler = AsvHandler(app.config["ASV_CONFIG"])
-    vision_service = VisionService(app.config["ASV_CONFIG"], asv_handler)
+    # --- PERUBAHAN UTAMA: Inisialisasi layanan dengan referensi socketio ---
+    # Layanan sekarang dapat memanggil socketio.emit() secara langsung.
+    asv_handler = AsvHandler(app.config["ASV_CONFIG"], socketio)
+    vision_service = VisionService(app.config["ASV_CONFIG"], asv_handler, socketio)
 
     # 🔹 Simpan instance service ke dalam konteks aplikasi
     app.asv_handler = asv_handler
@@ -49,26 +49,14 @@ def create_app():
     # 🔹 Daftarkan semua endpoint API
     app.register_blueprint(api_blueprint)
 
-    # 🔹 Inisialisasi SocketIO dengan aplikasi Flask
-    socketio.init_app(app, cors_allowed_origins="*")
+    # 🔹 Inisialisasi SocketIO dengan mode async eventlet
+    socketio.init_app(app, async_mode='eventlet', cors_allowed_origins="*")
 
-    # --- PERUBAHAN UTAMA DI SINI ---
-    # 🔹 Jalankan Vision Service secara langsung saat aplikasi dibuat.
-    # Ini memastikan deteksi selalu aktif, bahkan tanpa GUI.
-    print("🚀 Memulai layanan visi secara otomatis untuk mode otonom...")
-    vision_service.start()  # Memanggil metode start dari VisionService
-    # --------------------------------
-
+    # --- PERUBAHAN UTAMA: Jalankan loop layanan sebagai greenlet kooperatif ---
+    # Ini menggantikan arsitektur berbasis thread dan lebih efisien.
+    print("🚀 Menjadwalkan layanan latar belakang (AsvHandler & VisionService) sebagai greenlet...")
+    eventlet.spawn(asv_handler.main_logic_loop)
+    eventlet.spawn(vision_service.run_capture_loops)
+    
     print("[Server] Konfigurasi aplikasi selesai.")
     return app
-
-
-# Panggil create_app() di level global agar 'app' bisa diimpor oleh server
-app = create_app()
-
-if __name__ == "__main__":
-    # Jalankan server normal
-    print("🚀 Backend Server ASV (Mode Otonom) siap menerima koneksi...")
-    socketio.run(
-        app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True
-    )

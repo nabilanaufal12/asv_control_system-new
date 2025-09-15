@@ -1,6 +1,5 @@
-# backend/api/endpoints.py
-
-from flask import Blueprint, jsonify, g, current_app
+# src/navantara_backend/api/endpoints.py
+from flask import Blueprint, current_app
 
 # 1. Impor HANYA socketio dari extensions untuk menghindari impor melingkar
 from navantara_backend.extensions import socketio
@@ -11,43 +10,58 @@ api_blueprint = Blueprint("api", __name__)
 @socketio.on("connect")
 def handle_connect():
     """
-    Fungsi ini sekarang hanya untuk mencatat koneksi baru dari GUI.
-    Layanan visi sudah berjalan secara independen sejak backend dimulai.
+    Mencatat koneksi baru dari klien GUI. Server sekarang menunggu
+    permintaan eksplisit dari klien untuk memulai streaming data.
     """
-    print("Klien GUI terhubung.")
+    print("Klien GUI terhubung. Menunggu permintaan stream...")
+
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    """
+    Menangani saat klien terputus, dan memastikan semua stream data berhenti
+    untuk menghemat sumber daya.
+    """
+    print("Klien GUI terputus. Menghentikan semua stream data ke klien ini.")
+    # Matikan streaming untuk mencegah pengiriman data yang tidak perlu
+    current_app.vision_service.set_gui_listening(False)
+    current_app.asv_handler.set_streaming_status(False)
+
+
+# --- PERUBAHAN UTAMA: Event handler baru untuk pola "pull" ---
+@socketio.on('request_stream')
+def handle_request_stream(json_data):
+    """
+    Klien meminta server untuk memulai atau menghentikan pengiriman data.
+    Ini adalah inti dari arsitektur komunikasi yang baru.
+    """
+    status = json_data.get('status', True)
+    print(f"Menerima permintaan stream dari GUI. Mengatur status streaming ke: {status}")
+    # Meneruskan permintaan ke kedua layanan yang relevan
+    current_app.vision_service.set_gui_listening(status)
+    current_app.asv_handler.set_streaming_status(status)
 
 
 @socketio.on("command")
 def handle_socket_command(json_data):
-    """Menerima dan meneruskan perintah dari GUI."""
+    """Menerima dan meneruskan perintah umum dari GUI ke layanan yang sesuai."""
     command = json_data.get("command")
-    payload = json_data.get("payload")
-    print(f"Menerima perintah via WebSocket: {command}")
+    payload = json_data.get("payload", {})
+    print(f"Menerima perintah via WebSocket: {command} dengan payload: {payload}")
 
-    # Teruskan perintah ke handler yang sesuai
-    # (Menggunakan current_app lebih aman daripada g di dalam event SocketIO)
-    if command == "LIST_CAMERAS":
-        # Mengambil daftar kamera dan mengirimkannya kembali ke GUI
-        cameras = current_app.vision_service.list_available_cameras()
-        socketio.emit("camera_list", {"cameras": cameras})
-    elif command.startswith("SELECT_CAMERA") or command.startswith("SET_"):
-        # Perintah yang ditujukan untuk VisionService
-        current_app.vision_service.process_command(command, payload)
+    # Menggunakan current_app lebih aman daripada g di dalam event SocketIO
+    if command.startswith("SET_"):
+        # Perintah yang ditujukan untuk VisionService (misal: SET_MODE)
+        # Kita buat nama metode yang konsisten: set_nama_perintah
+        method_name = command.lower()
+        if hasattr(current_app.vision_service, method_name):
+            getattr(current_app.vision_service, method_name)(payload)
+        else:
+            print(f"[API] Perintah visi tidak dikenal: {command}")
     else:
-        # Perintah lainnya untuk AsvHandler
+        # Perintah lainnya diteruskan ke AsvHandler
         current_app.asv_handler.process_command(command, payload)
 
-
-# --- Endpoint HTTP lainnya tidak berubah ---
-# Endpoint ini tetap berguna untuk pengujian cepat atau akses langsung via browser
-@api_blueprint.route("/list_cameras", methods=["GET"])
-def list_cameras():
-    """Endpoint HTTP untuk mendapatkan daftar indeks kamera yang tersedia."""
-    cameras = g.vision_service.list_available_cameras()
-    return jsonify({"cameras": cameras})
-
-
-@api_blueprint.route("/status", methods=["GET"])
-def get_status():
-    """Endpoint HTTP untuk mendapatkan state terbaru dari ASV."""
-    return jsonify(g.asv_handler.get_current_state())
+# --- PERUBAHAN: Endpoint HTTP tidak lagi diperlukan ---
+# Komunikasi sekarang sepenuhnya ditangani melalui WebSocket untuk konsistensi
+# dan efisiensi, sehingga endpoint ini dapat dihapus.

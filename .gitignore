@@ -31,6 +31,7 @@ snapshots/
 *.html
 # File di bawah ini adalah file yang dihasilkan secara otomatis dan tidak perlu dilacak
 yolov5/runs/
+Flask-SocketIO/
 
 # File Sensitif (jika ada)
 # Jangan unggah kunci API atau kredensial

@@ -1,105 +1,105 @@
-# gui/api_client.py
-# --- MODIFIKASI FINAL: Beralih sepenuhnya ke Klien WebSocket ---
-
-import threading
+# src/navantara_gui/api_client.py
 import socketio
+import numpy as np
+import cv2
+
 from PySide6.QtCore import QObject, Signal, Slot
 
 
 class ApiClient(QObject):
     """
-    Kelas ini sekarang bertindak sebagai Klien WebSocket untuk komunikasi
-    real-time dengan Backend Server. Ia tidak lagi menggunakan HTTP polling.
+    Klien WebSocket yang berkomunikasi dengan backend. Mengadopsi pola "pull"
+    di mana ia secara proaktif meminta stream data setelah terhubung.
     """
-
     data_updated = Signal(dict)
     connection_status_changed = Signal(bool, str)
+    # Sinyal baru untuk frame video yang diterima dan sudah di-decode
+    frame_cam1_updated = Signal(np.ndarray)
+    frame_cam2_updated = Signal(np.ndarray)
 
     def __init__(self, config):
         super().__init__()
         backend_config = config.get("backend_connection", {})
         self.base_url = f"http://{backend_config.get('ip_address', '127.0.0.1')}:{backend_config.get('port', 5000)}"
-
-        # 1. Buat instance klien Socket.IO
+        
+        # Inisialisasi klien Socket.IO
         self.sio = socketio.Client()
-
-        # 2. Siapkan event handler (apa yang harus dilakukan saat menerima pesan)
         self.setup_event_handlers()
 
-        # 3. Jalankan koneksi di thread terpisah agar tidak memblokir GUI
-        self.conn_thread = threading.Thread(target=self.connect_to_server, daemon=True)
-        self.conn_thread.start()
-
-    def connect_to_server(self):
-        """Mencoba terhubung dan tetap terhubung ke server WebSocket."""
+    def connect(self):
+        """
+        Memulai koneksi ke server. Pustaka menangani koneksi non-blocking
+        secara internal, sehingga tidak perlu thread manual.
+        """
         print(f"ApiClient mencoba terhubung ke server WebSocket di {self.base_url}")
         try:
-            # Menghubungkan ke server
-            self.sio.connect(self.base_url)
-            # baris sio.wait() akan memblokir thread ini, membuatnya tetap hidup
-            # untuk mendengarkan pesan dari server.
-            self.sio.wait()
-        except socketio.exceptions.ConnectionError:
-            print("Koneksi ke server WebSocket gagal.")
+            self.sio.connect(self.base_url, transports=['websocket'])
+        except socketio.exceptions.ConnectionError as e:
+            print(f"Koneksi ke server WebSocket gagal: {e}")
             self.connection_status_changed.emit(False, "Backend tidak terjangkau")
-        print("Thread koneksi ApiClient dihentikan.")
 
     def setup_event_handlers(self):
-        """
-        Mendefinisikan fungsi (callback) yang akan dijalankan saat
-        menerima event tertentu dari server.
-        """
+        """Mendefinisikan callback untuk event yang diterima dari server."""
 
         @self.sio.event
         def connect():
-            # Saat berhasil terhubung
             self.connection_status_changed.emit(True, "Terhubung ke Backend")
-            print("Berhasil terhubung ke server WebSocket!")
+            print("Berhasil terhubung! Meminta stream data dari server...")
+            # --- PERBAIKAN: Gunakan background task untuk menghindari race condition ---
+            # Ini memastikan permintaan dikirim setelah event 'connect' selesai sepenuhnya.
+            self.sio.start_background_task(self.initial_stream_request)
 
         @self.sio.event
         def disconnect():
-            # Saat koneksi terputus
-            self.connection_status_changed.emit(False, "Koneksi ke Backend terputus")
+            self.connection_status_changed.emit(False, "Koneksi terputus")
             print("Koneksi ke server terputus.")
 
         @self.sio.on("telemetry_update")
         def on_telemetry_update(data):
-            # Saat server mengirim event 'telemetry_update'
-            # Kita teruskan datanya ke seluruh GUI melalui sinyal Qt
             self.data_updated.emit(data)
 
-    def _send_command(self, command_name, payload_data):
-        """Fungsi helper untuk mengirim perintah ke backend via event 'command'."""
+        @self.sio.on('frame_cam1')
+        def on_frame_cam1(data):
+            # Ubah data byte JPEG kembali menjadi gambar OpenCV
+            nparr = np.frombuffer(data, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is not None:
+                # Kirim frame sebagai sinyal Qt untuk ditampilkan oleh UI
+                self.frame_cam1_updated.emit(frame)
+
+        @self.sio.on('frame_cam2')
+        def on_frame_cam2(data):
+            nparr = np.frombuffer(data, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is not None:
+                self.frame_cam2_updated.emit(frame)
+    
+    def initial_stream_request(self):
+        """Fungsi yang dijalankan di latar belakang untuk meminta stream awal."""
+        self.sio.sleep(0.1) # Beri sedikit jeda agar state koneksi stabil
+        self.request_data_stream(True)
+
+    @Slot(bool)
+    def request_data_stream(self, start: bool):
+        """Mengirim event untuk memulai atau menghentikan stream data dari server."""
+        if self.sio.connected:
+            self.sio.emit('request_stream', {'status': start})
+            print(f"Mengirim permintaan untuk {'memulai' if start else 'menghentikan'} stream.")
+        else:
+            print("Tidak bisa meminta stream, belum terhubung ke server.")
+
+    def send_command(self, command_name, payload_data=None):
+        """Fungsi helper terpusat untuk mengirim semua perintah ke backend."""
+        if payload_data is None:
+            payload_data = {}
         if self.sio.connected:
             self.sio.emit("command", {"command": command_name, "payload": payload_data})
         else:
-            print("Tidak bisa mengirim perintah, tidak terhubung ke server.")
-
-    # --- KUMPULAN SLOT UNTUK MENANGANI SINYAL DARI GUI ---
-    # Slot-slot ini sekarang akan memanggil _send_command via WebSocket.
-
-    @Slot(dict)
-    def connect_to_port(self, connection_details):
-        self._send_command("CONFIGURE_SERIAL", connection_details)
-
-    @Slot(str)
-    def handle_mode_change(self, mode):
-        self._send_command("CHANGE_MODE", mode)
-
-    @Slot(list)
-    def handle_manual_keys(self, keys):
-        self._send_command("MANUAL_CONTROL", keys)
-
-    @Slot(list)
-    def set_waypoints(self, waypoints):
-        self._send_command("SET_WAYPOINTS", waypoints)
-
-    @Slot(dict)
-    def handle_vision_status(self, vision_data):
-        self._send_command("VISION_OVERRIDE", vision_data)
+            print(f"Gagal mengirim perintah '{command_name}', tidak terhubung.")
 
     def shutdown(self):
-        """Memutuskan koneksi saat aplikasi ditutup."""
+        """Memutuskan koneksi dengan bersih saat aplikasi ditutup."""
         print("Memutuskan koneksi WebSocket...")
         if self.sio.connected:
+            self.request_data_stream(False)
             self.sio.disconnect()
