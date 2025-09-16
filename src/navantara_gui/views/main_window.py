@@ -4,19 +4,27 @@ import os
 
 # Blok ini memperbaiki path agar impor dari folder lain berhasil
 try:
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
 except NameError:
     sys.path.insert(0, ".")
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QTabWidget,
-    QStatusBar, QScrollArea, QApplication, QSplitter
+    QMainWindow,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QTabWidget,
+    QStatusBar,
+    QScrollArea,
+    QApplication,
+    QSplitter,
 )
 from PySide6.QtCore import Slot, Qt
 
-# --- PERUBAHAN UTAMA: Impor hanya komponen GUI dan ApiClient ---
 from navantara_gui.components.control_panel import ControlPanel
 from navantara_gui.components.dashboard import Dashboard
 from navantara_gui.components.settings_panel import SettingsPanel
@@ -26,9 +34,7 @@ from navantara_gui.components.header import Header
 from navantara_gui.components.waypoints_panel import WaypointsPanel
 from navantara_gui.components.log_panel import LogPanel
 from navantara_gui.missions import get_lintasan_a, get_lintasan_b
-from navantara_gui.api_client import ApiClient # <-- Klien API adalah satu-satunya jembatan ke backend
-
-# --- HAPUS semua impor dari backend (AsvHandler, VisionService) ---
+from navantara_gui.api_client import ApiClient
 
 
 class MainWindow(QMainWindow):
@@ -42,10 +48,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ASV Control System - Navantara Client")
         self.config = config
 
-        # --- PERUBAHAN UTAMA: Inisialisasi ApiClient, bukan layanan backend ---
         self.api_client = ApiClient(config=self.config)
 
-        # Inisialisasi semua komponen UI (tidak ada perubahan di sini)
+        # Inisialisasi semua komponen UI
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
         self.system_status_panel = Dashboard(config=self.config)
@@ -56,7 +61,6 @@ class MainWindow(QMainWindow):
         self.log_panel = LogPanel(config=self.config)
         self.active_manual_keys = set()
 
-        # Logika tema tetap sama
         self.current_theme = "light"
         self.themes = {}
         self._load_themes()
@@ -65,40 +69,44 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.connect_signals()
 
-        # --- PERUBAHAN UTAMA: Mulai koneksi ApiClient, bukan memulai thread backend ---
         print("Memulai koneksi klien API ke server...")
         self.api_client.connect()
-        
+
         self.showMaximized()
 
     def _load_themes(self):
-        # (Fungsi ini tidak berubah)
         try:
             gui_dir = os.path.dirname(os.path.abspath(__file__))
-            dark_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "dark_theme.qss")
+            dark_theme_path = os.path.join(
+                gui_dir, "..", "assets", "resources", "dark_theme.qss"
+            )
             with open(dark_theme_path, "r") as f:
                 self.themes["dark"] = f.read()
-            light_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "light_theme.qss")
+            light_theme_path = os.path.join(
+                gui_dir, "..", "assets", "resources", "light_theme.qss"
+            )
             with open(light_theme_path, "r") as f:
                 self.themes["light"] = f.read()
         except Exception as e:
             print(f"Peringatan: Gagal memuat file tema. Error: {e}")
 
     def _apply_theme(self, theme_name):
-        # (Fungsi ini tidak berubah)
         if theme_name in self.themes:
             QApplication.instance().setStyleSheet(self.themes[theme_name])
-            button_text = "Switch to Light Mode" if theme_name == "dark" else "Switch to Dark Mode"
+            button_text = (
+                "Switch to Light Mode"
+                if theme_name == "dark"
+                else "Switch to Dark Mode"
+            )
             self.header.theme_button.setText(button_text)
             self.current_theme = theme_name
 
     @Slot()
     def toggle_theme(self):
-        # (Fungsi ini tidak berubah)
         self._apply_theme("light" if self.current_theme == "dark" else "dark")
 
     def setup_ui(self):
-        # (Struktur UI dan layout tidak berubah)
+        # --- PERBAIKAN: Kode tata letak yang hilang telah dikembalikan ---
         layout_sidebar_kiri = QVBoxLayout()
         layout_sidebar_kiri.addWidget(self.control_panel)
         layout_sidebar_kiri.addWidget(self.settings_panel)
@@ -149,21 +157,23 @@ class MainWindow(QMainWindow):
         widget_pusat = QWidget()
         widget_pusat.setLayout(layout_keseluruhan)
         self.setCentralWidget(widget_pusat)
-        
+
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Aplikasi Siap. Menunggu koneksi ke backend...")
-
+        # --- AKHIR PERBAIKAN ---
 
     def connect_signals(self):
         """Menghubungkan sinyal dari UI ke slot di ApiClient, dan sebaliknya."""
-        # --- KONEKSI DARI UI KE API CLIENT (MENGIRIM PERINTAH) ---
         self.header.theme_changed_requested.connect(self.toggle_theme)
         self.settings_panel.connect_requested.connect(
             lambda details: self.api_client.send_command("CONFIGURE_SERIAL", details)
         )
+        self.settings_panel.pid_updated.connect(
+            lambda pid_values: self.api_client.send_command("UPDATE_PID", pid_values)
+        )
         self.control_panel.mode_changed.connect(
-            lambda mode: self.api_client.send_command("SET_MODE", mode)
+            lambda mode: self.api_client.send_command("CHANGE_MODE", mode)
         )
         self.control_panel.navigation_command.connect(
             lambda cmd: self.api_client.send_command(f"NAV_{cmd.upper()}", {})
@@ -171,11 +181,16 @@ class MainWindow(QMainWindow):
         self.waypoints_panel.send_waypoints.connect(
             lambda wps: self.api_client.send_command("SET_WAYPOINTS", wps)
         )
-        self.waypoints_panel.load_mission_requested.connect(self.load_predefined_mission)
-        self.video_view.toggle_camera_requested.connect(self.api_client.request_data_stream)
-        
-        # --- KONEKSI DARI API CLIENT KE UI (MENERIMA DATA) ---
-        self.api_client.connection_status_changed.connect(self.on_connection_status_change)
+        self.waypoints_panel.load_mission_requested.connect(
+            self.load_predefined_mission
+        )
+        self.video_view.toggle_camera_requested.connect(
+            self.api_client.request_data_stream
+        )
+
+        self.api_client.connection_status_changed.connect(
+            self.on_connection_status_change
+        )
         self.api_client.data_updated.connect(self.system_status_panel.update_data)
         self.api_client.data_updated.connect(self.map_view.update_data)
         self.api_client.data_updated.connect(self.log_panel.update_log)
@@ -183,40 +198,35 @@ class MainWindow(QMainWindow):
         self.api_client.frame_cam1_updated.connect(self.video_view.update_frame_1)
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
 
-        # Koneksi sinyal-slot internal GUI lainnya
         self.waypoints_panel.waypoints_updated.connect(self.map_view.update_waypoints)
 
     @Slot(bool, str)
     def on_connection_status_change(self, is_connected, message):
-        """Memperbarui status bar dan header berdasarkan status koneksi."""
         self.status_bar.showMessage(message)
         status_text = "CONNECTED" if is_connected else "DISCONNECTED"
         status_prop = "connected" if is_connected else "disconnected"
-        
+
         self.header.connection_status_label.setText(status_text)
         self.header.connection_status_label.setProperty("status", status_prop)
         self.style().polish(self.header.connection_status_label)
 
     def closeEvent(self, event):
-        """Memastikan koneksi ditutup dengan benar saat aplikasi keluar."""
         print("Menutup aplikasi...")
         self.api_client.shutdown()
         event.accept()
 
     @Slot(str)
     def load_predefined_mission(self, mission_id):
-        # (Fungsi ini tidak berubah)
         waypoints = get_lintasan_a() if mission_id == "A" else get_lintasan_b()
         print(f"Memuat Lintasan {mission_id}...")
         self.waypoints_panel.load_waypoints_to_list(waypoints)
 
     def handle_manual_keys(self):
-        """Mengirim status tombol manual saat ini ke backend."""
         self.api_client.send_command("MANUAL_CONTROL", list(self.active_manual_keys))
 
     def keyPressEvent(self, event):
-        # (Fungsi ini tidak berubah secara signifikan, hanya memanggil handle_manual_keys)
-        if event.isAutoRepeat(): return
+        if event.isAutoRepeat():
+            return
         key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
         if event.key() in key_map:
             key_char = key_map[event.key()]
@@ -226,8 +236,8 @@ class MainWindow(QMainWindow):
                 self.handle_manual_keys()
 
     def keyReleaseEvent(self, event):
-        # (Fungsi ini tidak berubah secara signifikan, hanya memanggil handle_manual_keys)
-        if event.isAutoRepeat(): return
+        if event.isAutoRepeat():
+            return
         key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
         if event.key() in key_map:
             key_char = key_map[event.key()]

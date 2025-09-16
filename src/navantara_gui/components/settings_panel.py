@@ -1,9 +1,7 @@
-# gui/components/settings_panel.py
-# --- VERSI FINAL: Dengan font tab yang lebih kecil untuk layout fleksibel ---
-
+# src/navantara_gui/components/settings_panel.py
 from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTabWidget
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QFont  # <-- Impor QFont
+from PySide6.QtGui import QFont
 
 # Impor semua komponen tab
 from .pid_view import PidView
@@ -19,6 +17,7 @@ class SettingsPanel(QGroupBox):
     berbagai macam pengaturan.
     """
 
+    # Sinyal-sinyal ini akan dipancarkan ke MainWindow
     pid_updated = Signal(dict)
     servo_settings_updated = Signal(dict)
     connect_requested = Signal(dict)
@@ -33,26 +32,20 @@ class SettingsPanel(QGroupBox):
         main_layout = QVBoxLayout()
         self.tab_widget = QTabWidget()
 
-        # --- PERBAIKAN UTAMA DI SINI ---
-        # 1. Buat objek font baru dengan ukuran lebih kecil
+        # Atur font agar lebih kecil dan rapi
         tab_font = QFont()
-        tab_font.setPointSize(9)  # Anda bisa sesuaikan ukuran ini (misalnya 8 atau 9)
-
-        # 2. Terapkan font kecil tersebut ke tab bar
+        tab_font.setPointSize(9)
         self.tab_widget.setFont(tab_font)
-
-        # 3. (Opsional tapi direkomendasikan) Buat tab bar bisa digulir
         self.tab_widget.tabBar().setUsesScrollButtons(True)
-        # --- AKHIR PERBAIKAN ---
 
-        # Inisialisasi semua tab seperti biasa
+        # Inisialisasi semua widget tab
         self.pid_tab = PidView(config=self.config)
         self.servo_tab = ServoView(config=self.config)
         self.thruster_tab = ThrusterView(config=self.config)
         self.connection_tab = ConnectionView(config=self.config)
         self.debug_tab = DebugPanel(config=self.config)
 
-        # Tambahkan semua tab ke widget tab
+        # Tambahkan semua tab ke widget tab utama
         self.tab_widget.addTab(self.pid_tab, "PID")
         self.tab_widget.addTab(self.servo_tab, "Servo")
         self.tab_widget.addTab(self.thruster_tab, "Thruster")
@@ -62,7 +55,9 @@ class SettingsPanel(QGroupBox):
         main_layout.addWidget(self.tab_widget)
         self.setLayout(main_layout)
 
-        # Teruskan sinyal dari setiap view (tidak ada perubahan di sini)
+        # --- KONEKSI SINYAL INTERNAL ---
+        # Teruskan sinyal dari setiap tab ke sinyal milik SettingsPanel sendiri.
+        # Ini memungkinkan MainWindow untuk hanya terhubung ke SettingsPanel.
         self.pid_tab.pid_updated.connect(self.pid_updated.emit)
         self.servo_tab.servo_settings_updated.connect(self.servo_settings_updated.emit)
         self.connection_tab.connect_requested.connect(self.connect_requested.emit)

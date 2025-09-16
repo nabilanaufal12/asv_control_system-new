@@ -26,11 +26,9 @@ app = create_app()
 
 if __name__ == "__main__":
     print("🚀 Menjalankan Backend Server ASV dalam Mode Otonom/Headless...")
-    
+
     # --- PERUBAHAN: Menjalankan server menggunakan eventlet ---
     # Flask-SocketIO akan secara otomatis menggunakan server eventlet karena
     # monkey_patch() telah dipanggil. Ini adalah cara yang direkomendasikan
     # untuk production. Argumen 'allow_unsafe_werkzeug' tidak lagi diperlukan.
-    socketio.run(
-        app, host="0.0.0.0", port=5000, debug=False
-    )
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)

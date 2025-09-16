@@ -29,14 +29,16 @@ def handle_disconnect():
 
 
 # --- PERUBAHAN UTAMA: Event handler baru untuk pola "pull" ---
-@socketio.on('request_stream')
+@socketio.on("request_stream")
 def handle_request_stream(json_data):
     """
     Klien meminta server untuk memulai atau menghentikan pengiriman data.
     Ini adalah inti dari arsitektur komunikasi yang baru.
     """
-    status = json_data.get('status', True)
-    print(f"Menerima permintaan stream dari GUI. Mengatur status streaming ke: {status}")
+    status = json_data.get("status", True)
+    print(
+        f"Menerima permintaan stream dari GUI. Mengatur status streaming ke: {status}"
+    )
     # Meneruskan permintaan ke kedua layanan yang relevan
     current_app.vision_service.set_gui_listening(status)
     current_app.asv_handler.set_streaming_status(status)
@@ -61,6 +63,7 @@ def handle_socket_command(json_data):
     else:
         # Perintah lainnya diteruskan ke AsvHandler
         current_app.asv_handler.process_command(command, payload)
+
 
 # --- PERUBAHAN: Endpoint HTTP tidak lagi diperlukan ---
 # Komunikasi sekarang sepenuhnya ditangani melalui WebSocket untuk konsistensi

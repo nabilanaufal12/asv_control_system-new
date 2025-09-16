@@ -28,13 +28,10 @@ env/
 # File yang Dihasilkan Otomat
 snapshots/
 *.log
-*.html
-# File di bawah ini adalah file yang dihasilkan secara otomatis dan tidak perlu dilacak
 yolov5/runs/
-Flask-SocketIO/
+mission_logs/
 
 # File Sensitif (jika ada)
-# Jangan unggah kunci API atau kredensial
 credentials.json
 api_keys.txt
 *.env
@@ -43,10 +40,12 @@ api_keys.txt
 .DS_Store
 Thumbs.db
 
-# File simulasi
+# File simulasi atau file HTML spesifik yang ingin diabaikan
 dashboard.html
 navigation_simulation.py
 
 # Model Weights
+# Mengabaikan semua file bobot model...
 *.pt
 *.weights
+!besto.pt

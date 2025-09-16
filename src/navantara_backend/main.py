@@ -50,13 +50,15 @@ def create_app():
     app.register_blueprint(api_blueprint)
 
     # 🔹 Inisialisasi SocketIO dengan mode async eventlet
-    socketio.init_app(app, async_mode='eventlet', cors_allowed_origins="*")
+    socketio.init_app(app, async_mode="eventlet", cors_allowed_origins="*")
 
     # --- PERUBAHAN UTAMA: Jalankan loop layanan sebagai greenlet kooperatif ---
     # Ini menggantikan arsitektur berbasis thread dan lebih efisien.
-    print("🚀 Menjadwalkan layanan latar belakang (AsvHandler & VisionService) sebagai greenlet...")
+    print(
+        "🚀 Menjadwalkan layanan latar belakang (AsvHandler & VisionService) sebagai greenlet..."
+    )
     eventlet.spawn(asv_handler.main_logic_loop)
     eventlet.spawn(vision_service.run_capture_loops)
-    
+
     print("[Server] Konfigurasi aplikasi selesai.")
     return app
