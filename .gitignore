@@ -18,6 +18,7 @@ env/
 
 # IDE & Editor
 .vscode/
+config/
 .idea/
 *.suo
 *.ntvs*

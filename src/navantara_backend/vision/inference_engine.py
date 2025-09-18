@@ -1,5 +1,5 @@
 # navantara_backend/vision/inference_engine.py
-# --- VERSI DENGAN PATH MODEL YANG ROBUST ---
+# --- VERSI DENGAN PATH MODEL YANG ROBUST DAN WARNA BOUNDING BOX DINAMIS ---
 
 import torch
 import numpy as np
@@ -106,17 +106,26 @@ class InferenceEngine:
     Secara otomatis memilih backend terbaik yang tersedia (TensorRT atau PyTorch).
     """
 
-    def __init__(self, config):  # Argumen yolov5_path dihapus
+    def __init__(self, config):
         self.config = config
-        self.yolov5_path = YOLOV5_PATH  # Menggunakan path yang ditemukan secara dinamis
+        self.yolov5_path = YOLOV5_PATH
         self.model = None
         self.use_tensorrt = TENSORRT_AVAILABLE
 
         vision_cfg = self.config.get("vision", {})
         self.conf_thresh = float(vision_cfg.get("conf_threshold", 0.25))
         self.iou_thresh = float(vision_cfg.get("iou_threshold", 0.45))
-
         self.class_names = vision_cfg.get("class_names", [])
+
+        # --- PERUBAHAN DI SINI: Tambahkan warna untuk kotak ---
+        self.color_palette = {
+            "red_buoy": (51, 51, 204),  # BGR untuk Merah (Pylox 33)
+            "green_buoy": (0, 150, 0),  # BGR untuk Hijau (Pylox 105)
+            "green_box": (0, 255, 0),  # BGR untuk Hijau Terang
+            "blue_box": (255, 0, 0),  # BGR untuk Biru
+            "default": (0, 255, 255),  # BGR untuk Kuning (sebagai default)
+        }
+        # --- AKHIR PERUBAHAN ---
 
         self._initialize_model()
 
@@ -185,9 +194,11 @@ class InferenceEngine:
             annotated_frame = self._annotate_frame(frame, detections)
             return detections, annotated_frame
         else:
+            # Untuk PyTorch, kita perlu memodifikasi cara rendering
             results = self.model(frame)
-            annotated_frame = results.render()[0]
             detections = self._pandas_to_dict(results.pandas().xyxy[0])
+            # Gambar anotasi secara manual alih-alih menggunakan results.render()
+            annotated_frame = self._annotate_frame(frame.copy(), detections)
             return detections, annotated_frame
 
     def _preprocess_trt(self, img):
@@ -284,20 +295,29 @@ class InferenceEngine:
         return np.array(keep)
 
     def _annotate_frame(self, frame, detections):
-        """Menggambar bounding box pada frame."""
-        annotated_frame = frame.copy()
+        """Menggambar bounding box pada frame dengan warna dinamis."""
+        annotated_frame = frame
         for det in detections:
             x1, y1, x2, y2 = map(int, det["xyxy"])
+
+            # Tentukan warna berdasarkan kelas deteksi
+            box_color = self.color_palette.get(
+                det["class"], self.color_palette["default"]
+            )
+
             label = f"{det['class']} {det['confidence']:.2f}"
 
-            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # Gambar persegi panjang (bounding box)
+            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), box_color, 2)
+
+            # Gambar label teks
             cv2.putText(
                 annotated_frame,
                 label,
                 (x1, y1 - 10),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                (0, 255, 0),
+                box_color,
                 2,
             )
         return annotated_frame

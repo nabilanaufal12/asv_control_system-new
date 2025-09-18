@@ -1,3 +1,4 @@
+# src/navantara_backend/vision/cloud_utils.py
 import requests
 import time
 
@@ -26,12 +27,16 @@ def send_telemetry_to_firebase(telemetry_data, config):
 def upload_image_to_supabase(image_buffer, filename, config):
     """Mengunggah buffer gambar ke Supabase Storage."""
     try:
+        # --- PERUBAHAN DI SINI ---
+        print(f"📸 [CAPTURE] Memulai proses unggah untuk '{filename}'...")
         api_config = config.get("api_urls", {})
         ENDPOINT_TEMPLATE, TOKEN = api_config.get("supabase_endpoint"), api_config.get(
             "supabase_token"
         )
         if not ENDPOINT_TEMPLATE or not TOKEN:
+            print(f"🔥 [CAPTURE] Gagal: Konfigurasi Supabase tidak ditemukan.")
             return
+
         ENDPOINT = ENDPOINT_TEMPLATE.replace("{filename}", filename)
         headers = {
             "Authorization": f"Bearer {TOKEN}",
@@ -42,10 +47,11 @@ def upload_image_to_supabase(image_buffer, filename, config):
             ENDPOINT, headers=headers, data=image_buffer.tobytes(), timeout=10
         )
         if response.ok:
-            print(f"\n[Vision] ✅ Gambar '{filename}' berhasil diunggah ke Supabase.")
+            print(f"✅ [CAPTURE] Berhasil! Gambar '{filename}' telah diunggah.")
         else:
             print(
-                f"\n[Vision] 🔥 Gagal mengunggah gambar: {response.status_code} {response.text}"
+                f"🔥 [CAPTURE] Gagal mengunggah '{filename}': {response.status_code} {response.text}"
             )
+        # --- AKHIR PERUBAHAN ---
     except Exception as e:
-        print(f"\n[Vision] 🔥 Error koneksi Supabase: {e}")
+        print(f"🔥 [CAPTURE] Error koneksi saat mengunggah: {e}")

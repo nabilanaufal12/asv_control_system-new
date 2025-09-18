@@ -1,25 +1,23 @@
-# gui/components/map_view.py
-# --- MODIFIKASI: Menerima objek 'config' ---
-
+# src/navantara_gui/components/map_view.py
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPolygonF
 from PySide6.QtCore import Slot, QPointF, QRectF, Qt
 
 
 class MapView(QWidget):
-    # --- 1. UBAH TANDA TANGAN FUNGSI __init__ ---
     def __init__(self, config):
         super().__init__()
 
-        # --- 2. SIMPAN OBJEK KONFIGURASI ---
         self.config = config
 
         self.asv_lat = -6.9175
         self.asv_lon = 107.6191
-        self.asv_heading = 0.0  # Simpan heading di sini
+        self.asv_heading = 0.0
 
         self.waypoints = []
         self.path_history = []
+        # --- PERUBAHAN 1: Tambahkan variabel untuk menyimpan indeks waypoint target ---
+        self.current_waypoint_index = -1  # -1 berarti tidak ada target aktif
 
         self.lat_min, self.lat_max = -6.9185, -6.9165
         self.lon_min, self.lon_max = 107.6181, 107.6201
@@ -31,10 +29,13 @@ class MapView(QWidget):
 
     @Slot(dict)
     def update_data(self, data):
-        """Mengupdate posisi dan heading kapal."""
+        """Mengupdate posisi, heading, dan indeks waypoint target."""
         self.asv_lat = data.get("latitude", self.asv_lat)
         self.asv_lon = data.get("longitude", self.asv_lon)
         self.asv_heading = data.get("heading", self.asv_heading)
+
+        # --- PERUBAHAN 2: Simpan indeks waypoint saat ini dari data telemetri ---
+        self.current_waypoint_index = data.get("current_waypoint_index", -1)
 
         new_pos = QPointF(self.asv_lon, self.asv_lat)
         if not self.path_history or self.path_history[-1] != new_pos:
@@ -56,7 +57,6 @@ class MapView(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # (Kode gambar background, grid, jejak, dan waypoint tidak berubah)
         painter.fillRect(self.rect(), QColor("#3498db"))
         grid_pen = QPen(QColor("white"), 1)
         label_font = QFont("Arial", 11, QFont.Bold)
@@ -106,38 +106,41 @@ class MapView(QWidget):
                 for wp in self.waypoints
             ]
             painter.drawPolyline(waypoint_pixels)
-        waypoint_pen = QPen(QColor("#f1c40f"), 2)
-        waypoint_brush = QBrush(QColor("#f1c40f"))
+
+        # --- PERUBAHAN 3: Modifikasi loop untuk menggambar waypoint ---
         waypoint_font = QFont("Monospace", 9, QFont.Bold)
         for i, wp in enumerate(self.waypoints):
-            painter.setPen(waypoint_pen)
-            painter.setBrush(waypoint_brush)
             pixel_pos = self._convert_gps_to_pixel(wp["lat"], wp["lon"])
-            painter.drawEllipse(pixel_pos, 5, 5)
+
+            # Cek apakah ini adalah waypoint target saat ini
+            if i == self.current_waypoint_index:
+                # Gambar waypoint target dengan warna hijau dan ukuran lebih besar
+                painter.setPen(QPen(QColor("#2ecc71"), 2))
+                painter.setBrush(QBrush(QColor("#2ecc71")))
+                painter.drawEllipse(pixel_pos, 8, 8)
+            else:
+                # Gambar waypoint biasa dengan warna kuning
+                painter.setPen(QPen(QColor("#f1c40f"), 2))
+                painter.setBrush(QBrush(QColor("#f1c40f")))
+                painter.drawEllipse(pixel_pos, 5, 5)
+
             painter.setFont(waypoint_font)
             painter.setPen(QColor("white"))
             painter.drawText(pixel_pos + QPointF(8, 5), str(i + 1))
+        # --- AKHIR PERUBAHAN ---
 
-        # --- PERUBAHAN UTAMA: Gambar kapal sebagai panah yang berputar ---
         asv_pixel_pos = self._convert_gps_to_pixel(self.asv_lat, self.asv_lon)
-
-        painter.save()  # Simpan state painter
-        painter.translate(asv_pixel_pos)  # Pindahkan titik 0,0 ke posisi kapal
-        # Rotasi berdasarkan heading (0 derajat di utara/atas)
+        painter.save()
+        painter.translate(asv_pixel_pos)
         painter.rotate(self.asv_heading)
-
         painter.setPen(QPen(QColor("black"), 1))
         painter.setBrush(QBrush(QColor("#e74c3c")))
-
-        # Definisikan bentuk panah (segitiga)
-        # Puncak panah menunjuk ke atas (arah Y negatif)
         ship_polygon = QPolygonF(
             [
-                QPointF(0, -10),  # Hidung kapal
-                QPointF(6, 5),  # Ekor kanan
-                QPointF(-6, 5),  # Ekor kiri
+                QPointF(0, -10),
+                QPointF(6, 5),
+                QPointF(-6, 5),
             ]
         )
-
         painter.drawPolygon(ship_polygon)
-        painter.restore()  # Kembalikan state painter
+        painter.restore()

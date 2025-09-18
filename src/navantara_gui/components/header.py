@@ -1,6 +1,4 @@
-# gui/components/header.py
-# --- VERSI FINAL: Dengan sinyal untuk mengubah tema ---
-
+# src/navantara_gui/components/header.py
 import os
 from PySide6.QtWidgets import (
     QWidget,
@@ -10,7 +8,7 @@ from PySide6.QtWidgets import (
     QSpacerItem,
     QSizePolicy,
 )
-from PySide6.QtCore import Slot, Qt, Signal  # <-- 1. Impor Signal
+from PySide6.QtCore import Slot, Qt, Signal
 from PySide6.QtGui import QFont, QPixmap
 
 
@@ -19,7 +17,6 @@ class Header(QWidget):
     Widget untuk header yang berisi logo, judul, dan indikator status.
     """
 
-    # --- 2. Tambahkan sinyal baru di dalam kelas ---
     theme_changed_requested = Signal()
 
     def __init__(self, config):
@@ -55,9 +52,8 @@ class Header(QWidget):
         self.gps_status_label.setObjectName("StatusLabel")
         self.mode_label = QLabel("Manual Mode")
         self.mode_label.setObjectName("StatusLabel")
-        self.theme_button = QPushButton("Switch to Light Mode")
+        self.theme_button = QPushButton("Switch to Dark Mode")
 
-        # --- 3. Hubungkan tombol ke sinyal baru ---
         self.theme_button.clicked.connect(self.theme_changed_requested.emit)
 
         layout.addWidget(self.logo_label)
@@ -69,25 +65,24 @@ class Header(QWidget):
         layout.addWidget(self.theme_button)
         self.setLayout(layout)
 
-        # Hapus stylesheet dari sini agar dikontrol penuh oleh file .qss utama
-        # self.setStyleSheet(...) # <-- Baris ini dinonaktifkan/dihapus
-
         self.update_status({"status": "DISCONNECTED", "control_mode": "MANUAL"})
 
     @Slot(dict)
     def update_status(self, data):
         """Menerima data dan mengupdate label status menggunakan properti dinamis."""
+        # --- PERUBAHAN DIMULAI DI SINI ---
+        # Langsung gunakan status deskriptif dari backend
         status = data.get("status", "DISCONNECTED")
         self.connection_status_label.setText(status)
 
-        # --- PERBAIKAN: Gunakan properti dinamis, bukan setStyleSheet ---
-        # Ini memungkinkan stylesheet eksternal (dark/light theme) untuk mengontrol warna
-        if status == "DISCONNECTED":
+        # Atur properti dinamis untuk pewarnaan berdasarkan kata kunci dalam status
+        if "DISCONNECTED" in status.upper():
             self.connection_status_label.setProperty("status", "disconnected")
-        elif status == "RETURNING TO HOME":
+        elif "RETURNING" in status.upper():
             self.connection_status_label.setProperty("status", "rth")
         else:  # Mencakup CONNECTED, NAVIGATING, IDLE, dll.
             self.connection_status_label.setProperty("status", "connected")
+        # --- AKHIR PERUBAHAN ---
 
         mode = data.get("control_mode", "MANUAL")
         if mode == "AUTO":
