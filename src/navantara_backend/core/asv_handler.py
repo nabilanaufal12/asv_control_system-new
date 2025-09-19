@@ -16,18 +16,13 @@ def map_value(x, in_min, in_max, out_min, out_max):
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
 class AsvHandler:
-    """
-    Mengelola state, logika, dan komunikasi hardware dari ASV.
-    Berjalan sebagai greenlet independen dan berkomunikasi melalui WebSockets.
-    """
-
     def __init__(self, config, socketio):
+        # ... (bagian __init__ lainnya tetap sama) ...
         self.config = config
         self.socketio = socketio
         self.serial_handler = SerialHandler(config)
         self.running = True
         self.state_lock = threading.Lock()
-
         self.is_streaming_to_gui = False
 
         self.current_state = {
@@ -48,7 +43,8 @@ class AsvHandler:
             "points_of_interest": [],
             "gyro_z": 0.0,
             "accel_x": 0.0,
-            "rc_channels": [1500] * 6,  # Tambahkan state untuk menyimpan nilai RC
+            # Tambahkan state untuk menyimpan nilai RC
+            "rc_channels": [1500] * 6,  
         }
         self.vision_target = {"active": False, "degree": 90}
         self.is_returning_home = False
@@ -67,6 +63,7 @@ class AsvHandler:
         self.logger.log_event("AsvHandler diinisialisasi.")
         print("[AsvHandler] Handler diinisialisasi untuk operasi backend.")
 
+    # ... (fungsi _update_and_emit_state, _read_from_serial_loop tetap sama) ...
     def _update_and_emit_state(self):
         if self.running and self.is_streaming_to_gui:
             with self.state_lock:
@@ -88,7 +85,7 @@ class AsvHandler:
                 else:
                     state_copy["status"] = ("CONNECTED" if state_copy.get("is_connected_to_serial") else "DISCONNECTED")
             self.socketio.emit("telemetry_update", state_copy)
-
+            
     def _read_from_serial_loop(self):
         if self.config.get("general", {}).get("use_simulation", False):
             print("SENSOR SIMULATOR: Pembacaan data serial dilewati.")
@@ -101,6 +98,10 @@ class AsvHandler:
                 self.socketio.sleep(0.1)
 
     def _parse_telemetry(self, line):
+        """
+        Mem-parsing string telemetri yang sekarang juga berisi data RC.
+        Format: T:GPS,lat,lon;COMP,head;SPD,mps;RC,ch1,ch2,ch3,ch4,ch5,ch6
+        """
         try:
             with self.state_lock:
                 parts = line.strip("T:").split(";")
@@ -112,10 +113,13 @@ class AsvHandler:
                         self.current_state["heading"] = float(data[1])
                     elif data[0] == "SPD":
                         self.current_state["speed"] = float(data[1])
+                    # --- PERUBAHAN DI SINI ---
                     elif data[0] == "RC": # Parse data Remote Control
+                        # Konversi semua nilai channel RC dari string ke integer
                         self.current_state["rc_channels"] = [int(val) for val in data[1:]]
         except (ValueError, IndexError, TypeError):
-            pass # Abaikan jika data serial korup
+            # Abaikan jika data serial korup, agar tidak crash
+            pass 
 
     def _run_simulation_step(self, servo_angle, motor_pwm):
         """Memperbarui state heading dan posisi berdasarkan input aktuator."""
@@ -132,8 +136,9 @@ class AsvHandler:
                 d_lon = dist * math.sin(heading_rad) / (40075000 * math.cos(math.radians(self.current_state["latitude"])) / 360)
                 self.current_state["latitude"] += d_lat
                 self.current_state["longitude"] += d_lon
-
+                
     def main_logic_loop(self):
+        # ... (bagian awal main_logic_loop tetap sama) ...
         self.socketio.start_background_task(self._read_from_serial_loop)
         print("[AsvHandler] Loop pembaca serial dimulai sebagai greenlet.")
         start_time = time.time()
@@ -161,28 +166,46 @@ class AsvHandler:
                 if self.current_state["is_connected_to_serial"] != new_connection_status:
                     self.current_state["is_connected_to_serial"] = new_connection_status
                     self.logger.log_event(f"Status Koneksi Serial: {'CONNECTED' if new_connection_status else 'DISCONNECTED'}")
-            
+                    
             with self.state_lock:
                 state_for_logic = self.current_state.copy()
 
-            servo_cmd, pwm_cmd = 90, 1500
+            servo_cmd, pwm_cmd = 90, 1500 # Nilai default
+
+            # --- LOGIKA PRIORITAS BARU DIMULAI DI SINI ---
             
+            # Asumsi Channel 5 (indeks 4) adalah switch mode.
+            # Nilai < 1500 = Manual RC, Nilai > 1500 = Otonom (kontrol Jetson)
             rc_mode_switch = state_for_logic.get("rc_channels", [1500]*6)[4]
 
             if rc_mode_switch < 1500:
-                rc_servo_raw = state_for_logic["rc_channels"][0]
-                rc_motor_raw = state_for_logic["rc_channels"][2]
+                # === MODE OVERRIDE MANUAL RC ===
+                # Ambil nilai mentah dari channel joystick (misal Ch1 untuk servo, Ch3 untuk motor)
+                rc_servo_raw = state_for_logic["rc_channels"][0] # Steering
+                rc_motor_raw = state_for_logic["rc_channels"][2] # Throttle
+                
+                # Map nilai RC (1000-2000) ke sudut servo (0-180)
                 servo_cmd = int(map_value(rc_servo_raw, 1000, 2000, 0, 180))
+                # Nilai PWM motor langsung dari RC
                 pwm_cmd = rc_motor_raw
+                
                 print(f"🕹️  [CONTROL] RC Manual Override -> PWM: {pwm_cmd}, Servo: {servo_cmd}°")
                 self.serial_handler.send_command(f"S{pwm_cmd};D{servo_cmd}\n")
+            
             else:
+                # === MODE OTONOM (KONTROL JETSON/GUI) ===
+                # Logika yang sudah ada sebelumnya berjalan di sini
                 if state_for_logic.get("control_mode") == "AUTO":
                     servo_cmd, pwm_cmd = run_navigation_logic(state_for_logic, self.config, self.pid_controller)
                     print(f"🚢 [CONTROL] Auto Mode -> PWM: {pwm_cmd}, Servo: {servo_cmd}°")
                     self.serial_handler.send_command(f"S{pwm_cmd};D{servo_cmd}\n")
-                else:
+                else: # Mode MANUAL dari GUI
+                    # Logika untuk manual WASD tidak perlu diubah, karena sudah ditangani
+                    # oleh _handle_manual_control yang hanya berjalan jika mode RC otonom.
+                    # Kita bisa pass di sini karena perintah sudah dikirim dari _handle_manual_control.
                     pass
+
+            # --- AKHIR LOGIKA PRIORITAS ---
 
             if self.config.get("general", {}).get("use_simulation", False):
                 self._run_simulation_step(servo_cmd, pwm_cmd)
@@ -190,12 +213,13 @@ class AsvHandler:
             self.logger.log_telemetry(state_for_logic)
             self._update_and_emit_state()
             self.socketio.sleep(0.2)
-
+    
+    # ... (fungsi set_streaming_status tetap sama) ...
     def set_streaming_status(self, status: bool):
         if self.is_streaming_to_gui != status:
             print(f"[AsvHandler] Status streaming telemetri diatur ke: {status}")
             self.is_streaming_to_gui = status
-
+    # ... (fungsi process_command tetap sama) ...
     def process_command(self, command, payload):
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
@@ -211,7 +235,7 @@ class AsvHandler:
             handler(payload)
         else:
             print(f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'")
-
+            
     def _handle_update_pid(self, payload):
         kp = payload.get("p")
         ki = payload.get("i")
@@ -224,27 +248,34 @@ class AsvHandler:
             print(f"[AsvHandler] PID updated: P={kp}, I={ki}, D={kd}")
         else:
             print("[AsvHandler] Peringatan: Menerima data PID yang tidak valid.")
-
+            
     def _handle_serial_configuration(self, payload):
         port, baud = payload.get("serial_port"), payload.get("baud_rate")
         if port == "AUTO":
             self.serial_handler.find_and_connect_esp32(baud)
         else:
             self.serial_handler.connect(port, baud)
-
+            
     def _handle_mode_change(self, payload):
         with self.state_lock:
             self.current_state["control_mode"] = payload
         self.logger.log_event(f"Mode kontrol diubah ke: {payload}")
-
+        
     def _handle_manual_control(self, payload):
+        """
+        Modifikasi kecil: Tambahkan pengecekan RC override sebelum mengirim perintah.
+        """
         with self.state_lock:
+            # JIKA RC dalam mode manual, abaikan input WASD dari GUI
             if self.current_state.get("rc_channels", [1500]*6)[4] < 1500:
                 print("[AsvHandler] Input WASD diabaikan, RC Manual aktif.")
                 return
+            
+            # Jika mode kontrol bukan MANUAL (misal AUTO), abaikan juga
             if self.current_state.get("control_mode") != "MANUAL":
                 return
         
+        # Logika WASD yang sudah ada
         keys = set(payload)
         actuator_config = self.config.get("actuators", {})
         pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
@@ -255,16 +286,18 @@ class AsvHandler:
         turn = 1 if "D" in keys else -1 if "A" in keys else 0
         pwm = pwm_stop + fwd * pwr
         servo = max(0, min(180, int(servo_def - turn * (servo_def - servo_min))))
+        
         print(f"⌨️  [CONTROL] GUI Manual -> PWM: {pwm}, Servo: {servo}°")
         self.serial_handler.send_command(f"S{pwm};D{servo}\n")
 
+    # ... (sisa fungsi handler lainnya tetap sama) ...
     def _handle_set_waypoints(self, payload):
         with self.state_lock:
             self.current_state["waypoints"] = payload
             self.current_state["current_waypoint_index"] = 0
             self.mission_phase = "IDLE"
         self.logger.log_event(f"Waypoints baru dimuat. Jumlah: {len(payload)}")
-
+        
     def _handle_start_mission(self, payload):
         with self.state_lock:
             if not self.current_state["waypoints"]:
@@ -273,7 +306,7 @@ class AsvHandler:
             self.current_state["control_mode"] = "AUTO"
             self.mission_phase = "NAVIGATING"
         self.logger.log_event("Misi navigasi dimulai.")
-
+        
     def _handle_initiate_rth(self, payload):
         with self.state_lock:
             if not self.current_state["waypoints"]:
@@ -285,7 +318,7 @@ class AsvHandler:
             self.current_state["control_mode"] = "AUTO"
             self.mission_phase = "RETURNING_HOME"
         self.logger.log_event("Memulai Return to Home.")
-
+        
     def stop(self):
         self.running = False
         self.serial_handler.disconnect()
