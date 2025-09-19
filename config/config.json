@@ -11,7 +11,8 @@
     "auto_connect_descriptors": [
       "Silicon Labs",
       "CH340",
-      "CP210x"
+      "CP210x",
+      "CP2102"
     ]
   },
   "navigation": {
