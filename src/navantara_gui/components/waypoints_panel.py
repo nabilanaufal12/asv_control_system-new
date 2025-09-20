@@ -1,16 +1,15 @@
 # gui/components/waypoints_panel.py
-# --- VERSI FINAL: Dengan tata letak form yang lebih fleksibel ---
+# --- VERSI FINAL: Dengan sinyal dan slot untuk "Add Current Pos" ---
 
 from PySide6.QtWidgets import (
     QGroupBox,
     QVBoxLayout,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QPushButton,
     QListWidget,
     QAbstractItemView,
-    QFormLayout,  # <-- Impor QFormLayout
+    QFormLayout,
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator
@@ -18,6 +17,7 @@ from PySide6.QtGui import QDoubleValidator
 
 class WaypointsPanel(QGroupBox):
     send_waypoints = Signal(list)
+    # --- SINYAL BARU: Minta posisi saat ini dari MainWindow ---
     add_current_pos_requested = Signal()
     waypoints_updated = Signal(list)
     load_mission_requested = Signal(str)
@@ -35,21 +35,18 @@ class WaypointsPanel(QGroupBox):
         mission_layout.addWidget(self.load_b_button)
         mission_box.setLayout(mission_layout)
 
-        # --- PERBAIKAN DI SINI: Gunakan QFormLayout untuk input Latitude/Longitude ---
         input_form_layout = QFormLayout()
         self.lat_input = QLineEdit()
         self.lon_input = QLineEdit()
 
-        # --- PERUBAHAN DI SINI ---
         # Ambil pengaturan placeholder dari config
         gui_settings = self.config.get("gui_settings", {})
         placeholders = gui_settings.get("placeholders", {})
-        lat_placeholder = placeholders.get("latitude", "e.g., -6.2100")
-        lon_placeholder = placeholders.get("longitude", "e.g., 106.8400")
+        lat_placeholder = placeholders.get("latitude", "e.g., -6.9175")
+        lon_placeholder = placeholders.get("longitude", "e.g., 107.6191")
 
         self.lat_input.setPlaceholderText(lat_placeholder)
         self.lon_input.setPlaceholderText(lon_placeholder)
-        # --- AKHIR PERUBAHAN ---
 
         validator_lat = QDoubleValidator(-90.0, 90.0, 6, self)
         self.lat_input.setValidator(validator_lat)
@@ -58,7 +55,6 @@ class WaypointsPanel(QGroupBox):
 
         input_form_layout.addRow("Latitude:", self.lat_input)
         input_form_layout.addRow("Longitude:", self.lon_input)
-        # --- AKHIR PERBAIKAN ---
 
         self.waypoints_list = QListWidget()
         self.waypoints_list.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -80,7 +76,7 @@ class WaypointsPanel(QGroupBox):
         send_layout.addWidget(self.send_all_button)
 
         main_layout.addWidget(mission_box)
-        main_layout.addLayout(input_form_layout)  # <-- Gunakan layout form yang baru
+        main_layout.addLayout(input_form_layout)
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
         main_layout.addLayout(send_layout)
@@ -94,6 +90,7 @@ class WaypointsPanel(QGroupBox):
             lambda: self.load_mission_requested.emit("B")
         )
         self.add_manual_button.clicked.connect(self.add_manual_waypoint)
+        # --- PERUBAHAN 1: Hubungkan tombol ke sinyal baru ---
         self.add_current_pos_button.clicked.connect(self.add_current_pos_requested.emit)
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
@@ -111,12 +108,17 @@ class WaypointsPanel(QGroupBox):
         current_waypoints = self._get_all_waypoints_from_list()
         self.waypoints_updated.emit(current_waypoints)
 
+    # --- PERUBAHAN 2: SLOT BARU untuk menerima posisi dan menambahkannya ke daftar ---
     @Slot(float, float)
     def add_waypoint_from_pos(self, lat, lon):
-        if lat is not None and lon is not None:
+        """Menerima koordinat dan menambahkannya sebagai item baru di QListWidget."""
+        # Tambahkan pengecekan agar tidak menambahkan waypoint jika data GPS belum valid
+        if lat is not None and lon is not None and lat != 0.0:
             waypoint_text = f"Lat: {lat:.6f}, Lon: {lon:.6f}"
             self.waypoints_list.addItem(waypoint_text)
             self._emit_updated_waypoints()
+        else:
+            print("[GUI] Gagal menambah waypoint: Posisi saat ini tidak valid atau belum diterima.")
 
     def add_manual_waypoint(self):
         lat_text = self.lat_input.text().replace(",", ".")
