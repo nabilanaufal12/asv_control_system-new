@@ -55,13 +55,10 @@ class VisionService:
         return distance_cm
 
     def _draw_distance_info(self, frame, detections):
-        # --- PERUBAHAN DIMULAI DI SINI ---
         buoy_detections = [d for d in detections if "buoy" in d["class"]]
 
-        # Cetak jarak untuk setiap buoy individual
         for det in buoy_detections:
             if "distance_cm" in det and det["distance_cm"] is not None:
-                # Gambar teks ke frame
                 x1, y1, _, _ = map(int, det["xyxy"])
                 distance_text = f"{det['distance_cm']:.1f} cm"
                 cv2.putText(
@@ -73,13 +70,10 @@ class VisionService:
                     (255, 255, 255),
                     2,
                 )
-
-                # Cetak pesan ke terminal
                 print(
                     f"🎯 [DISTANCE] {det['class']} terdeteksi pada jarak {det['distance_cm']:.1f} cm"
                 )
 
-        # Temukan buoy merah dan hijau untuk diukur sebagai gate
         red_buoy = next((d for d in buoy_detections if d["class"] == "red_buoy"), None)
         green_buoy = next(
             (d for d in buoy_detections if d["class"] == "green_buoy"), None
@@ -108,14 +102,11 @@ class VisionService:
                     (0, 255, 255),
                     2,
                 )
-
-                # Cetak pesan gate ke terminal
                 print(
                     f"🥅 [DISTANCE] Gate (2 bola) terdeteksi pada jarak {gate_distance_cm:.1f} cm"
                 )
 
         return frame
-        # --- AKHIR PERUBAHAN ---
 
     def run_capture_loops(self):
         if self.inference_engine.model is None:
@@ -140,31 +131,35 @@ class VisionService:
             try:
                 cap = cv2.VideoCapture(cam_index)
                 if not cap.isOpened():
-                    print(
-                        f"[Vision Cam-{cam_index}] ❌ Gagal membuka kamera. Mencoba lagi dalam 5 detik..."
-                    )
+                    print(f"[Vision Cam-{cam_index}] ❌ Gagal membuka kamera. Mencoba lagi dalam 5 detik...")
                     self.socketio.sleep(5)
                     continue
-                print(
-                    f"[Vision Cam-{cam_index}] Kamera berhasil dibuka. Memulai stream..."
-                )
+                print(f"[Vision Cam-{cam_index}] Kamera berhasil dibuka. Memulai stream...")
                 while self.running:
                     if not cap.isOpened():
                         break
+                    
                     ret, frame = cap.read()
                     if not ret:
                         break
+
                     with self.settings_lock:
                         is_mode_auto = self.mode_auto
                         should_emit_frame = self.gui_is_listening
-                    if apply_detection:
+
+                    processed_frame = frame # Defaultnya adalah frame mentah
+                    # --- PERUBAHAN UTAMA DI SINI ---
+                    # Logika AI hanya berjalan jika ini kamera utama DAN dalam mode AUTO
+                    if apply_detection and is_mode_auto:
                         processed_frame = self.process_and_control(frame, is_mode_auto)
-                    else:
-                        processed_frame = frame
+                    
+                    # Logika streaming dipisahkan sepenuhnya dan hanya bergantung pada `should_emit_frame`
                     if should_emit_frame:
                         ret_encode, buffer = cv2.imencode(".jpg", processed_frame)
                         if ret_encode:
                             self.socketio.emit(event_name, buffer.tobytes())
+                    # --- AKHIR PERUBAHAN ---
+                    
                     self.socketio.sleep(0.02)
             except Exception as e:
                 print(f"\n[Vision Cam-{cam_index}] KESALAHAN UMUM: {e}")
@@ -174,6 +169,7 @@ class VisionService:
                     cap.release()
                 if self.running:
                     self.socketio.sleep(5)
+
 
     def process_and_control(self, frame, is_mode_auto):
         with self.asv_handler.state_lock:

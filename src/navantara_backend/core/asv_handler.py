@@ -1,5 +1,5 @@
 # src/navantara_backend/core/asv_handler.py
-# --- VERSI FINAL LENGKAP: Kontrol Hierarkis + Debugging + EKF ---
+# --- VERSI FINAL LENGKAP: Kontrol Hierarkis + Debugging + EKF + AUTO-CONNECT ---
 import threading
 import time
 import math
@@ -39,7 +39,6 @@ class AsvHandler:
         self.pid_controller = PIDController(
             Kp=pid_config.get("kp", 1.2), Ki=pid_config.get("ki", 0.1), Kd=pid_config.get("kd", 0.05)
         )
-        # Inisialisasi EKF
         self.ekf = SimpleEKF(np.zeros(5), np.eye(5) * 0.1)
         self.last_ekf_update_time = time.time()
         
@@ -47,10 +46,29 @@ class AsvHandler:
         self.logger.log_event("AsvHandler diinisialisasi.")
         print("[AsvHandler] Handler diinisialisasi untuk operasi backend.")
 
+        # --- PERUBAHAN UTAMA DI SINI ---
+        # Secara otomatis mencoba terhubung ke ESP32 saat backend dimulai
+        self.initiate_auto_connection()
+        # --- AKHIR PERUBAHAN ---
+
+    # --- FUNGSI BARU UNTUK KONEKSI OTOMATIS ---
+    def initiate_auto_connection(self):
+        """Mencari dan terhubung ke ESP32 menggunakan konfigurasi."""
+        print("[AsvHandler] Memulai upaya koneksi serial otomatis...")
+        baud_rate = self.config.get("serial_connection", {}).get("default_baud_rate", 115200)
+        # Fungsi ini sudah ada di SerialHandler, kita tinggal memanggilnya
+        self.serial_handler.find_and_connect_esp32(baud_rate)
+    # --- AKHIR FUNGSI BARU ---
+
     def _update_and_emit_state(self):
         if self.running and self.is_streaming_to_gui:
             with self.state_lock:
                 state_copy = self.current_state.copy()
+                # --- PERBAIKAN KECIL: Tambahkan status koneksi serial ke state ---
+                state_copy["is_connected_to_serial"] = self.serial_handler.is_connected
+                if not self.serial_handler.is_connected:
+                    state_copy["status"] = "DISCONNECTED (SERIAL)"
+
                 rc_mode_switch = state_copy.get("rc_channels", [1500]*6)[4]
                 if rc_mode_switch < 1500:
                     state_copy["status"] = "RC MANUAL OVERRIDE"
@@ -100,7 +118,6 @@ class AsvHandler:
         self.socketio.start_background_task(self._read_from_serial_loop)
         print("[AsvHandler] Loop pembaca serial dimulai.")
         while self.running:
-            # --- LOGIKA EKF DIKEMBALIKAN ---
             current_time = time.time()
             dt = current_time - self.last_ekf_update_time
             if dt > 0:
@@ -112,7 +129,7 @@ class AsvHandler:
                 self.ekf.predict(dt)
                 self.ekf.update_compass(heading_rad)
                 self.ekf.update_imu(np.array([speed_ms, gyro_z_rad]))
-                with self.state_lock: # Update state dengan hasil EKF
+                with self.state_lock:
                     self.current_state["heading"] = (np.degrees(self.ekf.state[2]) + 360) % 360
             
             with self.state_lock:

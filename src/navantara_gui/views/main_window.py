@@ -31,11 +31,6 @@ from navantara_gui.api_client import ApiClient
 
 
 class MainWindow(QMainWindow):
-    """
-    Jendela utama aplikasi GUI. Bertindak sebagai perekat untuk semua komponen,
-    menghubungkan sinyal dan slot, serta mendelegasikan komunikasi ke ApiClient.
-    """
-
     def __init__(self, config):
         super().__init__()
         self.setWindowTitle("ASV Control System - Navantara Client")
@@ -43,11 +38,11 @@ class MainWindow(QMainWindow):
 
         self.api_client = ApiClient(config=self.config)
 
-        # --- VARIABEL BARU: Untuk menyimpan posisi terakhir dari ASV ---
         self.current_latitude = 0.0
         self.current_longitude = 0.0
+        self.current_control_mode = "MANUAL" 
+        self.is_rc_override = False # Lacak status override RC
 
-        # Inisialisasi semua komponen UI
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
         self.system_status_panel = Dashboard(config=self.config)
@@ -66,13 +61,15 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.connect_signals()
 
+        self.set_mode("MANUAL") # Atur mode awal saat start
+
         print("Memulai koneksi klien API ke server...")
         self.api_client.connect()
 
         self.showMaximized()
 
+    # ... (fungsi _load_themes, _apply_theme, toggle_theme, setup_ui tidak berubah) ...
     def _load_themes(self):
-        # (Fungsi ini tidak berubah)
         try:
             gui_dir = os.path.dirname(os.path.abspath(__file__))
             dark_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "dark_theme.qss")
@@ -83,7 +80,6 @@ class MainWindow(QMainWindow):
             print(f"Peringatan: Gagal memuat file tema. Error: {e}")
 
     def _apply_theme(self, theme_name):
-        # (Fungsi ini tidak berubah)
         if theme_name in self.themes:
             QApplication.instance().setStyleSheet(self.themes[theme_name])
             button_text = "Switch to Light Mode" if theme_name == "dark" else "Switch to Dark Mode"
@@ -92,9 +88,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def toggle_theme(self):
-        # (Fungsi ini tidak berubah)
         self._apply_theme("light" if self.current_theme == "dark" else "dark")
-
     def setup_ui(self):
         # (Fungsi ini tidak berubah)
         layout_sidebar_kiri = QVBoxLayout()
@@ -144,66 +138,83 @@ class MainWindow(QMainWindow):
 
     def connect_signals(self):
         """Menghubungkan semua sinyal dan slot antar komponen."""
-        # Koneksi dari UI ke ApiClient
         self.header.theme_changed_requested.connect(self.toggle_theme)
+        
+        # --- PERUBAHAN UTAMA: Hubungkan sinyal dari ControlPanel ke fungsi logika ---
+        self.control_panel.manual_button_clicked.connect(lambda: self.set_mode("MANUAL"))
+        self.control_panel.auto_button_clicked.connect(lambda: self.set_mode("AUTO"))
+
         self.settings_panel.connect_requested.connect(
             lambda details: self.api_client.send_command("CONFIGURE_SERIAL", details)
-        )
-        self.control_panel.mode_changed.connect(
-            lambda mode: self.api_client.send_command("CHANGE_MODE", {"mode": mode})
         )
         self.waypoints_panel.send_waypoints.connect(
             lambda wps: self.api_client.send_command("SET_WAYPOINTS", wps)
         )
-
-        # --- PERUBAHAN 1: Hubungkan sinyal `add_current_pos_requested` ke slot baru ---
         self.waypoints_panel.add_current_pos_requested.connect(self.on_add_current_pos)
-
-        # Koneksi dari ApiClient ke UI
         self.api_client.connection_status_changed.connect(self.on_connection_status_change)
-        
-        # --- PERUBAHAN 2: Ganti koneksi data_updated ke satu slot pusat ---
         self.api_client.data_updated.connect(self.on_data_updated)
-        
-        # Koneksi lain yang tidak berubah
         self.waypoints_panel.load_mission_requested.connect(self.load_predefined_mission)
         self.api_client.frame_cam1_updated.connect(self.video_view.update_frame_1)
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
         self.waypoints_panel.waypoints_updated.connect(self.map_view.update_waypoints)
 
-    # --- PERUBAHAN 3: SLOT BARU untuk menangani semua pembaruan data telemetri ---
+    @Slot(str)
+    def set_mode(self, mode):
+        """Fungsi terpusat untuk mengubah mode operasi."""
+        self.current_control_mode = mode
+        self.api_client.send_command("CHANGE_MODE", {"mode": mode})
+
+        is_manual = (mode == "MANUAL")
+        
+        # Perbarui tampilan tombol
+        self.control_panel.manual_mode_btn.setChecked(is_manual)
+        self.control_panel.auto_mode_btn.setChecked(not is_manual)
+
+        # Kelola status aktif/nonaktif tombol, dengan mempertimbangkan override RC
+        self.update_button_states()
+
+        self.setFocus() # Rebut kembali fokus keyboard
+
+    def update_button_states(self):
+        """Memperbarui status enabled/disabled semua tombol berdasarkan mode dan override RC."""
+        is_manual = (self.current_control_mode == "MANUAL")
+
+        # Tombol mode hanya bisa diubah jika RC tidak override
+        self.control_panel.manual_mode_btn.setEnabled(not self.is_rc_override)
+        self.control_panel.auto_mode_btn.setEnabled(not self.is_rc_override)
+
+        # Tombol navigasi aktif jika mode AUTO dan RC tidak override
+        self.control_panel.start_mission_btn.setEnabled(not is_manual and not self.is_rc_override)
+        self.control_panel.pause_mission_btn.setEnabled(not is_manual and not self.is_rc_override)
+        self.control_panel.return_home_btn.setEnabled(not is_manual and not self.is_rc_override)
+
+        # Tombol WASD aktif jika mode MANUAL dan RC tidak override
+        for button in self.control_panel.key_buttons.values():
+            button.setEnabled(is_manual and not self.is_rc_override)
+
     @Slot(dict)
     def on_data_updated(self, data):
-        """
-        Satu slot pusat untuk menerima data dari backend dan mendistribusikannya
-        ke semua komponen UI yang relevan.
-        """
-        # 1. Simpan posisi saat ini untuk digunakan oleh WaypointsPanel
         self.current_latitude = data.get("latitude", self.current_latitude)
         self.current_longitude = data.get("longitude", self.current_longitude)
-
-        # 2. Perbarui semua panel lain seperti biasa
+        
+        status_text = data.get("status", "")
+        self.is_rc_override = "RC MANUAL OVERRIDE" in status_text.upper()
+        
+        # Perbarui semua panel
         self.system_status_panel.update_data(data)
         self.map_view.update_data(data)
         self.log_panel.update_log(data)
         self.header.update_status(data)
         
-        # 3. Cek status untuk mengunci/membuka ControlPanel berdasarkan override RC
-        status_text = data.get("status", "")
-        self.control_panel.update_control_locks(status_text)
+        # Perbarui status tombol setiap kali data baru masuk
+        self.update_button_states()
         
-    # --- PERUBAHAN 4: SLOT BARU yang dipanggil saat tombol "Add Current Pos" ditekan ---
     @Slot()
     def on_add_current_pos(self):
-        """
-        Menanggapi permintaan dari WaypointsPanel dengan mengirimkan
-        koordinat yang saat ini disimpan di MainWindow.
-        """
         self.waypoints_panel.add_waypoint_from_pos(self.current_latitude, self.current_longitude)
 
     @Slot(bool, str)
     def on_connection_status_change(self, is_connected, message):
-        # (Fungsi ini tidak berubah)
         self.status_bar.showMessage(message)
         status_text = "CONNECTED" if is_connected else "DISCONNECTED"
         status_prop = "connected" if is_connected else "disconnected"
@@ -212,24 +223,23 @@ class MainWindow(QMainWindow):
         self.style().polish(self.header.connection_status_label)
 
     def closeEvent(self, event):
-        # (Fungsi ini tidak berubah)
         print("Menutup aplikasi...")
         self.api_client.shutdown()
         event.accept()
 
     @Slot(str)
     def load_predefined_mission(self, mission_id):
-        # (Fungsi ini tidak berubah)
         waypoints = get_lintasan_a() if mission_id == "A" else get_lintasan_b()
         print(f"Memuat Lintasan {mission_id}...")
         self.waypoints_panel.load_waypoints_to_list(waypoints)
 
     def handle_manual_keys(self):
-        # (Fungsi ini tidak berubah)
         self.api_client.send_command("MANUAL_CONTROL", list(self.active_manual_keys))
 
     def keyPressEvent(self, event):
-        # (Fungsi ini tidak berubah)
+        if self.current_control_mode != "MANUAL" or self.is_rc_override:
+            return
+            
         if event.isAutoRepeat(): return
         key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
         if event.key() in key_map:
@@ -240,7 +250,9 @@ class MainWindow(QMainWindow):
                 self.handle_manual_keys()
 
     def keyReleaseEvent(self, event):
-        # (Fungsi ini tidak berubah)
+        if self.current_control_mode != "MANUAL" or self.is_rc_override:
+            return 
+
         if event.isAutoRepeat(): return
         key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
         if event.key() in key_map:
