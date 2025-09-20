@@ -1,6 +1,6 @@
 {
   "general": {
-    "use_simulation": true
+    "use_simulation": false
   },
   "backend_connection": {
     "ip_address": "127.0.0.1",
