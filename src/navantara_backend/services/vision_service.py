@@ -150,9 +150,9 @@ class VisionService:
                     processed_frame = frame # Defaultnya adalah frame mentah
                     # --- PERUBAHAN UTAMA DI SINI ---
                     # Logika AI hanya berjalan jika ini kamera utama DAN dalam mode AUTO
-                    if apply_detection and is_mode_auto:
-                        processed_frame = self.process_and_control(frame, is_mode_auto)
-                    
+                    if apply_detection:
+                        # Argumen is_mode_auto diubah menjadi True secara permanen
+                        processed_frame = self.process_and_control(frame, True)
                     # Logika streaming dipisahkan sepenuhnya dan hanya bergantung pada `should_emit_frame`
                     if should_emit_frame:
                         ret_encode, buffer = cv2.imencode(".jpg", processed_frame)

@@ -24,7 +24,7 @@ class AsvHandler:
         self.is_streaming_to_gui = False
 
         self.current_state = {
-            "control_mode": "MANUAL",
+            "control_mode": "AUTO",
             "latitude": -6.9180, "longitude": 107.6185,
             "heading": 90.0, "cog": 0.0, "speed": 0.0, "battery_voltage": 12.5,
             "status": "DISCONNECTED", "mission_time": "00:00:00",
@@ -149,8 +149,26 @@ class AsvHandler:
                 print(f"🕹️  [CONTROL] RC Manual Override -> PWM: {pwm_cmd}, Servo: {servo_cmd}°")
             else:
                 if self.vision_target["active"]:
-                    print(f"🤖 [CONTROL] AI Vision Active -> (Logika belum diimplementasikan)")
-                    pass
+                    # --- AWAL PERBAIKAN ---
+                    omega_rad_s = self.vision_target.get("omega_opt", 0.0)
+                    
+                    # Logika sederhana untuk mengubah kecepatan sudut menjadi sudut servo
+                    # Nilai ini perlu di-tuning/kalibrasi
+                    steering_correction = -math.degrees(omega_rad_s) * 2.0 
+
+                    actuator_config = self.config.get("actuators", {})
+                    servo_default = actuator_config.get("servo_default_angle", 90)
+                    servo_min = actuator_config.get("servo_min_angle", 45)
+                    servo_max = actuator_config.get("servo_max_angle", 135)
+
+                    servo_cmd = servo_default + steering_correction
+                    servo_cmd = int(max(servo_min, min(servo_max, servo_cmd)))
+                    
+                    # Untuk motor, kita bisa set ke kecepatan rendah saat menghindar
+                    pwm_cmd = actuator_config.get("motor_pwm_auto_base", 1650) - 50 
+                    
+                    print(f"🤖 [CONTROL] AI Vision Active -> PWM: {pwm_cmd}, Servo: {servo_cmd}°")
+                    # --- AKHIR PERBAIKAN ---
                 elif state_for_logic.get("control_mode") == "AUTO":
                     servo_cmd, pwm_cmd = run_navigation_logic(state_for_logic, self.config, self.pid_controller)
                     print(f"🛰️  [CONTROL] Auto (Waypoint) -> PWM: {int(pwm_cmd)}, Servo: {int(servo_cmd)}°")
