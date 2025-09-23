@@ -39,8 +39,11 @@ class VisionService:
         self.KNOWN_CLASSES = vision_cfg.get("known_classes", [])
         self.poi_confidence_threshold = vision_cfg.get("poi_confidence_threshold", 0.65)
         self.poi_validation_frames = vision_cfg.get("poi_validation_frames", 5)
+        self.obstacle_activation_distance = vision_cfg.get("obstacle_activation_distance_cm", 100.0)
         self.recent_detections = collections.deque(maxlen=self.poi_validation_frames)
         self.investigation_in_progress = False
+        self.last_buoy_seen_time = 0  # Waktu terakhir buoy terlihat
+        self.obstacle_cooldown_period = 2.0  # Tetap di mode AI selama 2 detik setelah rintangan hilang
 
         cam_detect_cfg = self.config.get("camera_detection", {})
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
@@ -224,28 +227,38 @@ class VisionService:
 
     def handle_auto_control_dwa(self, red_buoys, green_buoys, current_state):
         all_buoys = red_buoys + green_buoys
-        if not all_buoys:
-            self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
-            return
-        target_detection = max(
-            all_buoys,
-            key=lambda b: (b["xyxy"][2] - b["xyxy"][0]) * (b["xyxy"][3] - b["xyxy"][1]),
-        )
-        obstacles_relative = [
-            self._convert_detection_to_relative_coords(b)
-            for b in all_buoys
-            if b is not None
-        ]
-        goal_relative = self._convert_detection_to_relative_coords(target_detection)
-        if not obstacles_relative or goal_relative is None:
-            return
-        v_opt, omega_opt = dwa_path_planning(
-            current_state, obstacles_relative, goal_relative, self.config
-        )
-        self.asv_handler.process_command(
-            "PLANNED_MANEUVER", {"active": True, "v_opt": v_opt, "omega_opt": omega_opt}
-        )
 
+        if all_buoys:
+            # Temukan buoy terdekat berdasarkan jarak estimasi
+            closest_buoy = min(all_buoys, key=lambda b: b.get('distance_cm', float('inf')))
+            distance_to_closest = closest_buoy.get('distance_cm', float('inf'))
+
+            # --- LOGIKA JARAK AKTIVASI BARU ---
+            # Hanya aktifkan mode AI jika rintangan berada dalam jarak aktivasi
+            if distance_to_closest < self.obstacle_activation_distance:
+                self.last_buoy_seen_time = time.time()
+
+                center_x = closest_buoy.get("center", [0, 0])[0]
+                frame_width = 640  # Asumsi lebar frame kamera
+
+                # Kirim perintah manuver untuk mengaktifkan mode AI
+                self.asv_handler.process_command(
+                    "PLANNED_MANEUVER", {
+                        "active": True,
+                        "obstacle_center_x": center_x,
+                        "frame_width": frame_width
+                    }
+                )
+                # Karena AI aktif, kita hentikan fungsi di sini
+                return 
+            # --- AKHIR LOGIKA JARAK AKTIVASI ---
+
+        # Jika tidak ada buoy, atau buoy terlalu jauh, jalankan logika cooldown
+        time_since_last_buoy = time.time() - self.last_buoy_seen_time
+        if time_since_last_buoy > self.obstacle_cooldown_period:
+            # Nonaktifkan mode AI jika sudah aman
+            self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
+            
     def handle_photography_mission(
         self, original_frame, green_boxes, blue_boxes, current_state
     ):

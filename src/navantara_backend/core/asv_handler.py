@@ -135,9 +135,11 @@ class AsvHandler:
             with self.state_lock:
                 state_for_logic = self.current_state.copy()
 
-            servo_cmd, pwm_cmd = 90, 1500
+            # --- AWAL DARI LOGIKA KONTROL YANG DIPERBAIKI ---
             rc_mode_switch = state_for_logic.get("rc_channels", [1500]*6)[4]
+            command_to_send = None # Variabel untuk menampung perintah final yang akan dikirim
 
+            # PRIORITAS 1: Remote Control Override (Kendali Manual dari RC)
             if rc_mode_switch < 1500:
                 rc_servo_raw = state_for_logic["rc_channels"][0]
                 rc_motor_raw = state_for_logic["rc_channels"][2]
@@ -147,36 +149,54 @@ class AsvHandler:
                 servo_cmd = int(map_value(rc_servo_raw, 1000, 2000, servo_min, servo_max))
                 pwm_cmd = rc_motor_raw
                 print(f"🕹️  [CONTROL] RC Manual Override -> PWM: {pwm_cmd}, Servo: {servo_cmd}°")
-            else:
-                if self.vision_target["active"]:
-                    # --- AWAL PERBAIKAN ---
-                    omega_rad_s = self.vision_target.get("omega_opt", 0.0)
-                    
-                    # Logika sederhana untuk mengubah kecepatan sudut menjadi sudut servo
-                    # Nilai ini perlu di-tuning/kalibrasi
-                    steering_correction = -math.degrees(omega_rad_s) * 2.0 
+                # Dalam mode RC, kita kirim perintah S;D untuk kontrol langsung
+                command_to_send = f"S{int(pwm_cmd)};D{int(servo_cmd)}\n"
 
+            # PRIORITAS 2: Logika Otonom (Hanya jika tidak di-override oleh RC)
+            else:
+                # Sub-Prioritas 2.1: Penghindaran Rintangan oleh AI Vision
+                if self.vision_target["active"]:
+                    # Ambil data posisi rintangan dari vision_service
+                    obstacle_x = self.vision_target.get("obstacle_center_x", 320)
+                    frame_width = self.vision_target.get("frame_width", 640)
+                    
+                    # Hitung seberapa jauh rintangan dari tengah layar (-1.0 kiri, 1.0 kanan)
+                    error_x = (obstacle_x - (frame_width / 2)) / (frame_width / 2)
+                    
+                    # --- LOGIKA KEMUDI REAKTIF ---
+                    # Semakin jauh rintangan dari tengah, semakin tajam belokannya
+                    # Nilai '40' ini adalah "kekuatan" belokan, bisa di-tuning
+                    steering_correction = error_x * 40.0
+                    
                     actuator_config = self.config.get("actuators", {})
                     servo_default = actuator_config.get("servo_default_angle", 90)
                     servo_min = actuator_config.get("servo_min_angle", 45)
                     servo_max = actuator_config.get("servo_max_angle", 135)
 
-                    servo_cmd = servo_default + steering_correction
+                    # Kita balik koreksinya (-steering_correction) agar belok menjauh
+                    servo_cmd = servo_default - steering_correction
                     servo_cmd = int(max(servo_min, min(servo_max, servo_cmd)))
                     
-                    # Untuk motor, kita bisa set ke kecepatan rendah saat menghindar
+                    # Kurangi kecepatan saat menghindar
                     pwm_cmd = actuator_config.get("motor_pwm_auto_base", 1650) - 50 
                     
-                    print(f"🤖 [CONTROL] AI Vision Active -> PWM: {pwm_cmd}, Servo: {servo_cmd}°")
-                    # --- AKHIR PERBAIKAN ---
+                    print(f"🤖 [CONTROL] AI Vision Reactive -> ErrorX: {error_x:.2f}, Servo: {servo_cmd}°")
+                    command_to_send = f"A,{int(servo_cmd)},{int(pwm_cmd)}\n"
+
+                # Sub-Prioritas 2.2: Navigasi Waypoint (jika AI tidak aktif)
                 elif state_for_logic.get("control_mode") == "AUTO":
-                    servo_cmd, pwm_cmd = run_navigation_logic(state_for_logic, self.config, self.pid_controller)
-                    print(f"🛰️  [CONTROL] Auto (Waypoint) -> PWM: {int(pwm_cmd)}, Servo: {int(servo_cmd)}°")
+                    print(f"🛰️  [CONTROL] Auto (Waypoint) -> Mengirim 'W' ke ESP32")
+                    # Kirim perintah 'W' agar ESP32 melanjutkan logika waypoint internalnya
+                    command_to_send = "W\n"
+                
+                # Jika tidak ada kondisi di atas, maka kapal akan idle (diam)
                 else:
                     pass
-
-            if state_for_logic.get("control_mode") != "MANUAL" or rc_mode_switch < 1500:
-                self.serial_handler.send_command(f"S{int(pwm_cmd)};D{int(servo_cmd)}\n")
+            
+            # Kirim perintah ke ESP32 HANYA jika ada perintah yang valid
+            if command_to_send:
+                self.serial_handler.send_command(command_to_send)
+            # --- AKHIR DARI LOGIKA KONTROL YANG DIPERBAIKI ---
 
             self.logger.log_telemetry(state_for_logic)
             self._update_and_emit_state()
@@ -188,6 +208,7 @@ class AsvHandler:
             "MANUAL_CONTROL": self._handle_manual_control, "SET_WAYPOINTS": self._handle_set_waypoints,
             "NAV_START": self._handle_start_mission, "NAV_RETURN": self._handle_initiate_rth,
             "UPDATE_PID": self._handle_update_pid, "PLANNED_MANEUVER": self._handle_vision_maneuver,
+            "VISION_TARGET_UPDATE": self._handle_vision_maneuver,
         }
         handler = command_handlers.get(command)
         if handler: handler(payload)
