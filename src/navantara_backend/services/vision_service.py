@@ -229,36 +229,26 @@ class VisionService:
         all_buoys = red_buoys + green_buoys
 
         if all_buoys:
-            # Temukan buoy terdekat berdasarkan jarak estimasi
             closest_buoy = min(all_buoys, key=lambda b: b.get('distance_cm', float('inf')))
             distance_to_closest = closest_buoy.get('distance_cm', float('inf'))
 
-            # --- LOGIKA JARAK AKTIVASI BARU ---
-            # Hanya aktifkan mode AI jika rintangan berada dalam jarak aktivasi
             if distance_to_closest < self.obstacle_activation_distance:
                 self.last_buoy_seen_time = time.time()
-
-                center_x = closest_buoy.get("center", [0, 0])[0]
-                frame_width = 640  # Asumsi lebar frame kamera
-
-                # Kirim perintah manuver untuk mengaktifkan mode AI
+                
+                # --- PERUBAHAN UTAMA DI SINI ---
+                # Kita sekarang mengirim kelas (warna) dari buoy terdekat
                 self.asv_handler.process_command(
                     "PLANNED_MANEUVER", {
                         "active": True,
-                        "obstacle_center_x": center_x,
-                        "frame_width": frame_width
+                        "obstacle_class": closest_buoy.get("class", "unknown") 
                     }
                 )
-                # Karena AI aktif, kita hentikan fungsi di sini
-                return 
-            # --- AKHIR LOGIKA JARAK AKTIVASI ---
-
-        # Jika tidak ada buoy, atau buoy terlalu jauh, jalankan logika cooldown
+                return
+            
         time_since_last_buoy = time.time() - self.last_buoy_seen_time
         if time_since_last_buoy > self.obstacle_cooldown_period:
-            # Nonaktifkan mode AI jika sudah aman
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
-            
+
     def handle_photography_mission(
         self, original_frame, green_boxes, blue_boxes, current_state
     ):

@@ -156,31 +156,32 @@ class AsvHandler:
             else:
                 # Sub-Prioritas 2.1: Penghindaran Rintangan oleh AI Vision
                 if self.vision_target["active"]:
-                    # Ambil data posisi rintangan dari vision_service
-                    obstacle_x = self.vision_target.get("obstacle_center_x", 320)
-                    frame_width = self.vision_target.get("frame_width", 640)
-                    
-                    # Hitung seberapa jauh rintangan dari tengah layar (-1.0 kiri, 1.0 kanan)
-                    error_x = (obstacle_x - (frame_width / 2)) / (frame_width / 2)
-                    
-                    # --- LOGIKA KEMUDI REAKTIF ---
-                    # Semakin jauh rintangan dari tengah, semakin tajam belokannya
-                    # Nilai '40' ini adalah "kekuatan" belokan, bisa di-tuning
-                    steering_correction = error_x * 40.0
-                    
+                    obstacle_class = self.vision_target.get("obstacle_class", "unknown")
                     actuator_config = self.config.get("actuators", {})
                     servo_default = actuator_config.get("servo_default_angle", 90)
                     servo_min = actuator_config.get("servo_min_angle", 45)
                     servo_max = actuator_config.get("servo_max_angle", 135)
+                    
+                    # --- LOGIKA KEPUTUSAN BERDASARKAN WARNA ---
+                    if obstacle_class == "green_buoy":
+                        # Bola hijau -> belok kanan (servo > 90)
+                        servo_cmd = servo_default + 20  # Contoh: 90 + 20 = 110
+                        print(f"🤖 [CONTROL] Green Buoy Terdeteksi -> Belok Kanan. Servo: {servo_cmd}°")
+                    elif obstacle_class == "red_buoy":
+                        # Bola merah -> belok kiri (servo < 90)
+                        servo_cmd = servo_default - 20  # Contoh: 90 - 20 = 70
+                        print(f"🤖 [CONTROL] Red Buoy Terdeteksi -> Belok Kiri. Servo: {servo_cmd}°")
+                    else:
+                        # Jika rintangan tidak dikenal, tetap lurus atau berhenti
+                        servo_cmd = servo_default
+                        print(f"🤖 [CONTROL] Rintangan Tidak Dikenal -> Lurus. Servo: {servo_cmd}°")
 
-                    # Kita balik koreksinya (-steering_correction) agar belok menjauh
-                    servo_cmd = servo_default - steering_correction
+                    # Pastikan nilai servo tetap dalam batas aman
                     servo_cmd = int(max(servo_min, min(servo_max, servo_cmd)))
                     
-                    # Kurangi kecepatan saat menghindar
+                    # Kurangi kecepatan saat manuver
                     pwm_cmd = actuator_config.get("motor_pwm_auto_base", 1650) - 50 
                     
-                    print(f"🤖 [CONTROL] AI Vision Reactive -> ErrorX: {error_x:.2f}, Servo: {servo_cmd}°")
                     command_to_send = f"A,{int(servo_cmd)},{int(pwm_cmd)}\n"
 
                 # Sub-Prioritas 2.2: Navigasi Waypoint (jika AI tidak aktif)
@@ -239,8 +240,8 @@ class AsvHandler:
         with self.state_lock:
             self.vision_target["active"] = payload.get("active", False)
             if self.vision_target["active"]:
-                self.vision_target["v_opt"] = payload.get("v_opt", 0.0)
-                self.vision_target["omega_opt"] = payload.get("omega_opt", 0.0)
+                # Simpan semua data yang relevan dari payload
+                self.vision_target["obstacle_class"] = payload.get("obstacle_class")
 
     def _handle_update_pid(self, payload):
         kp, ki, kd = payload.get("p"), payload.get("i"), payload.get("d")
