@@ -184,7 +184,8 @@ void displayAllData() {
 
 // ---------------- MODE FLAG & VARIABEL BARU UNTUK AI ----------------
 bool isManual = true;
-char serialCommand = 'W'; // 'W' = Waypoint (default), 'A' = AI Mode
+char serialCommand = 'W';
+// 'W' = Waypoint (default), 'A' = AI Mode
 
 // --- Variabel untuk menyimpan perintah dari Jetson saat mode AI ---
 int ai_servo_val = 90;
@@ -200,7 +201,6 @@ void setup() {
   motorESC.attach(19);
   rudderServo.write(90);
   motorESC.writeMicroseconds(1500);
-
   pinMode(PPM_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(PPM_PIN), ppmISR, RISING);
   
@@ -246,7 +246,8 @@ void loop() {
     // Jika ada perintah lain dari Jetson (misal: Sxxx;Dxx), bisa ditambahkan di sini
   }
 
-  int ch5 = readChannel(4); // Mode Selector (Manual/Auto)
+  int ch5 = readChannel(4);
+  // Mode Selector (Manual/Auto)
   int ch6 = readChannel(5);
   // Data Capture/Display/Save
 

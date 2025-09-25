@@ -1,5 +1,5 @@
 # src/navantara_backend/core/asv_handler.py
-# --- VERSI FINAL LENGKAP: Kontrol Hierarkis + Debugging + EKF + AUTO-CONNECT ---
+# --- VERSI FINAL DENGAN LOGIKA GERBANG ---
 import threading
 import time
 import math
@@ -33,7 +33,15 @@ class AsvHandler:
             "gyro_z": 0.0, "accel_x": 0.0,
             "rc_channels": [1500] * 6,
         }
-        self.vision_target = {"active": False, "v_opt": 0.0, "omega_opt": 0.0}
+        self.vision_target = {"active": False}
+        
+        # --- LOGIKA BARU: State untuk menyimpan informasi gerbang ---
+        self.gate_context = {
+            "is_gate_approaching": False, # Apakah kita sedang dalam mode mendekati gerbang?
+            "red_buoy_is_left": False,    # Konfigurasi gerbang: True jika merah di kiri, hijau di kanan
+            "gate_center_bearing": 0.0    # Arah ke tengah gerbang untuk referensi
+        }
+        # --- AKHIR LOGIKA BARU ---
 
         pid_config = self.config.get("navigation", {}).get("heading_pid", {})
         self.pid_controller = PIDController(
@@ -45,26 +53,18 @@ class AsvHandler:
         self.logger = MissionLogger()
         self.logger.log_event("AsvHandler diinisialisasi.")
         print("[AsvHandler] Handler diinisialisasi untuk operasi backend.")
-
-        # --- PERUBAHAN UTAMA DI SINI ---
-        # Secara otomatis mencoba terhubung ke ESP32 saat backend dimulai
+        
         self.initiate_auto_connection()
-        # --- AKHIR PERUBAHAN ---
 
-    # --- FUNGSI BARU UNTUK KONEKSI OTOMATIS ---
     def initiate_auto_connection(self):
-        """Mencari dan terhubung ke ESP32 menggunakan konfigurasi."""
         print("[AsvHandler] Memulai upaya koneksi serial otomatis...")
         baud_rate = self.config.get("serial_connection", {}).get("default_baud_rate", 115200)
-        # Fungsi ini sudah ada di SerialHandler, kita tinggal memanggilnya
         self.serial_handler.find_and_connect_esp32(baud_rate)
-    # --- AKHIR FUNGSI BARU ---
 
     def _update_and_emit_state(self):
         if self.running and self.is_streaming_to_gui:
             with self.state_lock:
                 state_copy = self.current_state.copy()
-                # --- PERBAIKAN KECIL: Tambahkan status koneksi serial ke state ---
                 state_copy["is_connected_to_serial"] = self.serial_handler.is_connected
                 if not self.serial_handler.is_connected:
                     state_copy["status"] = "DISCONNECTED (SERIAL)"
@@ -73,9 +73,10 @@ class AsvHandler:
                 if rc_mode_switch < 1500:
                     state_copy["status"] = "RC MANUAL OVERRIDE"
                     state_copy["control_mode"] = "MANUAL"
+                elif self.gate_context["is_gate_approaching"]:
+                    state_copy["status"] = "AI GATE NAVIGATION"
                 elif self.vision_target["active"]:
                     state_copy["status"] = "AI OBSTACLE AVOIDANCE"
-                    state_copy["control_mode"] = "AUTO"
                 elif state_copy["control_mode"] == "AUTO":
                     wp_idx = state_copy.get("current_waypoint_index", 0)
                     total_wps = len(state_copy.get("waypoints", []))
@@ -135,11 +136,9 @@ class AsvHandler:
             with self.state_lock:
                 state_for_logic = self.current_state.copy()
 
-            # --- AWAL DARI LOGIKA KONTROL YANG DIPERBAIKI ---
             rc_mode_switch = state_for_logic.get("rc_channels", [1500]*6)[4]
-            command_to_send = None # Variabel untuk menampung perintah final yang akan dikirim
+            command_to_send = None
 
-            # PRIORITAS 1: Remote Control Override (Kendali Manual dari RC)
             if rc_mode_switch < 1500:
                 rc_servo_raw = state_for_logic["rc_channels"][0]
                 rc_motor_raw = state_for_logic["rc_channels"][2]
@@ -148,56 +147,58 @@ class AsvHandler:
                 servo_max = actuator_config.get("servo_max_angle", 135)
                 servo_cmd = int(map_value(rc_servo_raw, 1000, 2000, servo_min, servo_max))
                 pwm_cmd = rc_motor_raw
-                print(f"🕹️  [CONTROL] RC Manual Override -> PWM: {pwm_cmd}, Servo: {servo_cmd}°")
-                # Dalam mode RC, kita kirim perintah S;D untuk kontrol langsung
                 command_to_send = f"S{int(pwm_cmd)};D{int(servo_cmd)}\n"
-
-            # PRIORITAS 2: Logika Otonom (Hanya jika tidak di-override oleh RC)
             else:
-                # Sub-Prioritas 2.1: Penghindaran Rintangan oleh AI Vision
+                # --- LOGIKA BARU: Logika Kontrol Otonom dengan Konteks Gerbang ---
                 if self.vision_target["active"]:
                     obstacle_class = self.vision_target.get("obstacle_class", "unknown")
                     actuator_config = self.config.get("actuators", {})
                     servo_default = actuator_config.get("servo_default_angle", 90)
                     servo_min = actuator_config.get("servo_min_angle", 45)
                     servo_max = actuator_config.get("servo_max_angle", 135)
-                    
-                    # --- LOGIKA KEPUTUSAN BERDASARKAN WARNA ---
-                    if obstacle_class == "green_buoy":
-                        # Bola hijau -> belok kanan (servo > 90)
-                        servo_cmd = servo_default + 20  # Contoh: 90 + 20 = 110
-                        print(f"🤖 [CONTROL] Green Buoy Terdeteksi -> Belok Kanan. Servo: {servo_cmd}°")
-                    elif obstacle_class == "red_buoy":
-                        # Bola merah -> belok kiri (servo < 90)
-                        servo_cmd = servo_default - 20  # Contoh: 90 - 20 = 70
-                        print(f"🤖 [CONTROL] Red Buoy Terdeteksi -> Belok Kiri. Servo: {servo_cmd}°")
-                    else:
-                        # Jika rintangan tidak dikenal, tetap lurus atau berhenti
-                        servo_cmd = servo_default
-                        print(f"🤖 [CONTROL] Rintangan Tidak Dikenal -> Lurus. Servo: {servo_cmd}°")
+                    pwm_cmd = actuator_config.get("motor_pwm_auto_base", 1650) - 50
+                    servo_cmd = servo_default
 
-                    # Pastikan nilai servo tetap dalam batas aman
+                    # PRIO A: Jika kita sedang dalam mode melewati gerbang
+                    if self.gate_context["is_gate_approaching"]:
+                        gate_config = self.gate_context["red_buoy_is_left"]
+                        
+                        # Aturan 1: Jika gerbang standar (merah kiri, hijau kanan)
+                        if gate_config:
+                            if obstacle_class == 'red_buoy': # Lihat merah (di kiri)
+                                servo_cmd = servo_default + 30 # Belok KANAN
+                                print("GATE-STD: Lihat Merah, Belok KANAN")
+                            elif obstacle_class == 'green_buoy': # Lihat hijau (di kanan)
+                                servo_cmd = servo_default - 30 # Belok KIRI
+                                print("GATE-STD: Lihat Hijau, Belok KIRI")
+                        
+                        # Aturan 2: Jika gerbang terbalik (merah kanan, hijau kiri)
+                        else:
+                            if obstacle_class == 'red_buoy': # Lihat merah (di kanan)
+                                servo_cmd = servo_default - 30 # Belok KIRI
+                                print("GATE-INV: Lihat Merah, Belok KIRI")
+                            elif obstacle_class == 'green_buoy': # Lihat hijau (di kiri)
+                                servo_cmd = servo_default + 30 # Belok KANAN
+                                print("GATE-INV: Lihat Hijau, Belok KANAN")
+                    
+                    # PRIO B: Jika bukan mode gerbang, lakukan penghindaran biasa
+                    else:
+                        if obstacle_class == "green_buoy":
+                            servo_cmd = servo_default + 20
+                            print("AVOID: Hijau, Belok Kanan")
+                        elif obstacle_class == "red_buoy":
+                            servo_cmd = servo_default - 20
+                            print("AVOID: Merah, Belok Kiri")
+                    
                     servo_cmd = int(max(servo_min, min(servo_max, servo_cmd)))
-                    
-                    # Kurangi kecepatan saat manuver
-                    pwm_cmd = actuator_config.get("motor_pwm_auto_base", 1650) - 50 
-                    
                     command_to_send = f"A,{int(servo_cmd)},{int(pwm_cmd)}\n"
 
-                # Sub-Prioritas 2.2: Navigasi Waypoint (jika AI tidak aktif)
                 elif state_for_logic.get("control_mode") == "AUTO":
-                    print(f"🛰️  [CONTROL] Auto (Waypoint) -> Mengirim 'W' ke ESP32")
-                    # Kirim perintah 'W' agar ESP32 melanjutkan logika waypoint internalnya
                     command_to_send = "W\n"
-                
-                # Jika tidak ada kondisi di atas, maka kapal akan idle (diam)
-                else:
-                    pass
             
-            # Kirim perintah ke ESP32 HANYA jika ada perintah yang valid
             if command_to_send:
                 self.serial_handler.send_command(command_to_send)
-            # --- AKHIR DARI LOGIKA KONTROL YANG DIPERBAIKI ---
+            # --- AKHIR LOGIKA BARU ---
 
             self.logger.log_telemetry(state_for_logic)
             self._update_and_emit_state()
@@ -208,12 +209,36 @@ class AsvHandler:
             "CONFIGURE_SERIAL": self._handle_serial_configuration, "CHANGE_MODE": self._handle_mode_change,
             "MANUAL_CONTROL": self._handle_manual_control, "SET_WAYPOINTS": self._handle_set_waypoints,
             "NAV_START": self._handle_start_mission, "NAV_RETURN": self._handle_initiate_rth,
-            "UPDATE_PID": self._handle_update_pid, "PLANNED_MANEUVER": self._handle_vision_maneuver,
+            "UPDATE_PID": self._handle_update_pid,
+            # --- LOGIKA BARU: Tambahkan command handler baru ---
             "VISION_TARGET_UPDATE": self._handle_vision_maneuver,
+            "GATE_DETECTED": self._handle_gate_detection
         }
         handler = command_handlers.get(command)
         if handler: handler(payload)
         else: print(f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'")
+
+    # --- LOGIKA BARU: Fungsi untuk menangani deteksi gerbang ---
+    def _handle_gate_detection(self, payload):
+        with self.state_lock:
+            # Saat gerbang terdeteksi, aktifkan mode AI dan simpan konteksnya
+            self.vision_target["active"] = True
+            self.gate_context["is_gate_approaching"] = True
+            self.gate_context["red_buoy_is_left"] = payload.get("red_is_left", False)
+            print(f"GATE DETECTED: Konfigurasi Merah di Kiri = {self.gate_context['red_buoy_is_left']}")
+
+    def _handle_vision_maneuver(self, payload):
+        with self.state_lock:
+            is_active = payload.get("active", False)
+            self.vision_target["active"] = is_active
+            if is_active:
+                # Jika ini adalah manuver biasa (bukan gerbang), pastikan mode gerbang nonaktif
+                self.gate_context["is_gate_approaching"] = False
+                self.vision_target["obstacle_class"] = payload.get("obstacle_class")
+            else:
+                # Jika tidak ada rintangan sama sekali, reset semua state AI
+                self.gate_context["is_gate_approaching"] = False
+    # --- AKHIR LOGIKA BARU ---
 
     def _handle_manual_control(self, payload):
         with self.state_lock:
@@ -228,20 +253,12 @@ class AsvHandler:
         pwm = pwm_stop + fwd * pwr
         servo = servo_def - turn * (servo_def - servo_min)
         servo = max(servo_min, min(servo_max, servo))
-        print(f"⌨️  [CONTROL] GUI Manual (WASD) -> PWM: {int(pwm)}, Servo: {int(servo)}°")
         self.serial_handler.send_command(f"S{int(pwm)};D{int(servo)}\n")
 
     def set_streaming_status(self, status: bool):
         if self.is_streaming_to_gui != status:
             print(f"[AsvHandler] Status streaming telemetri diatur ke: {status}")
             self.is_streaming_to_gui = status
-
-    def _handle_vision_maneuver(self, payload):
-        with self.state_lock:
-            self.vision_target["active"] = payload.get("active", False)
-            if self.vision_target["active"]:
-                # Simpan semua data yang relevan dari payload
-                self.vision_target["obstacle_class"] = payload.get("obstacle_class")
 
     def _handle_update_pid(self, payload):
         kp, ki, kd = payload.get("p"), payload.get("i"), payload.get("d")
