@@ -1,5 +1,5 @@
 # src/navantara_backend/core/asv_handler.py
-# --- VERSI FINAL DENGAN LOGIKA GERBANG ---
+# --- VERSI FINAL DENGAN TRANSI STRAIGHTENING ---
 import threading
 import time
 import math
@@ -11,7 +11,8 @@ from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
 
 def map_value(x, in_min, in_max, out_min, out_max):
-    """Fungsi map seperti di Arduino untuk konversi nilai."""
+    if in_max == in_min:
+        return out_min
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
 class AsvHandler:
@@ -24,24 +25,23 @@ class AsvHandler:
         self.is_streaming_to_gui = False
 
         self.current_state = {
-            "control_mode": "AUTO",
-            "latitude": -6.9180, "longitude": 107.6185,
+            "control_mode": "AUTO", "latitude": -6.9180, "longitude": 107.6185,
             "heading": 90.0, "cog": 0.0, "speed": 0.0, "battery_voltage": 12.5,
-            "status": "DISCONNECTED", "mission_time": "00:00:00",
-            "waypoints": [], "current_waypoint_index": 0,
-            "is_connected_to_serial": False,
-            "gyro_z": 0.0, "accel_x": 0.0,
-            "rc_channels": [1500] * 6,
+            "status": "DISCONNECTED", "mission_time": "00:00:00", "waypoints": [],
+            "current_waypoint_index": 0, "is_connected_to_serial": False,
+            "gyro_z": 0.0, "accel_x": 0.0, "rc_channels": [1500] * 6,
         }
         self.vision_target = {"active": False}
         
-        # --- LOGIKA BARU: State untuk menyimpan informasi gerbang ---
         self.gate_context = {
-            "is_gate_approaching": False, # Apakah kita sedang dalam mode mendekati gerbang?
-            "red_buoy_is_left": False,    # Konfigurasi gerbang: True jika merah di kiri, hijau di kanan
-            "gate_center_bearing": 0.0    # Arah ke tengah gerbang untuk referensi
+            "is_gate_approaching": False,
+            "red_buoy_is_left": True,
         }
-        # --- AKHIR LOGIKA BARU ---
+
+        # --- VARIABEL BARU UNTUK TRANSI ---
+        self.recovering_from_avoidance = False
+        self.last_avoidance_time = 0
+        # --- AKHIR VARIABEL BARU ---
 
         pid_config = self.config.get("navigation", {}).get("heading_pid", {})
         self.pid_controller = PIDController(
@@ -73,6 +73,8 @@ class AsvHandler:
                 if rc_mode_switch < 1500:
                     state_copy["status"] = "RC MANUAL OVERRIDE"
                     state_copy["control_mode"] = "MANUAL"
+                elif self.recovering_from_avoidance:
+                    state_copy["status"] = "STRAIGHTENING COURSE" # Status baru
                 elif self.gate_context["is_gate_approaching"]:
                     state_copy["status"] = "AI GATE NAVIGATION"
                 elif self.vision_target["active"]:
@@ -149,56 +151,69 @@ class AsvHandler:
                 pwm_cmd = rc_motor_raw
                 command_to_send = f"S{int(pwm_cmd)};D{int(servo_cmd)}\n"
             else:
-                # --- LOGIKA BARU: Logika Kontrol Otonom dengan Konteks Gerbang ---
                 if self.vision_target["active"]:
-                    obstacle_class = self.vision_target.get("obstacle_class", "unknown")
+                    self.recovering_from_avoidance = False # Reset jika rintangan terdeteksi lagi
                     actuator_config = self.config.get("actuators", {})
                     servo_default = actuator_config.get("servo_default_angle", 90)
                     servo_min = actuator_config.get("servo_min_angle", 45)
                     servo_max = actuator_config.get("servo_max_angle", 135)
-                    pwm_cmd = actuator_config.get("motor_pwm_auto_base", 1650) - 50
-                    servo_cmd = servo_default
+                    
+                    frame_width = self.vision_target.get("frame_width", 640)
+                    object_center_x = self.vision_target.get("object_center_x", frame_width / 2)
+                    obstacle_class = self.vision_target.get("obstacle_class", "unknown")
+                    screen_center_x = frame_width / 2
 
-                    # PRIO A: Jika kita sedang dalam mode melewati gerbang
+                    decision_log = ""
+                    correction = 0
+
                     if self.gate_context["is_gate_approaching"]:
-                        gate_config = self.gate_context["red_buoy_is_left"]
-                        
-                        # Aturan 1: Jika gerbang standar (merah kiri, hijau kanan)
-                        if gate_config:
-                            if obstacle_class == 'red_buoy': # Lihat merah (di kiri)
-                                servo_cmd = servo_default + 30 # Belok KANAN
-                                print("GATE-STD: Lihat Merah, Belok KANAN")
-                            elif obstacle_class == 'green_buoy': # Lihat hijau (di kanan)
-                                servo_cmd = servo_default - 30 # Belok KIRI
-                                print("GATE-STD: Lihat Hijau, Belok KIRI")
-                        
-                        # Aturan 2: Jika gerbang terbalik (merah kanan, hijau kiri)
+                        left_target_zone = frame_width / 4
+                        right_target_zone = frame_width * 3 / 4
+                        gate_red_is_left = self.gate_context["red_buoy_is_left"]
+
+                        target_x = 0
+                        if gate_red_is_left:
+                            target_x = left_target_zone if obstacle_class == 'red_buoy' else right_target_zone
                         else:
-                            if obstacle_class == 'red_buoy': # Lihat merah (di kanan)
-                                servo_cmd = servo_default - 30 # Belok KIRI
-                                print("GATE-INV: Lihat Merah, Belok KIRI")
-                            elif obstacle_class == 'green_buoy': # Lihat hijau (di kiri)
-                                servo_cmd = servo_default + 30 # Belok KANAN
-                                print("GATE-INV: Lihat Hijau, Belok KANAN")
-                    
-                    # PRIO B: Jika bukan mode gerbang, lakukan penghindaran biasa
+                            target_x = right_target_zone if obstacle_class == 'red_buoy' else left_target_zone
+                        
+                        pixel_error = object_center_x - target_x
+                        max_correction_angle = 40
+                        correction = map_value(pixel_error, -screen_center_x, screen_center_x, -max_correction_angle, max_correction_angle)
+                        decision_log = f"GATE: TargetX:{target_x:.0f}"
                     else:
-                        if obstacle_class == "green_buoy":
-                            servo_cmd = servo_default + 20
-                            print("AVOID: Hijau, Belok Kanan")
-                        elif obstacle_class == "red_buoy":
-                            servo_cmd = servo_default - 20
-                            print("AVOID: Merah, Belok Kiri")
-                    
+                        pixel_error = object_center_x - screen_center_x
+                        if abs(pixel_error) < 20:
+                            correction = -35
+                            decision_log = "AVOID: Dead ahead, forcing RIGHT"
+                        else:
+                            max_correction_angle = 45
+                            correction = map_value(pixel_error, -screen_center_x, screen_center_x, -max_correction_angle, max_correction_angle)
+                            decision_log = "AVOID: Proportional turn"
+
+                    servo_cmd = servo_default - correction
                     servo_cmd = int(max(servo_min, min(servo_max, servo_cmd)))
-                    command_to_send = f"A,{int(servo_cmd)},{int(pwm_cmd)}\n"
+                    pwm_cmd = actuator_config.get("motor_pwm_auto_base", 1650) - 50
+                    
+                    print(f"DECISION: {decision_log}, ObjX:{object_center_x:.0f} (err:{pixel_error:.0f}px) -> Correction:{correction:.1f}deg -> SERVO:{servo_cmd}, PWM:{int(pwm_cmd)}")
+                    command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
+
+                # --- LOGIKA TRANSI BARU ---
+                elif self.recovering_from_avoidance:
+                    print("DECISION: Straightening course...")
+                    command_to_send = "A,90,1500\n" # Perintah lurus & netral
+                    
+                    # Jika sudah 1 detik sejak recovery dimulai, hentikan fase ini
+                    if time.time() - self.last_avoidance_time > 1.0:
+                        self.recovering_from_avoidance = False
+                        print("DECISION: Straightening complete. Resuming mission.")
+                # --- AKHIR LOGIKA TRANSI ---
 
                 elif state_for_logic.get("control_mode") == "AUTO":
                     command_to_send = "W\n"
             
             if command_to_send:
                 self.serial_handler.send_command(command_to_send)
-            # --- AKHIR LOGIKA BARU ---
 
             self.logger.log_telemetry(state_for_logic)
             self._update_and_emit_state()
@@ -210,7 +225,6 @@ class AsvHandler:
             "MANUAL_CONTROL": self._handle_manual_control, "SET_WAYPOINTS": self._handle_set_waypoints,
             "NAV_START": self._handle_start_mission, "NAV_RETURN": self._handle_initiate_rth,
             "UPDATE_PID": self._handle_update_pid,
-            # --- LOGIKA BARU: Tambahkan command handler baru ---
             "VISION_TARGET_UPDATE": self._handle_vision_maneuver,
             "GATE_DETECTED": self._handle_gate_detection
         }
@@ -218,27 +232,29 @@ class AsvHandler:
         if handler: handler(payload)
         else: print(f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'")
 
-    # --- LOGIKA BARU: Fungsi untuk menangani deteksi gerbang ---
     def _handle_gate_detection(self, payload):
         with self.state_lock:
-            # Saat gerbang terdeteksi, aktifkan mode AI dan simpan konteksnya
-            self.vision_target["active"] = True
             self.gate_context["is_gate_approaching"] = True
-            self.gate_context["red_buoy_is_left"] = payload.get("red_is_left", False)
-            print(f"GATE DETECTED: Konfigurasi Merah di Kiri = {self.gate_context['red_buoy_is_left']}")
+            self.gate_context["red_buoy_is_left"] = payload.get("red_is_left", True)
+            print(f"GATE CONTEXT SET: Red buoy is on the left = {self.gate_context['red_buoy_is_left']}")
 
     def _handle_vision_maneuver(self, payload):
         with self.state_lock:
+            was_active = self.vision_target["active"]
             is_active = payload.get("active", False)
+            
+            # --- DETEKSI TRANSI DI SINI ---
+            if was_active and not is_active:
+                print("Obstacle cleared. Initiating recovery...")
+                self.recovering_from_avoidance = True
+                self.last_avoidance_time = time.time()
+            # --- AKHIR DETEKSI ---
+
             self.vision_target["active"] = is_active
             if is_active:
-                # Jika ini adalah manuver biasa (bukan gerbang), pastikan mode gerbang nonaktif
-                self.gate_context["is_gate_approaching"] = False
-                self.vision_target["obstacle_class"] = payload.get("obstacle_class")
+                self.vision_target.update(payload)
             else:
-                # Jika tidak ada rintangan sama sekali, reset semua state AI
                 self.gate_context["is_gate_approaching"] = False
-    # --- AKHIR LOGIKA BARU ---
 
     def _handle_manual_control(self, payload):
         with self.state_lock:

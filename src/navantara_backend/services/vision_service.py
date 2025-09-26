@@ -1,5 +1,5 @@
 # src/navantara_backend/services/vision_service.py
-# --- VERSI FINAL LENGKAP: Navigasi + Fotografi + Investigasi ---
+# --- VERSI MODIFIKASI DENGAN LOGIKA POSISI LAYAR ---
 import cv2
 import numpy as np
 import collections
@@ -52,7 +52,6 @@ class VisionService:
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
         self.OBJECT_REAL_WIDTHS_CM = cam_detect_cfg.get("object_real_widths_cm", {})
 
-    # --- FUNGSI-FUNGSI HELPER (TIDAK BERUBAH) ---
     def _estimate_distance(self, pixel_width, object_class):
         if object_class not in self.OBJECT_REAL_WIDTHS_CM or pixel_width == 0:
             return None
@@ -60,7 +59,6 @@ class VisionService:
         return (real_width_cm * self.FOCAL_LENGTH_PIXELS) / pixel_width
 
     def _draw_distance_info(self, frame, detections):
-        # (Implementasi tidak berubah)
         buoy_detections = [d for d in detections if "buoy" in d["class"]]
         for det in buoy_detections:
             if "distance_cm" in det and det["distance_cm"] is not None:
@@ -70,12 +68,10 @@ class VisionService:
         red_buoy = next((d for d in buoy_detections if d["class"] == "red_buoy"), None)
         green_buoy = next((d for d in buoy_detections if d["class"] == "green_buoy"), None)
         if red_buoy and green_buoy:
-            # (Implementasi penggambaran gerbang tidak berubah)
             pass
         return frame
 
     def run_capture_loops(self):
-        # (Implementasi tidak berubah)
         if self.inference_engine.model is None: return
         self.running = True
         self.socketio.start_background_task(self._capture_loop, self.camera_index_1, "frame_cam1", True)
@@ -85,7 +81,6 @@ class VisionService:
         self.running = False
     
     def _capture_loop(self, cam_index, event_name, apply_detection):
-        # (Implementasi tidak berubah)
         cap = None
         while self.running:
             try:
@@ -108,14 +103,12 @@ class VisionService:
                 if cap and cap.isOpened(): cap.release()
                 if self.running: self.socketio.sleep(5)
 
-    # --- FUNGSI UTAMA YANG MENGATUR SEMUA LOGIKA ---
     def process_and_control(self, frame, is_mode_auto):
         with self.asv_handler.state_lock:
             current_state = self.asv_handler.current_state.copy()
         
         detections, annotated_frame = self.inference_engine.infer(frame)
 
-        # Hitung jarak untuk semua buoy
         buoy_classes = ["red_buoy", "green_buoy"]
         for det in detections:
             if det["class"] in buoy_classes:
@@ -123,8 +116,6 @@ class VisionService:
                 det["distance_cm"] = self._estimate_distance(pixel_width, det["class"])
 
         if is_mode_auto:
-            # --- PEMANGGILAN FUNGSI YANG DIKEMBALIKAN ---
-            # 1. Jalankan logika investigasi POI
             potential_pois = [d for d in detections if d["class"] not in self.KNOWN_CLASSES and d["confidence"] > self.poi_confidence_threshold]
             if potential_pois and not self.investigation_in_progress:
                 best_poi = max(potential_pois, key=lambda p: p["confidence"])
@@ -132,21 +123,20 @@ class VisionService:
             else:
                 self.recent_detections.clear()
 
-            # 2. Jalankan logika misi fotografi
-            detected_green_boxes = [d for d in detections if "green_box" in d["class"]]
-            detected_blue_boxes = [d for d in detections if "blue_box" in d["class"]]
-            if detected_green_boxes or detected_blue_boxes:
-                self.handle_photography_mission(frame, detected_green_boxes, detected_blue_boxes, current_state)
+            #detected_green_boxes = [d for d in detections if "green_box" in d["class"]]
+            #detected_blue_boxes = [d for d in detections if "blue_box" in d["class"]]
+            #if detected_green_boxes or detected_blue_boxes:
+            #    self.handle_photography_mission(frame, detected_green_boxes, detected_blue_boxes, current_state)
             
-            # 3. Jalankan logika navigasi utama (gerbang & penghindaran)
-            self.handle_autonomous_navigation(detections, current_state)
-            # --- AKHIR PEMANGGILAN FUNGSI ---
+            # --- MODIFIKASI UTAMA DI SINI ---
+            self.handle_autonomous_navigation(detections, frame.shape[1], current_state)
+            # --- AKHIR MODIFIKASI ---
 
         final_frame = self._draw_distance_info(annotated_frame, detections)
         return final_frame
 
-    # --- FUNGSI LOGIKA NAVIGASI (TIDAK BERUBAH) ---
-    def handle_autonomous_navigation(self, detections, current_state):
+    # --- FUNGSI LOGIKA NAVIGASI (MODIFIKASI) ---
+    def handle_autonomous_navigation(self, detections, frame_width, current_state):
         red_buoys = [d for d in detections if d["class"] == "red_buoy"]
         green_buoys = [d for d in detections if d["class"] == "green_buoy"]
 
@@ -166,10 +156,17 @@ class VisionService:
             distance_to_closest = closest_buoy.get('distance_cm', float('inf'))
             if distance_to_closest < self.obstacle_activation_distance:
                 self.last_buoy_seen_time = time.time()
+                
+                screen_center_x = frame_width / 2
+                object_center_x = closest_buoy["center"][0]
+                screen_side = "left" if object_center_x < screen_center_x else "right"
+
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE", {
                         "active": True,
-                        "obstacle_class": closest_buoy.get("class", "unknown") 
+                        "obstacle_class": closest_buoy.get("class", "unknown"),
+                        "object_center_x": closest_buoy["center"][0],
+                        "frame_width": frame_width
                     }
                 )
                 return
@@ -177,7 +174,6 @@ class VisionService:
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
     
-    # --- FUNGSI-FUNGSI LOGIKA LAINNYA (YANG DIKEMBALIKAN) ---
     def handle_photography_mission(self, original_frame, green_boxes, blue_boxes, current_state):
         mission_name = "Surface Imaging" if green_boxes else "Underwater Imaging"
         overlay = create_overlay_from_html(current_state, mission_type=mission_name)
@@ -196,13 +192,12 @@ class VisionService:
             first_detection_class = self.recent_detections[0]
             print(f"[Vision] VALIDASI BERHASIL: Objek '{first_detection_class}' terdeteksi.")
             self.investigation_in_progress = True
-            # (Implementasi perhitungan bearing tidak berubah)
             frame_center_x = frame.shape[1] / 2
             obj_center_x = poi_data["center"][0]
             bearing_offset = (obj_center_x - frame_center_x) * (60 / frame.shape[1])
             absolute_bearing = (current_state.get("heading", 0) + bearing_offset) % 360
             payload = {"class_name": first_detection_class, "confidence": poi_data["confidence"], "bearing_deg": absolute_bearing}
-            self.asv_handler.process_command("INVESTIGATE_POI", payload) # Note: Pastikan handler untuk ini ada
+            self.asv_handler.process_command("INVESTIGATE_POI", payload)
             self.recent_detections.clear()
 
     def set_gui_listening(self, status: bool):
