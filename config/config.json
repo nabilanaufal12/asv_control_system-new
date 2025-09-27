@@ -24,6 +24,10 @@
       "kp": 1.2,
       "ki": 0.1,
       "kd": 0.05
+    },
+    "avoidance_pid": {
+    "kp": 0.4,
+    "kd": 0.3
     }
   },
   "actuators": {

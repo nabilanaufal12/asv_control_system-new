@@ -140,27 +140,46 @@ class VisionService:
         red_buoys = [d for d in detections if d["class"] == "red_buoy"]
         green_buoys = [d for d in detections if d["class"] == "green_buoy"]
 
+        # === PRIORITAS 1: LOGIKA GERBANG ===
+        # Cek jika KEDUA bola terdeteksi untuk membentuk sebuah gerbang.
         if red_buoys and green_buoys:
             red, green = red_buoys[0], green_buoys[0]
+            
+            # Hitung lebar gerbang dalam piksel untuk estimasi jarak.
             gate_pixel_width = max(red["xyxy"][2], green["xyxy"][2]) - min(red["xyxy"][0], green["xyxy"][0])
             gate_distance = self._estimate_distance(gate_pixel_width, "buoy_gate")
+
+            # Jika gerbang cukup dekat, aktifkan mode melewati gerbang.
             if gate_distance is not None and gate_distance < self.gate_activation_distance:
-                self.last_buoy_seen_time = time.time()
-                red_is_left = red["center"][0] < green["center"][0]
-                self.asv_handler.process_command("GATE_DETECTED", {"red_is_left": red_is_left})
+                self.last_buoy_seen_time = time.time() # Perbarui timer untuk mencegah recovery prematur.
+                
+                # Tentukan titik tengah gerbang, yang menjadi target navigasi.
+                gate_center_x = (red["center"][0] + green["center"][0]) / 2.0
+                
+                # Kirim perintah spesifik untuk melewati gerbang ke asv_handler.
+                # Payload ini memberikan semua informasi yang dibutuhkan untuk manuver presisi.
+                self.asv_handler.process_command(
+                    "GATE_TRAVERSAL_COMMAND", {
+                        "active": True,
+                        "gate_center_x": gate_center_x,
+                        "frame_width": frame_width
+                    }
+                )
+                # Setelah perintah gerbang dikirim, hentikan pemrosesan lebih lanjut di frame ini.
+                # Ini adalah implementasi dari "utamakan gerbang".
                 return
 
+        # === PRIORITAS 2: LOGIKA PENGHINDARAN RINTANGAN TUNGGAL ===
+        # Blok ini hanya akan dieksekusi JIKA logika gerbang di atas tidak terpenuhi.
         all_buoys = red_buoys + green_buoys
         if all_buoys:
             closest_buoy = min(all_buoys, key=lambda b: b.get('distance_cm', float('inf')))
             distance_to_closest = closest_buoy.get('distance_cm', float('inf'))
+            
             if distance_to_closest < self.obstacle_activation_distance:
-                self.last_buoy_seen_time = time.time()
+                self.last_buoy_seen_time = time.time() # Perbarui timer.
                 
-                screen_center_x = frame_width / 2
-                object_center_x = closest_buoy["center"][0]
-                screen_side = "left" if object_center_x < screen_center_x else "right"
-
+                # Kirim perintah penghindaran rintangan generik ke asv_handler.
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE", {
                         "active": True,
@@ -171,8 +190,13 @@ class VisionService:
                 )
                 return
 
+        # === KONDISI DEFAULT: TIDAK ADA RINTANGAN ===
+        # Jika tidak ada rintangan yang aktif dalam jangkauan selama periode cooldown,
+        # nonaktifkan semua mode AI agar ASV bisa kembali ke navigasi waypoint.
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
+            # Pastikan perintah gerbang juga dinonaktifkan untuk kebersihan state.
+            self.asv_handler.process_command("GATE_TRAVERSAL_COMMAND", {"active": False})
     
     def handle_photography_mission(self, original_frame, green_boxes, blue_boxes, current_state):
         mission_name = "Surface Imaging" if green_boxes else "Underwater Imaging"
