@@ -37,6 +37,9 @@ class AsvHandler:
         self.gate_target = {"active": False}
         self.last_pixel_error = 0 
 
+        self.avoidance_direction = None # 'left' atau 'right'
+        self.is_avoiding = False
+
         # --- FIX IS HERE: Re-initializing gate_context ---
         # This dictionary holds the memory of the gate approach maneuver.
         self.gate_context = {
@@ -162,6 +165,7 @@ class AsvHandler:
                 command_to_send = f"S{int(pwm_cmd)};D{int(servo_cmd)}\n"
             else:
                 # --- HIERARKI KEPUTUSAN MODE AUTO ---
+                # --- HIRARKI KEPUTUSAN MODE AUTO ---
                 
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
@@ -169,78 +173,75 @@ class AsvHandler:
                 servo_max = actuator_config.get("servo_max_angle", 135)
                 motor_base = actuator_config.get("motor_pwm_auto_base", 1650)
 
-                # === PRIORITAS 1: MANUVER GERBANG BERKONTEKS ===
-                # Aktif jika kita "tahu" sedang mendekati gerbang, bahkan jika hanya satu bola yang terlihat.
-                if self.gate_context.get("is_gate_approaching", False) and self.vision_target.get("active", False):
+                # === PRIORITAS 1: MELEWATI GERBANG (GATE TRAVERSAL) ===
+                # Ini adalah prioritas tertinggi. Jika aktif, logika lain diabaikan.
+                if self.gate_target.get("active", False):
                     self.recovering_from_avoidance = False
-                    
-                    frame_width = self.vision_target.get("frame_width", 640)
-                    object_center_x = self.vision_target.get("object_center_x")
-                    obstacle_class = self.vision_target.get("obstacle_class")
-                    
-                    # Definisikan "jalur aman" di layar. Kita ingin memposisikan bola di zona ini.
-                    left_target_zone = frame_width / 4  # Target untuk bola di sisi kiri (default: merah)
-                    right_target_zone = frame_width * 3 / 4 # Target untuk bola di sisi kanan (default: hijau)
-                    
-                    target_x = 0
-                    decision_log = ""
-                    gate_red_is_left = self.gate_context.get("red_buoy_is_left", True)
+                    self.is_avoiding = False
+                    self.avoidance_direction = None
 
-                    if obstacle_class == 'red_buoy':
-                        target_x = left_target_zone if gate_red_is_left else right_target_zone
-                        decision_log = "GATE (Red Seen)"
-                    elif obstacle_class == 'green_buoy':
-                        target_x = right_target_zone if gate_red_is_left else left_target_zone
-                        decision_log = "GATE (Green Seen)"
-                    
-                    if target_x > 0:
-                        pixel_error = object_center_x - target_x
-                        max_correction_angle = 40.0
+                    frame_width = self.gate_target.get("frame_width", 640)
+                    gate_center_x = self.gate_target.get("gate_center_x")
+
+                    if gate_center_x is not None:
+                        # Logika untuk mengarahkan kapal ke tengah gerbang
+                        pixel_error = gate_center_x - (frame_width / 2)
+                        max_correction_angle = 35.0 # Koreksi lebih halus untuk gerbang
                         correction = map_value(pixel_error, -frame_width/2, frame_width/2, -max_correction_angle, max_correction_angle)
                         
                         servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction)))
-                        pwm_cmd = motor_base - 50 # Kurangi kecepatan saat manuver
+                        # Kurangi kecepatan saat melewati gerbang untuk presisi
+                        pwm_cmd = motor_base - 75 
                         
-                        print(f"DECISION: {decision_log}, TargetX:{target_x:.0f}, ObjX:{object_center_x:.0f}, Err:{pixel_error:.0f}px -> SERVO:{servo_cmd}, PWM:{pwm_cmd}")
+                        print(f"GATE MODE | TargetX:{frame_width/2:.0f}, GateX:{gate_center_x:.0f}, Err:{pixel_error:.0f}px -> SERVO:{servo_cmd}, PWM:{pwm_cmd}")
                         command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
 
-                # === PRIORITAS 2: PENGHINDARAN RINTANGAN UMUM (dengan PD & Dead-Zone) ===
+                # === PRIORITAS 2: PENGHINDARAN RINTANGAN TUNGGAL ===
+                # Blok ini HANYA akan berjalan jika Prioritas 1 (Gate) TIDAK aktif.
                 elif self.vision_target.get("active", False):
                     self.recovering_from_avoidance = False
-                    nav_config = self.config.get("navigation", {})
-                    avoidance_pid = nav_config.get("avoidance_pid", {"kp": 0.4, "kd": 0.3})
-                    Kp, Kd = avoidance_pid.get("kp"), avoidance_pid.get("kd")
-                    DEAD_ZONE_THRESHOLD_PX = 30 
+                    self.is_avoiding = True
 
+                    # (Logika penghindaran rintangan tunggal dari perbaikan sebelumnya tetap di sini)
+                    # ... (salin-tempel seluruh blok logika Prioritas 2 dari jawaban saya sebelumnya, tidak ada yang berubah di dalamnya)
                     frame_width = self.vision_target.get("frame_width", 640)
                     object_center_x = self.vision_target.get("object_center_x", frame_width / 2)
-                    current_pixel_error = object_center_x - (frame_width / 2)
-                    
-                    decision_log, total_correction_deg = "", 0.0
-
-                    if abs(current_pixel_error) < DEAD_ZONE_THRESHOLD_PX:
-                        total_correction_deg = -35.0 
-                        decision_log = "AVOID (DEAD-ZONE FORCE)"
-                        self.last_pixel_error = 0
+                    if self.avoidance_direction is not None:
+                        if self.avoidance_direction == 'left' and object_center_x < (frame_width / 2):
+                            print("SCENARIO CHANGE: Obstacle crossed to the LEFT. Re-evaluating.")
+                            self.avoidance_direction = None
+                        elif self.avoidance_direction == 'right' and object_center_x > (frame_width / 2):
+                            print("SCENARIO CHANGE: Obstacle crossed to the RIGHT. Re-evaluating.")
+                            self.avoidance_direction = None
+                    if self.avoidance_direction is None:
+                        if object_center_x < frame_width / 2:
+                            self.avoidance_direction = 'right'
+                            print("DECISION: Obstacle on LEFT. Evading to the RIGHT.")
+                        else:
+                            self.avoidance_direction = 'left'
+                            print("DECISION: Obstacle on RIGHT. Evading to the LEFT.")
+                    target_x = 0
+                    if self.avoidance_direction == 'left':
+                        target_x = frame_width * 0.8
                     else:
-                        error_derivative = current_pixel_error - self.last_pixel_error
-                        self.last_pixel_error = current_pixel_error
-                        total_correction_deg = (Kp * current_pixel_error + Kd * error_derivative) / (frame_width / 2) * 45.0
-                        decision_log = "AVOID (PD)"
-                    
-                    servo_cmd = int(max(servo_min, min(servo_max, servo_default - total_correction_deg)))
-                    reduction = abs(total_correction_deg) * 4
+                        target_x = frame_width * 0.2
+                    pixel_error = object_center_x - target_x
+                    max_correction_angle = 45.0
+                    correction_deg = (pixel_error / (frame_width / 2)) * max_correction_angle
+                    servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
+                    reduction = abs(correction_deg) * 3
                     pwm_cmd = int(max(1550, motor_base - reduction))
-                    
-                    print(f"DECISION: {decision_log}, Err:{current_pixel_error:.1f}px, Corr:{total_correction_deg:.1f}deg -> SERVO:{servo_cmd}, PWM:{pwm_cmd}")
+                    print(f"AVOID ({self.avoidance_direction}) | TargetX:{target_x:.0f}, ObjX:{object_center_x:.0f}, Err:{pixel_error:.0f}px -> SERVO:{servo_cmd}, PWM:{pwm_cmd}")
                     command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
+
 
                 # === PRIORITAS 3: FASE RECOVERY/PELURUSAN ===
                 elif self.recovering_from_avoidance:
-                    self.last_pixel_error = 0
+                    self.is_avoiding = False
+                    self.avoidance_direction = None
                     print("DECISION: Straightening course...")
-                    command_to_send = "A,90,1500\n" 
-                    if time.time() - self.last_avoidance_time > 1.0:
+                    command_to_send = "A,90,1600\n" 
+                    if time.time() - self.last_avoidance_time > 1.5: 
                         self.recovering_from_avoidance = False
                         print("DECISION: Straightening complete. Resuming mission.")
 
@@ -300,15 +301,21 @@ class AsvHandler:
             was_active = self.vision_target.get("active", False)
             is_active = payload.get("active", False)
             
+            # --- PERUBAHAN UTAMA DI SINI ---
+            # Jika rintangan BARU SAJA HILANG (transisi dari aktif ke non-aktif)
             if was_active and not is_active:
                 print("Obstacle cleared. Initiating recovery...")
                 self.recovering_from_avoidance = True
                 self.last_avoidance_time = time.time()
+                # Reset state penghindaran agar manuver berikutnya bisa menentukan arah baru
+                self.is_avoiding = False
+                self.avoidance_direction = None
+            # --- AKHIR PERUBAHAN ---
 
             self.vision_target["active"] = is_active
             if is_active:
                 self.vision_target.update(payload)
-    
+
     # ... (sisa fungsi handler tidak berubah)
     def _handle_manual_control(self, payload):
         with self.state_lock:

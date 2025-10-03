@@ -71,6 +71,67 @@ class VisionService:
             pass
         return frame
 
+    def _validate_buoy_color(self, frame, detection):
+        """
+        Memvalidasi ulang warna buoy menggunakan analisis HSV di dalam bounding box.
+        Mengembalikan nama kelas yang benar ('red_buoy' atau 'green_buoy').
+        """
+        # Hanya validasi jika kelasnya adalah salah satu dari buoy
+        if "buoy" not in detection["class"]:
+            return detection["class"]
+
+        try:
+            # 1. Crop area bounding box dari frame asli
+            x1, y1, x2, y2 = map(int, detection["xyxy"])
+            
+            # Pastikan koordinat valid
+            if x1 < 0 or y1 < 0 or x2 > frame.shape[1] or y2 > frame.shape[0] or x1 >= x2 or y1 >= y2:
+                return detection["class"] # Kembalikan kelas asli jika bbox tidak valid
+                
+            roi = frame[y1:y2, x1:x2]
+
+            # 2. Konversi area yang di-crop ke HSV
+            hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+            # 3. Definisikan rentang warna (Hue) untuk MERAH dan HIJAU
+            # Catatan: Merah melintasi batas 0/180 di HSV, jadi butuh dua rentang
+            lower_red1 = np.array([0, 120, 70])
+            upper_red1 = np.array([10, 255, 255])
+            lower_red2 = np.array([170, 120, 70])
+            upper_red2 = np.array([180, 255, 255])
+            
+            lower_green = np.array([35, 100, 50]) # Hue untuk hijau lebih sempit
+            upper_green = np.array([85, 255, 255])
+
+            # 4. Buat mask untuk setiap warna
+            mask_red1 = cv2.inRange(hsv_roi, lower_red1, upper_red1)
+            mask_red2 = cv2.inRange(hsv_roi, lower_red2, upper_red2)
+            mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+            
+            mask_green = cv2.inRange(hsv_roi, lower_green, upper_green)
+
+            # 5. Hitung jumlah piksel non-nol untuk setiap warna
+            red_pixel_count = cv2.countNonZero(mask_red)
+            green_pixel_count = cv2.countNonZero(mask_green)
+
+            # 6. Tentukan klasifikasi berdasarkan warna dominan
+            # Jika piksel hijau jauh lebih dominan, koreksi menjadi 'green_buoy'
+            if green_pixel_count > red_pixel_count * 1.5: # Tambahkan margin 1.5x
+                # print(f"[Color Validation] Koreksi: {detection['class']} -> green_buoy")
+                return "green_buoy"
+            # Sebaliknya, jika piksel merah lebih dominan, koreksi (atau pertahankan) menjadi 'red_buoy'
+            elif red_pixel_count > green_pixel_count * 1.5:
+                # print(f"[Color Validation] Koreksi: {detection['class']} -> red_buoy")
+                return "red_buoy"
+                
+            # Jika tidak ada warna yang dominan, percaya pada model
+            return detection["class"]
+
+        except Exception as e:
+            # Jika terjadi error (misal, bounding box kosong), percaya pada model
+            # print(f"[Color Validation] Error: {e}")
+            return detection["class"]
+
     def run_capture_loops(self):
         if self.inference_engine.model is None: return
         self.running = True
@@ -110,10 +171,28 @@ class VisionService:
         detections, annotated_frame = self.inference_engine.infer(frame)
 
         buoy_classes = ["red_buoy", "green_buoy"]
+        # Buat list baru untuk menyimpan deteksi yang sudah divalidasi
+        validated_detections = []
+        
         for det in detections:
+            # Validasi ulang klasifikasi warna untuk buoy
+            if det["class"] in buoy_classes:
+                original_class = det["class"]
+                # Panggil fungsi validasi baru kita, menggunakan frame asli (non-annotated)
+                validated_class = self._validate_buoy_color(frame, det)
+                if original_class != validated_class:
+                    print(f"🎨 [Color Correction] YOLO class '{original_class}' dikoreksi menjadi '{validated_class}'")
+                det["class"] = validated_class
+
+            # Hitung jarak setelah kelasnya divalidasi
             if det["class"] in buoy_classes:
                 pixel_width = det["xyxy"][2] - det["xyxy"][0]
                 det["distance_cm"] = self._estimate_distance(pixel_width, det["class"])
+            
+            validated_detections.append(det)
+
+        # Ganti 'detections' lama dengan yang sudah divalidasi
+        detections = validated_detections
 
         if is_mode_auto:
             potential_pois = [d for d in detections if d["class"] not in self.KNOWN_CLASSES and d["confidence"] > self.poi_confidence_threshold]
@@ -128,11 +207,12 @@ class VisionService:
             #if detected_green_boxes or detected_blue_boxes:
             #    self.handle_photography_mission(frame, detected_green_boxes, detected_blue_boxes, current_state)
             
-            # --- MODIFIKASI UTAMA DI SINI ---
+            # Sekarang handle_autonomous_navigation akan menerima deteksi yang sudah dikoreksi warnanya
             self.handle_autonomous_navigation(detections, frame.shape[1], current_state)
-            # --- AKHIR MODIFIKASI ---
 
-        final_frame = self._draw_distance_info(annotated_frame, detections)
+        # Anotasi ulang frame dengan data yang sudah divalidasi
+        final_frame = self.inference_engine._annotate_frame(frame.copy(), detections)
+        final_frame = self._draw_distance_info(final_frame, detections)
         return final_frame
 
     # --- FUNGSI LOGIKA NAVIGASI (MODIFIKASI) ---
