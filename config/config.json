@@ -1,0 +1,95 @@
+{
+  "general": {
+    "use_simulation": false
+  },
+  "backend_connection": {
+    "ip_address": "127.0.0.1",
+    "port": 5000
+  },
+  "serial_connection": {
+    "default_baud_rate": 115200,
+    "auto_connect_descriptors": [
+      "Silicon Labs",
+      "CH340",
+      "CP210x",
+      "CP2102"
+    ]
+  },
+  "navigation": {
+    "waypoint_reach_distance_m": 7.0,
+    "pure_pursuit_lookahead_distance_m": 15.0,
+    "slow_approach_distance_m": 15.0,
+    "max_turn_error_deg": 45.0,
+    "heading_pid": {
+      "kp": 1.2,
+      "ki": 0.1,
+      "kd": 0.05
+    },
+    "avoidance_pid": {
+    "kp": 0.4,
+    "kd": 0.3
+    }
+  },
+  "actuators": {
+    "servo_min_angle": 45,
+    "servo_default_angle": 90,
+    "servo_max_angle": 135,
+    "motor_pwm_stop": 1500,
+    "motor_pwm_manual_power": 150,
+    "motor_pwm_auto_base": 1650,
+    "motor_pwm_auto_reduction": 100
+  },
+  "camera_detection": {
+    "focal_length_pixels": 600,
+    "object_real_widths_cm": {
+      "red_buoy": 20.0,
+      "green_buoy": 20.0,
+      "buoy_gate": 200.0,
+      "green_box": 30.0,
+      "blue_box": 30.0
+    }
+  },
+  "dwa_params": {
+    "max_speed_mps": 1.5,
+    "min_speed_mps": 0.0,
+    "max_yaw_rate_dps": 40.0,
+    "max_accel_mps2": 0.5,
+    "max_dyaw_rate_dps2": 40.0,
+    "v_resolution": 0.1,
+    "yaw_rate_resolution_dps": 1.0,
+    "dt_seconds": 0.2,
+    "predict_time_seconds": 2.0,
+    "robot_radius_meters": 0.5,
+    "goal_cost_gain": 1.0,
+    "speed_cost_gain": 0.5,
+    "obstacle_cost_gain": 1.5
+  },
+  "vision": {
+    "device": "cpu",
+    "conf_threshold": 0.2,
+    "iou_threshold": 0.5,
+    "debug": true,
+    "camera_index_1": 2,
+    "camera_index_2": 0,
+    "known_classes": ["red_buoy", "green_buoy", "green_box", "blue_box"],
+    "poi_confidence_threshold": 0.65,
+    "poi_validation_frames": 5,
+    "obstacle_activation_distance_cm": 120.0
+  },
+  "api_urls": {
+    "firebase_url": "https://asv-2025-default-rtdb.asia-southeast1.firebasedatabase.app/monitor.json",
+    "supabase_endpoint": "https://ngmicoyombtgtlegdjzn.supabase.co/storage/v1/object/navantara/{filename}",
+    "supabase_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nbWljb3lvbWJ0Z3RsZWdkanpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5NjkwOTMsImV4cCI6MjA2OTU0NTA5M30.tz7_mfVaX_5sWO3xtSQ1h85JAIRrL6iC4ZNm0TaUTdI"
+  },
+  "gui_settings": {
+    "main_splitter_sizes": [
+      380,
+      800,
+      380
+    ],
+    "placeholders": {
+      "latitude": "e.g., -6.9175",
+      "longitude": "e.g., 107.6191"
+    }
+  }
+}
