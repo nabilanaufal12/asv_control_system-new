@@ -1,5 +1,5 @@
 # src/navantara_backend/services/vision_service.py
-# --- VERSI MODIFIKASI DENGAN LOGIKA POSISI LAYAR ---
+# --- VERSI FINAL DENGAN PAYLOAD GERBANG YANG DISEMPURNAKAN ---
 import cv2
 import numpy as np
 import collections
@@ -72,64 +72,32 @@ class VisionService:
         return frame
 
     def _validate_buoy_color(self, frame, detection):
-        """
-        Memvalidasi ulang warna buoy menggunakan analisis HSV di dalam bounding box.
-        Mengembalikan nama kelas yang benar ('red_buoy' atau 'green_buoy').
-        """
-        # Hanya validasi jika kelasnya adalah salah satu dari buoy
         if "buoy" not in detection["class"]:
             return detection["class"]
-
         try:
-            # 1. Crop area bounding box dari frame asli
             x1, y1, x2, y2 = map(int, detection["xyxy"])
-            
-            # Pastikan koordinat valid
             if x1 < 0 or y1 < 0 or x2 > frame.shape[1] or y2 > frame.shape[0] or x1 >= x2 or y1 >= y2:
-                return detection["class"] # Kembalikan kelas asli jika bbox tidak valid
-                
+                return detection["class"]
             roi = frame[y1:y2, x1:x2]
-
-            # 2. Konversi area yang di-crop ke HSV
             hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-
-            # 3. Definisikan rentang warna (Hue) untuk MERAH dan HIJAU
-            # Catatan: Merah melintasi batas 0/180 di HSV, jadi butuh dua rentang
             lower_red1 = np.array([0, 120, 70])
             upper_red1 = np.array([10, 255, 255])
             lower_red2 = np.array([170, 120, 70])
             upper_red2 = np.array([180, 255, 255])
-            
-            lower_green = np.array([35, 100, 50]) # Hue untuk hijau lebih sempit
-            upper_green = np.array([85, 255, 255])
-
-            # 4. Buat mask untuk setiap warna
+            lower_green = np.array([30, 80, 40])
+            upper_green = np.array([90, 255, 255])
             mask_red1 = cv2.inRange(hsv_roi, lower_red1, upper_red1)
             mask_red2 = cv2.inRange(hsv_roi, lower_red2, upper_red2)
             mask_red = cv2.bitwise_or(mask_red1, mask_red2)
-            
             mask_green = cv2.inRange(hsv_roi, lower_green, upper_green)
-
-            # 5. Hitung jumlah piksel non-nol untuk setiap warna
             red_pixel_count = cv2.countNonZero(mask_red)
             green_pixel_count = cv2.countNonZero(mask_green)
-
-            # 6. Tentukan klasifikasi berdasarkan warna dominan
-            # Jika piksel hijau jauh lebih dominan, koreksi menjadi 'green_buoy'
-            if green_pixel_count > red_pixel_count * 1.5: # Tambahkan margin 1.5x
-                # print(f"[Color Validation] Koreksi: {detection['class']} -> green_buoy")
+            if green_pixel_count > red_pixel_count * 1.5:
                 return "green_buoy"
-            # Sebaliknya, jika piksel merah lebih dominan, koreksi (atau pertahankan) menjadi 'red_buoy'
             elif red_pixel_count > green_pixel_count * 1.5:
-                # print(f"[Color Validation] Koreksi: {detection['class']} -> red_buoy")
                 return "red_buoy"
-                
-            # Jika tidak ada warna yang dominan, percaya pada model
             return detection["class"]
-
         except Exception as e:
-            # Jika terjadi error (misal, bounding box kosong), percaya pada model
-            # print(f"[Color Validation] Error: {e}")
             return detection["class"]
 
     def run_capture_loops(self):
@@ -169,97 +137,69 @@ class VisionService:
             current_state = self.asv_handler.current_state.copy()
         
         detections, annotated_frame = self.inference_engine.infer(frame)
-
         buoy_classes = ["red_buoy", "green_buoy"]
-        # Buat list baru untuk menyimpan deteksi yang sudah divalidasi
         validated_detections = []
         
         for det in detections:
-            # Validasi ulang klasifikasi warna untuk buoy
             if det["class"] in buoy_classes:
                 original_class = det["class"]
-                # Panggil fungsi validasi baru kita, menggunakan frame asli (non-annotated)
                 validated_class = self._validate_buoy_color(frame, det)
                 if original_class != validated_class:
-                    print(f"🎨 [Color Correction] YOLO class '{original_class}' dikoreksi menjadi '{validated_class}'")
+                    #print(f"🎨 [Color Correction] YOLO class '{original_class}' dikoreksi menjadi '{validated_class}'")
+                    pass
                 det["class"] = validated_class
-
-            # Hitung jarak setelah kelasnya divalidasi
             if det["class"] in buoy_classes:
                 pixel_width = det["xyxy"][2] - det["xyxy"][0]
                 det["distance_cm"] = self._estimate_distance(pixel_width, det["class"])
-            
             validated_detections.append(det)
-
-        # Ganti 'detections' lama dengan yang sudah divalidasi
         detections = validated_detections
-
         if is_mode_auto:
-            potential_pois = [d for d in detections if d["class"] not in self.KNOWN_CLASSES and d["confidence"] > self.poi_confidence_threshold]
-            if potential_pois and not self.investigation_in_progress:
-                best_poi = max(potential_pois, key=lambda p: p["confidence"])
-                self.validate_and_trigger_investigation(best_poi, frame, current_state)
-            else:
-                self.recent_detections.clear()
-
-            #detected_green_boxes = [d for d in detections if "green_box" in d["class"]]
-            #detected_blue_boxes = [d for d in detections if "blue_box" in d["class"]]
-            #if detected_green_boxes or detected_blue_boxes:
-            #    self.handle_photography_mission(frame, detected_green_boxes, detected_blue_boxes, current_state)
-            
-            # Sekarang handle_autonomous_navigation akan menerima deteksi yang sudah dikoreksi warnanya
             self.handle_autonomous_navigation(detections, frame.shape[1], current_state)
-
-        # Anotasi ulang frame dengan data yang sudah divalidasi
         final_frame = self.inference_engine._annotate_frame(frame.copy(), detections)
         final_frame = self._draw_distance_info(final_frame, detections)
         return final_frame
 
-    # --- FUNGSI LOGIKA NAVIGASI (MODIFIKASI) ---
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
         red_buoys = [d for d in detections if d["class"] == "red_buoy"]
         green_buoys = [d for d in detections if d["class"] == "green_buoy"]
 
         # === PRIORITAS 1: LOGIKA GERBANG ===
-        # Cek jika KEDUA bola terdeteksi untuk membentuk sebuah gerbang.
         if red_buoys and green_buoys:
             red, green = red_buoys[0], green_buoys[0]
-            
-            # Hitung lebar gerbang dalam piksel untuk estimasi jarak.
             gate_pixel_width = max(red["xyxy"][2], green["xyxy"][2]) - min(red["xyxy"][0], green["xyxy"][0])
             gate_distance = self._estimate_distance(gate_pixel_width, "buoy_gate")
 
-            # Jika gerbang cukup dekat, aktifkan mode melewati gerbang.
             if gate_distance is not None and gate_distance < self.gate_activation_distance:
-                self.last_buoy_seen_time = time.time() # Perbarui timer untuk mencegah recovery prematur.
-                
-                # Tentukan titik tengah gerbang, yang menjadi target navigasi.
+                self.last_buoy_seen_time = time.time()
                 gate_center_x = (red["center"][0] + green["center"][0]) / 2.0
                 
-                # Kirim perintah spesifik untuk melewati gerbang ke asv_handler.
-                # Payload ini memberikan semua informasi yang dibutuhkan untuk manuver presisi.
+                # --- MODIFIKASI KRUSIAL DI SINI ---
+                # Mengirim data posisi x dari setiap bola secara individual.
+                # Informasi ini PENTING bagi asv_handler untuk "mengingat"
+                # konfigurasi gerbang (merah di kiri atau kanan).
                 self.asv_handler.process_command(
                     "GATE_TRAVERSAL_COMMAND", {
                         "active": True,
                         "gate_center_x": gate_center_x,
+                        "red_buoy_x": red["center"][0],   # Data tambahan
+                        "green_buoy_x": green["center"][0], # Data tambahan
                         "frame_width": frame_width
                     }
                 )
-                # Setelah perintah gerbang dikirim, hentikan pemrosesan lebih lanjut di frame ini.
-                # Ini adalah implementasi dari "utamakan gerbang".
+                # --- AKHIR MODIFIKASI ---
                 return
 
         # === PRIORITAS 2: LOGIKA PENGHINDARAN RINTANGAN TUNGGAL ===
-        # Blok ini hanya akan dieksekusi JIKA logika gerbang di atas tidak terpenuhi.
         all_buoys = red_buoys + green_buoys
         if all_buoys:
             closest_buoy = min(all_buoys, key=lambda b: b.get('distance_cm', float('inf')))
             distance_to_closest = closest_buoy.get('distance_cm', float('inf'))
             
             if distance_to_closest < self.obstacle_activation_distance:
-                self.last_buoy_seen_time = time.time() # Perbarui timer.
+                self.last_buoy_seen_time = time.time()
                 
-                # Kirim perintah penghindaran rintangan generik ke asv_handler.
+                # Perintah ini sekarang akan memicu logika Prioritas 2 atau 3 di asv_handler
+                # tergantung pada ada atau tidaknya konteks gerbang.
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE", {
                         "active": True,
@@ -271,14 +211,12 @@ class VisionService:
                 return
 
         # === KONDISI DEFAULT: TIDAK ADA RINTANGAN ===
-        # Jika tidak ada rintangan yang aktif dalam jangkauan selama periode cooldown,
-        # nonaktifkan semua mode AI agar ASV bisa kembali ke navigasi waypoint.
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
-            # Pastikan perintah gerbang juga dinonaktifkan untuk kebersihan state.
             self.asv_handler.process_command("GATE_TRAVERSAL_COMMAND", {"active": False})
     
     def handle_photography_mission(self, original_frame, green_boxes, blue_boxes, current_state):
+        # (Fungsi ini tidak perlu diubah)
         mission_name = "Surface Imaging" if green_boxes else "Underwater Imaging"
         overlay = create_overlay_from_html(current_state, mission_type=mission_name)
         snapshot = apply_overlay(original_frame.copy(), overlay)
@@ -290,6 +228,7 @@ class VisionService:
             self.socketio.start_background_task(upload_image_to_supabase, buffer, filename, self.config)
 
     def validate_and_trigger_investigation(self, poi_data, frame, current_state):
+        # (Fungsi ini tidak perlu diubah)
         self.recent_detections.append(poi_data["class"])
         if len(self.recent_detections) < self.poi_validation_frames: return
         if all(cls == self.recent_detections[0] for cls in self.recent_detections):

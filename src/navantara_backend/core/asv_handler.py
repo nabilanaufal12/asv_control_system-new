@@ -1,5 +1,5 @@
 # src/navantara_backend/core/asv_handler.py
-# --- VERSI FINAL DENGAN LOGIKA GATE TRAVERSAL DAN HIERARKI KONTROL ---
+# --- VERSI FINAL DENGAN HIRARKI KONTROL KONTEKSTUAL & STATEFUL ---
 import threading
 import time
 import math
@@ -40,13 +40,14 @@ class AsvHandler:
         self.avoidance_direction = None # 'left' atau 'right'
         self.is_avoiding = False
 
-        # --- FIX IS HERE: Re-initializing gate_context ---
-        # This dictionary holds the memory of the gate approach maneuver.
+        # --- MANAJEMEN STATE BARU UNTUK KONTEKS GERBANG ---
+        # Kamus ini berfungsi sebagai "memori" ASV.
+        # 'last_gate_config' akan menyimpan konfigurasi gerbang terakhir yang terlihat.
+        # Nilai yang mungkin: None, 'red_left_green_right', 'green_left_red_right'
         self.gate_context = {
-            "is_gate_approaching": False,
-            "red_buoy_is_left": True,
+            "last_gate_config": None,
         }
-        # --- END OF FIX ---
+        # --- AKHIR MANAJEMEN STATE BARU ---
 
         # Variabel untuk manuver transisi (recovery)
         self.recovering_from_avoidance = False
@@ -83,29 +84,34 @@ class AsvHandler:
                 if rc_mode_switch < 1500:
                     state_copy["status"] = "RC MANUAL OVERRIDE"
                     state_copy["control_mode"] = "MANUAL"
-                elif self.gate_target["active"]: # Prioritas status tertinggi
-                    state_copy["status"] = "AI GATE TRAVERSAL"
+                elif self.gate_target["active"]:
+                    state_copy["status"] = "AI: GATE TRAVERSAL"
+                elif self.vision_target["active"] and self.gate_context["last_gate_config"]:
+                    state_copy["status"] = f"AI: CONTEXTUAL AVOIDANCE ({self.gate_context['last_gate_config']})"
                 elif self.vision_target["active"]:
-                    state_copy["status"] = "AI OBSTACLE AVOIDANCE"
+                    state_copy["status"] = "AI: SIMPLE AVOIDANCE"
                 elif self.recovering_from_avoidance:
-                    state_copy["status"] = "STRAIGHTENING COURSE"
+                    state_copy["status"] = "RECOVERING: STRAIGHTENING COURSE"
                 elif state_copy["control_mode"] == "AUTO":
                     wp_idx = state_copy.get("current_waypoint_index", 0)
                     total_wps = len(state_copy.get("waypoints", []))
                     if total_wps > 0 and wp_idx < total_wps:
                         state_copy["status"] = f"WAYPOINT NAVIGATION ({wp_idx + 1}/{total_wps})"
                     else:
-                        state_copy["status"] = "AUTO IDLE (Waiting for mission)"
+                        state_copy["status"] = "AUTO IDLE"
                 else:
                     state_copy["status"] = "MANUAL (GUI CONTROL)"
             self.socketio.emit("telemetry_update", state_copy)
 
-    # ... (_read_from_serial_loop dan _parse_telemetry tidak berubah)
     def _read_from_serial_loop(self):
         while self.running:
             line = self.serial_handler.read_line()
-            if line and line.startswith("T:"):
-                self._parse_telemetry(line)
+            if line: # Cek apakah ada baris yang masuk
+                if line.startswith("T:"):
+                    self._parse_telemetry(line)
+                else:
+                    # TAMBAHKAN INI: Cetak semua baris lain yang diterima dari firmware
+                    print(f"[Firmware RAW]: {line}") 
             else:
                 self.socketio.sleep(0.05)
     
@@ -132,7 +138,6 @@ class AsvHandler:
         self.socketio.start_background_task(self._read_from_serial_loop)
         print("[AsvHandler] Loop pembaca serial dimulai.")
         while self.running:
-            # --- Bagian EKF Update (tidak berubah) ---
             current_time = time.time()
             dt = current_time - self.last_ekf_update_time
             if dt > 0:
@@ -154,7 +159,6 @@ class AsvHandler:
             command_to_send = None
 
             if rc_mode_switch < 1500:
-                # --- Mode RC Override (tidak berubah) ---
                 rc_servo_raw = state_for_logic["rc_channels"][0]
                 rc_motor_raw = state_for_logic["rc_channels"][2]
                 actuator_config = self.config.get("actuators", {})
@@ -164,9 +168,7 @@ class AsvHandler:
                 pwm_cmd = rc_motor_raw
                 command_to_send = f"S{int(pwm_cmd)};D{int(servo_cmd)}\n"
             else:
-                # --- HIERARKI KEPUTUSAN MODE AUTO ---
-                # --- HIRARKI KEPUTUSAN MODE AUTO ---
-                
+                # --- IMPLEMENTASI HIRARKI KEPUTUSAN MODE AUTO ---
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
                 servo_min = actuator_config.get("servo_min_angle", 45)
@@ -174,7 +176,6 @@ class AsvHandler:
                 motor_base = actuator_config.get("motor_pwm_auto_base", 1650)
 
                 # === PRIORITAS 1: MELEWATI GERBANG (GATE TRAVERSAL) ===
-                # Ini adalah prioritas tertinggi. Jika aktif, logika lain diabaikan.
                 if self.gate_target.get("active", False):
                     self.recovering_from_avoidance = False
                     self.is_avoiding = False
@@ -182,79 +183,97 @@ class AsvHandler:
 
                     frame_width = self.gate_target.get("frame_width", 640)
                     gate_center_x = self.gate_target.get("gate_center_x")
+                    red_buoy_x = self.gate_target.get("red_buoy_x")
+                    green_buoy_x = self.gate_target.get("green_buoy_x")
+
+                    # KRITIS: Merekam konfigurasi gerbang untuk "memori"
+                    if red_buoy_x is not None and green_buoy_x is not None:
+                        if red_buoy_x < green_buoy_x:
+                            self.gate_context['last_gate_config'] = 'red_left_green_right'
+                        else:
+                            self.gate_context['last_gate_config'] = 'green_left_red_right'
+                        print(f"[AsvHandler] GATE DETECTED & RECORDED: {self.gate_context['last_gate_config']}")
 
                     if gate_center_x is not None:
-                        # Logika untuk mengarahkan kapal ke tengah gerbang
                         pixel_error = gate_center_x - (frame_width / 2)
-                        max_correction_angle = 35.0 # Koreksi lebih halus untuk gerbang
-                        correction = map_value(pixel_error, -frame_width/2, frame_width/2, -max_correction_angle, max_correction_angle)
-                        
+                        correction = map_value(pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0)
                         servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction)))
-                        # Kurangi kecepatan saat melewati gerbang untuk presisi
-                        pwm_cmd = motor_base - 75 
-                        
-                        print(f"GATE MODE | TargetX:{frame_width/2:.0f}, GateX:{gate_center_x:.0f}, Err:{pixel_error:.0f}px -> SERVO:{servo_cmd}, PWM:{pwm_cmd}")
+                        pwm_cmd = motor_base - 75 # Kurangi kecepatan untuk presisi
                         command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
 
-                # === PRIORITAS 2: PENGHINDARAN RINTANGAN TUNGGAL ===
-                # Blok ini HANYA akan berjalan jika Prioritas 1 (Gate) TIDAK aktif.
-                elif self.vision_target.get("active", False):
+                # === PRIORITAS 2: PENGHINDARAN TUNGGAL BERKONTEKS ===
+                elif self.vision_target.get("active", False) and self.gate_context['last_gate_config']:
                     self.recovering_from_avoidance = False
                     self.is_avoiding = True
 
-                    # (Logika penghindaran rintangan tunggal dari perbaikan sebelumnya tetap di sini)
-                    # ... (salin-tempel seluruh blok logika Prioritas 2 dari jawaban saya sebelumnya, tidak ada yang berubah di dalamnya)
+                    frame_width = self.vision_target.get("frame_width", 640)
+                    obj_center_x = self.vision_target.get("object_center_x")
+                    obj_class = self.vision_target.get("obstacle_class")
+                    last_config = self.gate_context['last_gate_config']
+                    
+                    target_side = None  # Sisi mana objek seharusnya berada ('left' atau 'right')
+                    
+                    # Logika untuk menentukan sisi target berdasarkan memori
+                    if last_config == 'red_left_green_right':
+                        if obj_class == 'red_buoy': target_side = 'left'
+                        elif obj_class == 'green_buoy': target_side = 'right'
+                    elif last_config == 'green_left_red_right':
+                        if obj_class == 'green_buoy': target_side = 'left'
+                        elif obj_class == 'red_buoy': target_side = 'right'
+                    
+                    if target_side:
+                        print(f"[AsvHandler] CONTEXTUAL AVOIDANCE: Keeping '{obj_class}' on my '{target_side}' based on memory '{last_config}'")
+                        target_x = frame_width * 0.2 if target_side == 'left' else frame_width * 0.8
+                        pixel_error = obj_center_x - target_x
+                        correction_deg = (pixel_error / (frame_width / 2)) * 45.0
+                        servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
+                        pwm_cmd = int(max(1550, motor_base - abs(correction_deg) * 2))
+                        command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
+                    else:
+                        # Fallback jika kelas objek tidak cocok dengan konteks, reset memori
+                        print(f"[AsvHandler] WARNING: Object '{obj_class}' contradicts memory '{last_config}'. Resetting context and falling back.")
+                        self.gate_context['last_gate_config'] = None
+                        # Biarkan loop berikutnya menangani ini sebagai Prioritas 3
+
+                # === PRIORITAS 3: PENGHINDARAN TUNGGAL SEDERHANA (TANPA KONTEKS) ===
+                elif self.vision_target.get("active", False):
+                    self.recovering_from_avoidance = False
+                    self.is_avoiding = True
+                    print("[AsvHandler] SIMPLE AVOIDANCE: No gate context available.")
+                    
                     frame_width = self.vision_target.get("frame_width", 640)
                     object_center_x = self.vision_target.get("object_center_x", frame_width / 2)
-                    if self.avoidance_direction is not None:
-                        if self.avoidance_direction == 'left' and object_center_x < (frame_width / 2):
-                            print("SCENARIO CHANGE: Obstacle crossed to the LEFT. Re-evaluating.")
-                            self.avoidance_direction = None
-                        elif self.avoidance_direction == 'right' and object_center_x > (frame_width / 2):
-                            print("SCENARIO CHANGE: Obstacle crossed to the RIGHT. Re-evaluating.")
-                            self.avoidance_direction = None
+                    
                     if self.avoidance_direction is None:
-                        if object_center_x < frame_width / 2:
-                            self.avoidance_direction = 'right'
-                            print("DECISION: Obstacle on LEFT. Evading to the RIGHT.")
-                        else:
-                            self.avoidance_direction = 'left'
-                            print("DECISION: Obstacle on RIGHT. Evading to the LEFT.")
-                    target_x = 0
-                    if self.avoidance_direction == 'left':
-                        target_x = frame_width * 0.8
-                    else:
-                        target_x = frame_width * 0.2
+                        if object_center_x < frame_width / 2: self.avoidance_direction = 'right'
+                        else: self.avoidance_direction = 'left'
+                        print(f"  > DECISION: Obstacle on {'LEFT' if self.avoidance_direction == 'right' else 'RIGHT'}. Evading to the {self.avoidance_direction.upper()}.")
+
+                    target_x = frame_width * 0.8 if self.avoidance_direction == 'right' else frame_width * 0.2
                     pixel_error = object_center_x - target_x
-                    max_correction_angle = 45.0
-                    correction_deg = (pixel_error / (frame_width / 2)) * max_correction_angle
+                    correction_deg = (pixel_error / (frame_width / 2)) * 45.0
                     servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
-                    reduction = abs(correction_deg) * 3
-                    pwm_cmd = int(max(1550, motor_base - reduction))
-                    print(f"AVOID ({self.avoidance_direction}) | TargetX:{target_x:.0f}, ObjX:{object_center_x:.0f}, Err:{pixel_error:.0f}px -> SERVO:{servo_cmd}, PWM:{pwm_cmd}")
+                    pwm_cmd = int(max(1550, motor_base - abs(correction_deg) * 3))
                     command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
 
-
-                # === PRIORITAS 3: FASE RECOVERY/PELURUSAN ===
+                # === FASE RECOVERY/PELURUSAN SETELAH MENGHINDAR ===
                 elif self.recovering_from_avoidance:
                     self.is_avoiding = False
                     self.avoidance_direction = None
-                    print("DECISION: Straightening course...")
-                    command_to_send = "A,90,1600\n" 
-                    if time.time() - self.last_avoidance_time > 1.5: 
+                    print("[AsvHandler] DECISION: Straightening course post-avoidance...")
+                    command_to_send = f"A,{servo_default},1600\n" # Lurus dengan kecepatan sedang
+                    if time.time() - self.last_avoidance_time > 1.5: # Waktu recovery
                         self.recovering_from_avoidance = False
-                        print("DECISION: Straightening complete. Resuming mission.")
+                        print("  > DECISION: Straightening complete. Resuming mission.")
 
                 # === KONDISI DEFAULT: NAVIGASI WAYPOINT ===
                 elif state_for_logic.get("control_mode") == "AUTO":
                     self.last_pixel_error = 0
                     command_to_send = "W\n"
             
-            # --- Pengiriman Perintah Serial ---
             if command_to_send:
                 self.serial_handler.send_command(command_to_send)
 
-            # --- Logging dan Update GUI ---
             self.logger.log_telemetry(state_for_logic)
             self._update_and_emit_state()
             self.socketio.sleep(0.1)
@@ -265,58 +284,47 @@ class AsvHandler:
             "MANUAL_CONTROL": self._handle_manual_control, "SET_WAYPOINTS": self._handle_set_waypoints,
             "NAV_START": self._handle_start_mission, "NAV_RETURN": self._handle_initiate_rth,
             "UPDATE_PID": self._handle_update_pid,
-            "VISION_TARGET_UPDATE": self._handle_vision_target_update, # Nama fungsi diperjelas
-            "GATE_TRAVERSAL_COMMAND": self._handle_gate_traversal_command # Handler baru
+            "VISION_TARGET_UPDATE": self._handle_vision_target_update,
+            "GATE_TRAVERSAL_COMMAND": self._handle_gate_traversal_command
         }
         handler = command_handlers.get(command)
         if handler: handler(payload)
         else: print(f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'")
 
     def _handle_gate_traversal_command(self, payload):
-        """Handler untuk perintah melewati gerbang dari vision_service."""
         with self.state_lock:
             was_active = self.gate_target.get("active", False)
             is_active = payload.get("active", False)
             
-            # Deteksi transisi dari aktif ke tidak aktif untuk memulai fase recovery.
             if was_active and not is_active:
-                print("Gate traversal complete. Initiating recovery...")
+                print("[AsvHandler] Gate traversal complete. Initiating recovery...")
                 self.recovering_from_avoidance = True
                 self.last_avoidance_time = time.time()
 
             self.gate_target["active"] = is_active
             if is_active:
                 self.gate_target.update(payload)
-                # Pastikan mode penghindaran rintangan tunggal dinonaktifkan
-                # untuk mencegah konflik.
-                self.vision_target["active"] = False
+                self.vision_target["active"] = False # Pastikan mode lain nonaktif
 
-    def _handle_vision_target_update(self, payload): # Nama fungsi diperjelas
-        """Handler untuk perintah penghindaran rintangan tunggal."""
+    def _handle_vision_target_update(self, payload):
         with self.state_lock:
-            # Jangan aktifkan mode ini jika mode gerbang sedang aktif.
             if self.gate_target.get("active", False):
-                return
+                return # Abaikan jika sedang dalam mode gerbang
             
             was_active = self.vision_target.get("active", False)
             is_active = payload.get("active", False)
             
-            # --- PERUBAHAN UTAMA DI SINI ---
-            # Jika rintangan BARU SAJA HILANG (transisi dari aktif ke non-aktif)
             if was_active and not is_active:
-                print("Obstacle cleared. Initiating recovery...")
+                print("[AsvHandler] Obstacle cleared. Initiating recovery...")
                 self.recovering_from_avoidance = True
                 self.last_avoidance_time = time.time()
-                # Reset state penghindaran agar manuver berikutnya bisa menentukan arah baru
                 self.is_avoiding = False
                 self.avoidance_direction = None
-            # --- AKHIR PERUBAHAN ---
 
             self.vision_target["active"] = is_active
             if is_active:
                 self.vision_target.update(payload)
 
-    # ... (sisa fungsi handler tidak berubah)
     def _handle_manual_control(self, payload):
         with self.state_lock:
             if self.current_state.get("rc_channels", [1500]*6)[4] < 1500: return
