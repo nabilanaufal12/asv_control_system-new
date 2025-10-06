@@ -74,7 +74,8 @@
     "known_classes": ["red_buoy", "green_buoy", "green_box", "blue_box"],
     "poi_confidence_threshold": 0.65,
     "poi_validation_frames": 5,
-    "obstacle_activation_distance_cm": 120.0
+    "obstacle_activation_distance_cm": 120.0,
+    "gate_activation_distance_cm": 300.0
   },
   "api_urls": {
     "firebase_url": "https://asv-2025-default-rtdb.asia-southeast1.firebasedatabase.app/monitor.json",

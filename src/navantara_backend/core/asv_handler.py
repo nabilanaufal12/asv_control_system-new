@@ -106,13 +106,10 @@ class AsvHandler:
     def _read_from_serial_loop(self):
         while self.running:
             line = self.serial_handler.read_line()
-            if line: # Cek apakah ada baris yang masuk
-                if line.startswith("T:"):
-                    self._parse_telemetry(line)
-                else:
-                    # TAMBAHKAN INI: Cetak semua baris lain yang diterima dari firmware
-                    print(f"[Firmware RAW]: {line}") 
+            if line and line.startswith("T:"):
+                self._parse_telemetry(line)
             else:
+                # Pesan lain diabaikan, hanya menunggu
                 self.socketio.sleep(0.05)
     
     def _parse_telemetry(self, line):
@@ -192,13 +189,18 @@ class AsvHandler:
                             self.gate_context['last_gate_config'] = 'red_left_green_right'
                         else:
                             self.gate_context['last_gate_config'] = 'green_left_red_right'
-                        print(f"[AsvHandler] GATE DETECTED & RECORDED: {self.gate_context['last_gate_config']}")
+                        # Hapus log ini jika terlalu ramai
+                        # print(f"[AsvHandler] GATE DETECTED & RECORDED: {self.gate_context['last_gate_config']}")
 
                     if gate_center_x is not None:
                         pixel_error = gate_center_x - (frame_width / 2)
                         correction = map_value(pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0)
                         servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction)))
                         pwm_cmd = motor_base - 75 # Kurangi kecepatan untuk presisi
+                        
+                        # --- PESAN DEBUG BARU ---
+                        print(f"[AsvHandler] AI CONTROL -> Servo: {servo_cmd} deg, Motor: {pwm_cmd} us")
+                        
                         command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
 
                 # === PRIORITAS 2: PENGHINDARAN TUNGGAL BERKONTEKS ===
@@ -211,9 +213,8 @@ class AsvHandler:
                     obj_class = self.vision_target.get("obstacle_class")
                     last_config = self.gate_context['last_gate_config']
                     
-                    target_side = None  # Sisi mana objek seharusnya berada ('left' atau 'right')
+                    target_side = None
                     
-                    # Logika untuk menentukan sisi target berdasarkan memori
                     if last_config == 'red_left_green_right':
                         if obj_class == 'red_buoy': target_side = 'left'
                         elif obj_class == 'green_buoy': target_side = 'right'
@@ -222,24 +223,23 @@ class AsvHandler:
                         elif obj_class == 'red_buoy': target_side = 'right'
                     
                     if target_side:
-                        print(f"[AsvHandler] CONTEXTUAL AVOIDANCE: Keeping '{obj_class}' on my '{target_side}' based on memory '{last_config}'")
                         target_x = frame_width * 0.2 if target_side == 'left' else frame_width * 0.8
                         pixel_error = obj_center_x - target_x
                         correction_deg = (pixel_error / (frame_width / 2)) * 45.0
                         servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
                         pwm_cmd = int(max(1550, motor_base - abs(correction_deg) * 2))
+
+                        # --- PESAN DEBUG BARU ---
+                        print(f"[AsvHandler] AI CONTROL -> Servo: {servo_cmd} deg, Motor: {pwm_cmd} us")
+
                         command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
                     else:
-                        # Fallback jika kelas objek tidak cocok dengan konteks, reset memori
-                        print(f"[AsvHandler] WARNING: Object '{obj_class}' contradicts memory '{last_config}'. Resetting context and falling back.")
                         self.gate_context['last_gate_config'] = None
-                        # Biarkan loop berikutnya menangani ini sebagai Prioritas 3
 
                 # === PRIORITAS 3: PENGHINDARAN TUNGGAL SEDERHANA (TANPA KONTEKS) ===
                 elif self.vision_target.get("active", False):
                     self.recovering_from_avoidance = False
                     self.is_avoiding = True
-                    print("[AsvHandler] SIMPLE AVOIDANCE: No gate context available.")
                     
                     frame_width = self.vision_target.get("frame_width", 640)
                     object_center_x = self.vision_target.get("object_center_x", frame_width / 2)
@@ -247,24 +247,30 @@ class AsvHandler:
                     if self.avoidance_direction is None:
                         if object_center_x < frame_width / 2: self.avoidance_direction = 'right'
                         else: self.avoidance_direction = 'left'
-                        print(f"  > DECISION: Obstacle on {'LEFT' if self.avoidance_direction == 'right' else 'RIGHT'}. Evading to the {self.avoidance_direction.upper()}.")
 
                     target_x = frame_width * 0.8 if self.avoidance_direction == 'right' else frame_width * 0.2
                     pixel_error = object_center_x - target_x
                     correction_deg = (pixel_error / (frame_width / 2)) * 45.0
                     servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
                     pwm_cmd = int(max(1550, motor_base - abs(correction_deg) * 3))
+
+                    # --- PESAN DEBUG BARU ---
+                    print(f"[AsvHandler] AI CONTROL -> Servo: {servo_cmd} deg, Motor: {pwm_cmd} us")
+
                     command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
 
                 # === FASE RECOVERY/PELURUSAN SETELAH MENGHINDAR ===
                 elif self.recovering_from_avoidance:
                     self.is_avoiding = False
                     self.avoidance_direction = None
-                    print("[AsvHandler] DECISION: Straightening course post-avoidance...")
-                    command_to_send = f"A,{servo_default},1600\n" # Lurus dengan kecepatan sedang
-                    if time.time() - self.last_avoidance_time > 1.5: # Waktu recovery
+                    servo_cmd, pwm_cmd = servo_default, 1600
+                    
+                    # --- PESAN DEBUG BARU ---
+                    print(f"[AsvHandler] AI CONTROL -> Servo: {servo_cmd} deg, Motor: {pwm_cmd} us (Recovery)")
+                    
+                    command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
+                    if time.time() - self.last_avoidance_time > 1.5:
                         self.recovering_from_avoidance = False
-                        print("  > DECISION: Straightening complete. Resuming mission.")
 
                 # === KONDISI DEFAULT: NAVIGASI WAYPOINT ===
                 elif state_for_logic.get("control_mode") == "AUTO":
