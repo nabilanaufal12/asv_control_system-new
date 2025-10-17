@@ -51,6 +51,7 @@ class VisionService:
         self.investigation_in_progress = False
         self.last_buoy_seen_time = 0
         self.obstacle_cooldown_period = 2.0
+        self.show_local_feed = vision_cfg.get("show_local_video_feed", False)
 
         cam_detect_cfg = self.config.get("camera_detection", {})
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
@@ -134,6 +135,8 @@ class VisionService:
 
     def stop(self):
         self.running = False
+        if self.show_local_feed:
+            cv2.destroyAllWindows()
 
     def _capture_loop(self, cam_index, event_name, apply_detection):
         cap = None
@@ -190,6 +193,10 @@ class VisionService:
             self.handle_autonomous_navigation(detections, frame.shape[1], current_state)
         final_frame = self.inference_engine._annotate_frame(frame.copy(), detections)
         final_frame = self._draw_distance_info(final_frame, detections)
+        if self.show_local_feed:
+            cv2.imshow('Local ASV Feed (Tekan "q" untuk keluar)', final_frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                self.stop()
         return final_frame
 
     def handle_autonomous_navigation(self, detections, frame_width, current_state):

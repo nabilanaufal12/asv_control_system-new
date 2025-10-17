@@ -344,7 +344,7 @@ class AsvHandler:
                     )
 
                     command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                    if time.time() - self.last_avoidance_time > 1.5:
+                    if time.time() - self.last_avoidance_time > 0.5:
                         self.recovering_from_avoidance = False
 
                 # === KONDISI DEFAULT: NAVIGASI WAYPOINT ===
