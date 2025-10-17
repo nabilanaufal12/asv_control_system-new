@@ -13,8 +13,15 @@ except NameError:
     sys.path.insert(0, ".")
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QTabWidget, QStatusBar,
-    QScrollArea, QApplication, QSplitter
+    QMainWindow,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QTabWidget,
+    QStatusBar,
+    QScrollArea,
+    QApplication,
+    QSplitter,
 )
 from PySide6.QtCore import Slot, Qt
 
@@ -40,8 +47,8 @@ class MainWindow(QMainWindow):
 
         self.current_latitude = 0.0
         self.current_longitude = 0.0
-        self.current_control_mode = "MANUAL" 
-        self.is_rc_override = False # Lacak status override RC
+        self.current_control_mode = "MANUAL"
+        self.is_rc_override = False  # Lacak status override RC
 
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
@@ -61,7 +68,7 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.connect_signals()
 
-        self.set_mode("MANUAL") # Atur mode awal saat start
+        self.set_mode("MANUAL")  # Atur mode awal saat start
 
         print("Memulai koneksi klien API ke server...")
         self.api_client.connect()
@@ -72,23 +79,34 @@ class MainWindow(QMainWindow):
     def _load_themes(self):
         try:
             gui_dir = os.path.dirname(os.path.abspath(__file__))
-            dark_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "dark_theme.qss")
-            with open(dark_theme_path, "r") as f: self.themes["dark"] = f.read()
-            light_theme_path = os.path.join(gui_dir, "..", "assets", "resources", "light_theme.qss")
-            with open(light_theme_path, "r") as f: self.themes["light"] = f.read()
+            dark_theme_path = os.path.join(
+                gui_dir, "..", "assets", "resources", "dark_theme.qss"
+            )
+            with open(dark_theme_path, "r") as f:
+                self.themes["dark"] = f.read()
+            light_theme_path = os.path.join(
+                gui_dir, "..", "assets", "resources", "light_theme.qss"
+            )
+            with open(light_theme_path, "r") as f:
+                self.themes["light"] = f.read()
         except Exception as e:
             print(f"Peringatan: Gagal memuat file tema. Error: {e}")
 
     def _apply_theme(self, theme_name):
         if theme_name in self.themes:
             QApplication.instance().setStyleSheet(self.themes[theme_name])
-            button_text = "Switch to Light Mode" if theme_name == "dark" else "Switch to Dark Mode"
+            button_text = (
+                "Switch to Light Mode"
+                if theme_name == "dark"
+                else "Switch to Dark Mode"
+            )
             self.header.theme_button.setText(button_text)
             self.current_theme = theme_name
 
     @Slot()
     def toggle_theme(self):
         self._apply_theme("light" if self.current_theme == "dark" else "dark")
+
     def setup_ui(self):
         # (Fungsi ini tidak berubah)
         layout_sidebar_kiri = QVBoxLayout()
@@ -139,9 +157,11 @@ class MainWindow(QMainWindow):
     def connect_signals(self):
         """Menghubungkan semua sinyal dan slot antar komponen."""
         self.header.theme_changed_requested.connect(self.toggle_theme)
-        
+
         # --- PERUBAHAN UTAMA: Hubungkan sinyal dari ControlPanel ke fungsi logika ---
-        self.control_panel.manual_button_clicked.connect(lambda: self.set_mode("MANUAL"))
+        self.control_panel.manual_button_clicked.connect(
+            lambda: self.set_mode("MANUAL")
+        )
         self.control_panel.auto_button_clicked.connect(lambda: self.set_mode("AUTO"))
 
         self.settings_panel.connect_requested.connect(
@@ -151,9 +171,13 @@ class MainWindow(QMainWindow):
             lambda wps: self.api_client.send_command("SET_WAYPOINTS", wps)
         )
         self.waypoints_panel.add_current_pos_requested.connect(self.on_add_current_pos)
-        self.api_client.connection_status_changed.connect(self.on_connection_status_change)
+        self.api_client.connection_status_changed.connect(
+            self.on_connection_status_change
+        )
         self.api_client.data_updated.connect(self.on_data_updated)
-        self.waypoints_panel.load_mission_requested.connect(self.load_predefined_mission)
+        self.waypoints_panel.load_mission_requested.connect(
+            self.load_predefined_mission
+        )
         self.api_client.frame_cam1_updated.connect(self.video_view.update_frame_1)
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
         self.waypoints_panel.waypoints_updated.connect(self.map_view.update_waypoints)
@@ -164,8 +188,8 @@ class MainWindow(QMainWindow):
         self.current_control_mode = mode
         self.api_client.send_command("CHANGE_MODE", {"mode": mode})
 
-        is_manual = (mode == "MANUAL")
-        
+        is_manual = mode == "MANUAL"
+
         # Perbarui tampilan tombol
         self.control_panel.manual_mode_btn.setChecked(is_manual)
         self.control_panel.auto_mode_btn.setChecked(not is_manual)
@@ -173,20 +197,26 @@ class MainWindow(QMainWindow):
         # Kelola status aktif/nonaktif tombol, dengan mempertimbangkan override RC
         self.update_button_states()
 
-        self.setFocus() # Rebut kembali fokus keyboard
+        self.setFocus()  # Rebut kembali fokus keyboard
 
     def update_button_states(self):
         """Memperbarui status enabled/disabled semua tombol berdasarkan mode dan override RC."""
-        is_manual = (self.current_control_mode == "MANUAL")
+        is_manual = self.current_control_mode == "MANUAL"
 
         # Tombol mode hanya bisa diubah jika RC tidak override
         self.control_panel.manual_mode_btn.setEnabled(not self.is_rc_override)
         self.control_panel.auto_mode_btn.setEnabled(not self.is_rc_override)
 
         # Tombol navigasi aktif jika mode AUTO dan RC tidak override
-        self.control_panel.start_mission_btn.setEnabled(not is_manual and not self.is_rc_override)
-        self.control_panel.pause_mission_btn.setEnabled(not is_manual and not self.is_rc_override)
-        self.control_panel.return_home_btn.setEnabled(not is_manual and not self.is_rc_override)
+        self.control_panel.start_mission_btn.setEnabled(
+            not is_manual and not self.is_rc_override
+        )
+        self.control_panel.pause_mission_btn.setEnabled(
+            not is_manual and not self.is_rc_override
+        )
+        self.control_panel.return_home_btn.setEnabled(
+            not is_manual and not self.is_rc_override
+        )
 
         # Tombol WASD aktif jika mode MANUAL dan RC tidak override
         for button in self.control_panel.key_buttons.values():
@@ -196,22 +226,24 @@ class MainWindow(QMainWindow):
     def on_data_updated(self, data):
         self.current_latitude = data.get("latitude", self.current_latitude)
         self.current_longitude = data.get("longitude", self.current_longitude)
-        
+
         status_text = data.get("status", "")
         self.is_rc_override = "RC MANUAL OVERRIDE" in status_text.upper()
-        
+
         # Perbarui semua panel
         self.system_status_panel.update_data(data)
         self.map_view.update_data(data)
         self.log_panel.update_log(data)
         self.header.update_status(data)
-        
+
         # Perbarui status tombol setiap kali data baru masuk
         self.update_button_states()
-        
+
     @Slot()
     def on_add_current_pos(self):
-        self.waypoints_panel.add_waypoint_from_pos(self.current_latitude, self.current_longitude)
+        self.waypoints_panel.add_waypoint_from_pos(
+            self.current_latitude, self.current_longitude
+        )
 
     @Slot(bool, str)
     def on_connection_status_change(self, is_connected, message):
@@ -239,8 +271,9 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event):
         if self.current_control_mode != "MANUAL" or self.is_rc_override:
             return
-            
-        if event.isAutoRepeat(): return
+
+        if event.isAutoRepeat():
+            return
         key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
         if event.key() in key_map:
             key_char = key_map[event.key()]
@@ -251,9 +284,10 @@ class MainWindow(QMainWindow):
 
     def keyReleaseEvent(self, event):
         if self.current_control_mode != "MANUAL" or self.is_rc_override:
-            return 
+            return
 
-        if event.isAutoRepeat(): return
+        if event.isAutoRepeat():
+            return
         key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
         if event.key() in key_map:
             key_char = key_map[event.key()]

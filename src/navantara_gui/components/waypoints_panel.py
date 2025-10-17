@@ -118,7 +118,9 @@ class WaypointsPanel(QGroupBox):
             self.waypoints_list.addItem(waypoint_text)
             self._emit_updated_waypoints()
         else:
-            print("[GUI] Gagal menambah waypoint: Posisi saat ini tidak valid atau belum diterima.")
+            print(
+                "[GUI] Gagal menambah waypoint: Posisi saat ini tidak valid atau belum diterima."
+            )
 
     def add_manual_waypoint(self):
         lat_text = self.lat_input.text().replace(",", ".")

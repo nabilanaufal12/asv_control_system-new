@@ -40,9 +40,13 @@ class VisionService:
         self.KNOWN_CLASSES = vision_cfg.get("known_classes", [])
         self.poi_confidence_threshold = vision_cfg.get("poi_confidence_threshold", 0.65)
         self.poi_validation_frames = vision_cfg.get("poi_validation_frames", 5)
-        self.gate_activation_distance = vision_cfg.get("gate_activation_distance_cm", 200.0)
-        self.obstacle_activation_distance = vision_cfg.get("obstacle_activation_distance_cm", 120.0)
-        
+        self.gate_activation_distance = vision_cfg.get(
+            "gate_activation_distance_cm", 200.0
+        )
+        self.obstacle_activation_distance = vision_cfg.get(
+            "obstacle_activation_distance_cm", 120.0
+        )
+
         self.recent_detections = collections.deque(maxlen=self.poi_validation_frames)
         self.investigation_in_progress = False
         self.last_buoy_seen_time = 0
@@ -64,9 +68,19 @@ class VisionService:
             if "distance_cm" in det and det["distance_cm"] is not None:
                 x1, y1, _, _ = map(int, det["xyxy"])
                 distance_text = f"{det['distance_cm']:.1f} cm"
-                cv2.putText(frame, distance_text, (x1, y1 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+                cv2.putText(
+                    frame,
+                    distance_text,
+                    (x1, y1 - 25),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (255, 255, 255),
+                    2,
+                )
         red_buoy = next((d for d in buoy_detections if d["class"] == "red_buoy"), None)
-        green_buoy = next((d for d in buoy_detections if d["class"] == "green_buoy"), None)
+        green_buoy = next(
+            (d for d in buoy_detections if d["class"] == "green_buoy"), None
+        )
         if red_buoy and green_buoy:
             pass
         return frame
@@ -76,7 +90,14 @@ class VisionService:
             return detection["class"]
         try:
             x1, y1, x2, y2 = map(int, detection["xyxy"])
-            if x1 < 0 or y1 < 0 or x2 > frame.shape[1] or y2 > frame.shape[0] or x1 >= x2 or y1 >= y2:
+            if (
+                x1 < 0
+                or y1 < 0
+                or x2 > frame.shape[1]
+                or y2 > frame.shape[0]
+                or x1 >= x2
+                or y1 >= y2
+            ):
                 return detection["class"]
             roi = frame[y1:y2, x1:x2]
             hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -101,24 +122,33 @@ class VisionService:
             return detection["class"]
 
     def run_capture_loops(self):
-        if self.inference_engine.model is None: return
+        if self.inference_engine.model is None:
+            return
         self.running = True
-        self.socketio.start_background_task(self._capture_loop, self.camera_index_1, "frame_cam1", True)
-        self.socketio.start_background_task(self._capture_loop, self.camera_index_2, "frame_cam2", False)
+        self.socketio.start_background_task(
+            self._capture_loop, self.camera_index_1, "frame_cam1", True
+        )
+        self.socketio.start_background_task(
+            self._capture_loop, self.camera_index_2, "frame_cam2", False
+        )
 
     def stop(self):
         self.running = False
-    
+
     def _capture_loop(self, cam_index, event_name, apply_detection):
         cap = None
         while self.running:
             try:
                 cap = cv2.VideoCapture(cam_index)
-                if not cap.isOpened(): self.socketio.sleep(5); continue
+                if not cap.isOpened():
+                    self.socketio.sleep(5)
+                    continue
                 while self.running:
-                    if not cap.isOpened(): break
+                    if not cap.isOpened():
+                        break
                     ret, frame = cap.read()
-                    if not ret: break
+                    if not ret:
+                        break
                     with self.settings_lock:
                         should_emit_frame = self.gui_is_listening
                     processed_frame = frame
@@ -126,26 +156,29 @@ class VisionService:
                         processed_frame = self.process_and_control(frame, True)
                     if should_emit_frame:
                         ret_encode, buffer = cv2.imencode(".jpg", processed_frame)
-                        if ret_encode: self.socketio.emit(event_name, buffer.tobytes())
+                        if ret_encode:
+                            self.socketio.emit(event_name, buffer.tobytes())
                     self.socketio.sleep(0.02)
             finally:
-                if cap and cap.isOpened(): cap.release()
-                if self.running: self.socketio.sleep(5)
+                if cap and cap.isOpened():
+                    cap.release()
+                if self.running:
+                    self.socketio.sleep(5)
 
     def process_and_control(self, frame, is_mode_auto):
         with self.asv_handler.state_lock:
             current_state = self.asv_handler.current_state.copy()
-        
+
         detections, annotated_frame = self.inference_engine.infer(frame)
         buoy_classes = ["red_buoy", "green_buoy"]
         validated_detections = []
-        
+
         for det in detections:
             if det["class"] in buoy_classes:
                 original_class = det["class"]
                 validated_class = self._validate_buoy_color(frame, det)
                 if original_class != validated_class:
-                    #print(f"🎨 [Color Correction] YOLO class '{original_class}' dikoreksi menjadi '{validated_class}'")
+                    # print(f"🎨 [Color Correction] YOLO class '{original_class}' dikoreksi menjadi '{validated_class}'")
                     pass
                 det["class"] = validated_class
             if det["class"] in buoy_classes:
@@ -166,25 +199,31 @@ class VisionService:
         # === PRIORITAS 1: LOGIKA GERBANG ===
         if red_buoys and green_buoys:
             red, green = red_buoys[0], green_buoys[0]
-            gate_pixel_width = max(red["xyxy"][2], green["xyxy"][2]) - min(red["xyxy"][0], green["xyxy"][0])
+            gate_pixel_width = max(red["xyxy"][2], green["xyxy"][2]) - min(
+                red["xyxy"][0], green["xyxy"][0]
+            )
             gate_distance = self._estimate_distance(gate_pixel_width, "buoy_gate")
 
-            if gate_distance is not None and gate_distance < self.gate_activation_distance:
+            if (
+                gate_distance is not None
+                and gate_distance < self.gate_activation_distance
+            ):
                 self.last_buoy_seen_time = time.time()
                 gate_center_x = (red["center"][0] + green["center"][0]) / 2.0
-                
+
                 # --- MODIFIKASI KRUSIAL DI SINI ---
                 # Mengirim data posisi x dari setiap bola secara individual.
                 # Informasi ini PENTING bagi asv_handler untuk "mengingat"
                 # konfigurasi gerbang (merah di kiri atau kanan).
                 self.asv_handler.process_command(
-                    "GATE_TRAVERSAL_COMMAND", {
+                    "GATE_TRAVERSAL_COMMAND",
+                    {
                         "active": True,
                         "gate_center_x": gate_center_x,
-                        "red_buoy_x": red["center"][0],   # Data tambahan
-                        "green_buoy_x": green["center"][0], # Data tambahan
-                        "frame_width": frame_width
-                    }
+                        "red_buoy_x": red["center"][0],  # Data tambahan
+                        "green_buoy_x": green["center"][0],  # Data tambahan
+                        "frame_width": frame_width,
+                    },
                 )
                 # --- AKHIR MODIFIKASI ---
                 return
@@ -192,54 +231,76 @@ class VisionService:
         # === PRIORITAS 2: LOGIKA PENGHINDARAN RINTANGAN TUNGGAL ===
         all_buoys = red_buoys + green_buoys
         if all_buoys:
-            closest_buoy = min(all_buoys, key=lambda b: b.get('distance_cm', float('inf')))
-            distance_to_closest = closest_buoy.get('distance_cm', float('inf'))
-            
+            closest_buoy = min(
+                all_buoys, key=lambda b: b.get("distance_cm", float("inf"))
+            )
+            distance_to_closest = closest_buoy.get("distance_cm", float("inf"))
+
             if distance_to_closest < self.obstacle_activation_distance:
                 self.last_buoy_seen_time = time.time()
-                
+
                 # Perintah ini sekarang akan memicu logika Prioritas 2 atau 3 di asv_handler
                 # tergantung pada ada atau tidaknya konteks gerbang.
                 self.asv_handler.process_command(
-                    "VISION_TARGET_UPDATE", {
+                    "VISION_TARGET_UPDATE",
+                    {
                         "active": True,
                         "obstacle_class": closest_buoy.get("class", "unknown"),
                         "object_center_x": closest_buoy["center"][0],
-                        "frame_width": frame_width
-                    }
+                        "frame_width": frame_width,
+                    },
                 )
                 return
 
         # === KONDISI DEFAULT: TIDAK ADA RINTANGAN ===
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
-            self.asv_handler.process_command("GATE_TRAVERSAL_COMMAND", {"active": False})
-    
-    def handle_photography_mission(self, original_frame, green_boxes, blue_boxes, current_state):
+            self.asv_handler.process_command(
+                "GATE_TRAVERSAL_COMMAND", {"active": False}
+            )
+
+    def handle_photography_mission(
+        self, original_frame, green_boxes, blue_boxes, current_state
+    ):
         # (Fungsi ini tidak perlu diubah)
         mission_name = "Surface Imaging" if green_boxes else "Underwater Imaging"
         overlay = create_overlay_from_html(current_state, mission_type=mission_name)
         snapshot = apply_overlay(original_frame.copy(), overlay)
-        filename = f"surface_{self.surface_image_count}.jpg" if green_boxes else f"underwater_{self.underwater_image_count}.jpg"
-        if green_boxes: self.surface_image_count += 1
-        else: self.underwater_image_count += 1
+        filename = (
+            f"surface_{self.surface_image_count}.jpg"
+            if green_boxes
+            else f"underwater_{self.underwater_image_count}.jpg"
+        )
+        if green_boxes:
+            self.surface_image_count += 1
+        else:
+            self.underwater_image_count += 1
         _, buffer = cv2.imencode(".jpg", snapshot)
         if buffer is not None:
-            self.socketio.start_background_task(upload_image_to_supabase, buffer, filename, self.config)
+            self.socketio.start_background_task(
+                upload_image_to_supabase, buffer, filename, self.config
+            )
 
     def validate_and_trigger_investigation(self, poi_data, frame, current_state):
         # (Fungsi ini tidak perlu diubah)
         self.recent_detections.append(poi_data["class"])
-        if len(self.recent_detections) < self.poi_validation_frames: return
+        if len(self.recent_detections) < self.poi_validation_frames:
+            return
         if all(cls == self.recent_detections[0] for cls in self.recent_detections):
             first_detection_class = self.recent_detections[0]
-            print(f"[Vision] VALIDASI BERHASIL: Objek '{first_detection_class}' terdeteksi.")
+            print(
+                f"[Vision] VALIDASI BERHASIL: Objek '{first_detection_class}' terdeteksi."
+            )
             self.investigation_in_progress = True
             frame_center_x = frame.shape[1] / 2
             obj_center_x = poi_data["center"][0]
             bearing_offset = (obj_center_x - frame_center_x) * (60 / frame.shape[1])
             absolute_bearing = (current_state.get("heading", 0) + bearing_offset) % 360
-            payload = {"class_name": first_detection_class, "confidence": poi_data["confidence"], "bearing_deg": absolute_bearing}
+            payload = {
+                "class_name": first_detection_class,
+                "confidence": poi_data["confidence"],
+                "bearing_deg": absolute_bearing,
+            }
             self.asv_handler.process_command("INVESTIGATE_POI", payload)
             self.recent_detections.clear()
 

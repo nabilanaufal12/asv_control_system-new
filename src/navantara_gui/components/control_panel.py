@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QVBoxLayout, QGroupBox, QPushButton, QGridLayout
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont
 
+
 class ControlPanel(QGroupBox):
     # HANYA sinyal untuk memberi tahu tombol mana yang diklik
     manual_button_clicked = Signal()
@@ -58,9 +59,15 @@ class ControlPanel(QGroupBox):
         self.return_home_btn = QPushButton("Return\nHome")
         self.return_home_btn.setFont(button_font)
 
-        self.start_mission_btn.clicked.connect(lambda: self.navigation_command.emit("START"))
-        self.pause_mission_btn.clicked.connect(lambda: self.navigation_command.emit("PAUSE"))
-        self.return_home_btn.clicked.connect(lambda: self.navigation_command.emit("RETURN"))
+        self.start_mission_btn.clicked.connect(
+            lambda: self.navigation_command.emit("START")
+        )
+        self.pause_mission_btn.clicked.connect(
+            lambda: self.navigation_command.emit("PAUSE")
+        )
+        self.return_home_btn.clicked.connect(
+            lambda: self.navigation_command.emit("RETURN")
+        )
         navigation_layout.addWidget(self.start_mission_btn)
         navigation_layout.addWidget(self.pause_mission_btn)
         navigation_layout.addWidget(self.return_home_btn)
@@ -70,8 +77,10 @@ class ControlPanel(QGroupBox):
         keyboard_layout = QGridLayout()
         key_style = "padding: 8px; font-weight: bold; font-size: 12px;"
         self.key_buttons = {
-            "W": QPushButton("W (↑)"), "A": QPushButton("A (←)"),
-            "S": QPushButton("S (↓)"), "D": QPushButton("D (→)"),
+            "W": QPushButton("W (↑)"),
+            "A": QPushButton("A (←)"),
+            "S": QPushButton("S (↓)"),
+            "D": QPushButton("D (→)"),
         }
         for button in self.key_buttons.values():
             button.setStyleSheet(key_style)

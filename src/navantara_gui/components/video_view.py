@@ -20,6 +20,7 @@ class VideoView(QWidget):
     Widget yang menampilkan dua feed video dan mengontrol HANYA
     pengiriman stream ke GUI, bukan mematikan kamera di backend.
     """
+
     # Sinyal untuk memberitahu MainWindow untuk memulai/menghentikan PENGIRIMAN stream
     toggle_camera_requested = Signal(bool)
     inversion_changed = Signal(bool)
@@ -27,7 +28,7 @@ class VideoView(QWidget):
     def __init__(self, config, parent=None):
         super().__init__(parent)
 
-        self.is_camera_running = False # Awalnya, GUI tidak menerima stream
+        self.is_camera_running = False  # Awalnya, GUI tidak menerima stream
 
         # --- PERUBAHAN TEKS 1: Tombol sekarang mengontrol "Stream" ---
         self.start_stop_button = QPushButton("Start Stream")
@@ -115,8 +116,10 @@ class VideoView(QWidget):
 
         # --- PERUBAHAN TEKS 3: Pesan saat stream dijeda ---
         if not self.is_camera_running:
-            self.label_video_1.setText("Stream dijeda.\nBackend tetap memproses gambar.")
-            self.label_video_1.setPixmap(QPixmap()) # Hapus gambar terakhir
+            self.label_video_1.setText(
+                "Stream dijeda.\nBackend tetap memproses gambar."
+            )
+            self.label_video_1.setPixmap(QPixmap())  # Hapus gambar terakhir
             self.label_video_2.setText("Stream dijeda.")
             self.label_video_2.setPixmap(QPixmap())
 
@@ -126,9 +129,7 @@ class VideoView(QWidget):
     def update_ui_controls(self, is_running):
         """Memperbarui tampilan tombol berdasarkan status streaming."""
         # --- PERUBAHAN TEKS 4: Teks tombol diubah menjadi "Stream" ---
-        self.start_stop_button.setText(
-            "Stop Stream" if is_running else "Start Stream"
-        )
+        self.start_stop_button.setText("Stop Stream" if is_running else "Start Stream")
         self.start_stop_button.setIcon(
             self.pause_icon if is_running else self.play_icon
         )
