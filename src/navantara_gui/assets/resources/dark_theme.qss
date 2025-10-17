@@ -1,0 +1,185 @@
+/* dark_theme.qss */
+
+/* General Window and Background */
+QMainWindow, QWidget {
+    background-color: #2e2e2e; /* Darker background */
+    color: #f0f0f0; /* Light text for contrast */
+}
+
+/* QGroupBox Styling (for panels like Vehicle Control, Settings, Waypoints) */
+QGroupBox {
+    background-color: #3c3c3c; /* Slightly lighter dark for panel background */
+    border: 1px solid #5a5a5a; /* A subtle border to define panels */
+    border-radius: 5px;
+    margin-top: 1ex; /* Space for the title */
+    font-size: 11pt;
+    font-weight: bold;
+    color: #f0f0f0; /* Light text for group box title */
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top center; /* Position the title */
+    padding: 0 5px;
+    background-color: transparent;
+}
+
+/* QPushbutton Styling */
+QPushButton {
+    background-color: #4a4a4a; /* Darker button background */
+    color: #f0f0f0;
+    border: 1px solid #5a5a5a;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 10pt;
+}
+
+QPushButton:hover {
+    background-color: #5a5a5a; /* Slightly lighter on hover */
+    border-color: #7a7a7a;
+}
+
+QPushButton:pressed {
+    background-color: #6a6a6a; /* Even lighter when pressed */
+    border-color: #8a8a8a;
+}
+
+QPushButton:checked { /* For toggle buttons like MANUAL/AUTO */
+    background-color: #2a82da; /* Accent color for active state */
+    color: white;
+    border-color: #1a6bbd;
+}
+
+QPushButton:disabled {
+    background-color: #353535;
+    color: #808080;
+    border-color: #4a4a4a;
+}
+
+/* QLineEdit Styling */
+QLineEdit {
+    background-color: #4a4a4a;
+    color: #f0f0f0;
+    border: 1px solid #5a5a5a;
+    border-radius: 3px;
+    padding: 3px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #2a82da; /* Accent color on focus */
+}
+
+/* QLabel Styling */
+QLabel {
+    color: #f0f0f0;
+}
+
+/* QTabWidget Styling */
+QTabWidget::pane { /* The area where the tab content is displayed */
+    border: 1px solid #5a5a5a;
+    background-color: #3c3c3c;
+    border-radius: 5px;
+    margin-top: -1px; /* Overlap border with tab bar */
+}
+
+QTabBar::tab {
+    background-color: #4a4a4a;
+    color: #f0f0f0;
+    border: 1px solid #5a5a5a;
+    border-bottom: none; /* No bottom border for tabs */
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    padding: 5px 10px;
+    margin-right: 2px;
+}
+
+QTabBar::tab:selected {
+    background-color: #3c3c3c; /* Matches pane background when selected */
+    border-bottom-color: #3c3c3c; /* Hides the bottom border of the selected tab */
+    color: #2a82da; /* Accent color for selected tab text */
+}
+
+QTabBar::tab:hover {
+    background-color: #5a5a5a;
+}
+
+/* QComboBox Styling */
+QComboBox {
+    background-color: #4a4a4a;
+    color: #f0f0f0;
+    border: 1px solid #5a5a5a;
+    border-radius: 3px;
+    padding: 3px;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid #5a5a5a;
+    background-color: #5a5a5a;
+}
+
+QComboBox::down-arrow {
+    /* --- PERBAIKAN PATH DI SINI --- */
+    image: url(src/navantara_gui/assets/arrow_down_dark.svg);
+    width: 12px;
+    height: 12px;
+}
+
+/* QScrollArea Styling */
+QScrollArea {
+    border: none; /* Scroll area itself should not have borders */
+}
+
+/* QListWidget Styling (for Waypoints List) */
+QListWidget {
+    background-color: #4a4a4a;
+    color: #f0f0f0;
+    border: 1px solid #5a5a5a;
+    border-radius: 3px;
+}
+
+QListWidget::item {
+    padding: 4px;
+}
+
+QListWidget::item:selected {
+    background-color: #2a82da;
+    color: white;
+}
+
+/* QStatusBar Styling */
+QStatusBar {
+    background-color: #282828;
+    color: #f0f0f0;
+    border-top: 1px solid #5a5a5a;
+}
+
+QStatusBar QLabel {
+    color: #f0f0f0;
+}
+
+/* QSplitter Handle */
+QSplitter::handle {
+    background-color: #5a5a5a;
+}
+
+QSplitter::handle:hover {
+    background-color: #7a7a7a;
+}
+
+/* Video View specific styling */
+QLabel#label_video { /* Using object name for specific styling */
+    background-color: black; 
+    color: white; 
+    font-size: 16px;
+    border: 1px solid #5a5a5a; /* Add border for consistency */
+    border-radius: 5px;
+}
+
+/* Style for the inverted button state (if you're using this mechanism) */
+QPushButton[inverted="true"] {
+    background-color: #c0392b; /* Reddish for inverted/active warning */
+    border-color: #a0291d;
+}

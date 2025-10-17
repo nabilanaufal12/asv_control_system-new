@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Virtual Environment
+# Ganti 'venv' dengan nama folder virtual environment Anda jika berbeda
+venv/
+.venv/
+env/
+.env/
+
+# IDE & Editor
+.vscode/
+config/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# File yang Dihasilkan Otomat
+snapshots/
+*.log
+yolov5/runs/
+mission_logs/
+
+# File Sensitif (jika ada)
+credentials.json
+api_keys.txt
+*.env
+
+# Lain-lain
+.DS_Store
+Thumbs.db
+
+# File simulasi atau file HTML spesifik yang ingin diabaikan
+dashboard.html
+navigation_simulation.py
+
+# Model Weights
+# Mengabaikan semua file bobot model...
+*.pt
+*.weights
+!besto.pt
