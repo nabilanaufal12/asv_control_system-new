@@ -235,7 +235,7 @@ class AsvHandler:
                 servo_default = actuator_config.get("servo_default_angle", 90)
                 servo_min = actuator_config.get("servo_min_angle", 45)
                 servo_max = actuator_config.get("servo_max_angle", 135)
-                motor_base = actuator_config.get("motor_pwm_auto_base", 1650)
+                motor_base = actuator_config.get("motor_pwm_auto_base", 1300)
 
                 # === PRIORITAS 1: MELEWATI GERBANG (GATE TRAVERSAL) ===
                 if self.gate_target.get("active", False):
@@ -318,7 +318,7 @@ class AsvHandler:
                                 min(servo_max, servo_default - correction_deg),
                             )
                         )
-                        pwm_cmd = int(max(1550, motor_base - abs(correction_deg) * 2))
+                        pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
 
                         # --- PESAN DEBUG BARU ---
                         print(
@@ -355,7 +355,7 @@ class AsvHandler:
                     servo_cmd = int(
                         max(servo_min, min(servo_max, servo_default - correction_deg))
                     )
-                    pwm_cmd = int(max(1550, motor_base - abs(correction_deg) * 3))
+                    pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 3))
 
                     # --- PESAN DEBUG BARU ---
                     print(
@@ -368,7 +368,7 @@ class AsvHandler:
                 elif self.recovering_from_avoidance:
                     self.is_avoiding = False
                     self.avoidance_direction = None
-                    servo_cmd, pwm_cmd = servo_default, 1600
+                    servo_cmd, pwm_cmd = servo_default, 1300
 
                     # --- PESAN DEBUG BARU ---
                     print(
