@@ -6,7 +6,9 @@ import math
 import numpy as np
 
 from navantara_backend.services.serial_service import SerialHandler
-from navantara_backend.core.navigation import run_navigation_logic, PIDController
+from navantara_backend.core.navigation import (
+    run_navigation_logic, PIDController, haversine_distance
+)
 from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
 
@@ -199,6 +201,36 @@ class AsvHandler:
                 command_to_send = f"S{int(pwm_cmd)};D{int(servo_cmd)}\n"
             else:
                 # --- IMPLEMENTASI HIRARKI KEPUTUSAN MODE AUTO ---
+
+                # --- [PERBAIKAN WAYPOINT - NONAKTIF SEMENTARA] ---
+                # # Cek apakah waypoint saat ini sudah tercapai, bahkan saat mode visi mungkin aktif.
+                waypoints = state_for_logic.get("waypoints", [])
+                wp_index = state_for_logic.get("current_waypoint_index", 0)
+                # nav_config = self.config.get("navigation", {})
+                # waypoint_reach_distance = nav_config.get("waypoint_reach_distance_m", 7.0)
+                mission_completed = bool(waypoints and wp_index >= len(waypoints))
+
+                if mission_completed:
+                    # Jika misi sudah selesai, paksa kirim perintah 'W' (yang akan membuat ESP berhenti)
+                    # dan abaikan semua logika AI di bawah.
+                    command_to_send = "W\n"
+                    print("[AsvHandler] Misi Selesai. Mengabaikan input visi.")
+                #
+                # elif waypoints and wp_index < len(waypoints):
+                #     current_lat = state_for_logic.get("latitude")
+                #     current_lon = state_for_logic.get("longitude")
+                #     target_wp = waypoints[wp_index]
+                #     distance_to_wp = haversine_distance(
+                #         current_lat, current_lon, target_wp["lat"], target_wp["lon"]
+                #     )
+                #     if distance_to_wp < waypoint_reach_distance:
+                #         print(f"[AsvHandler] Waypoint {wp_index + 1} reached (during avoidance/gate). Incrementing index.")
+                #         # Increment index in the shared state only if it hasn't changed yet
+                #         with self.state_lock:
+                #             if self.current_state["current_waypoint_index"] == wp_index:
+                #                 self.current_state["current_waypoint_index"] += 1
+                # ------------------------------------------------------
+
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
                 servo_min = actuator_config.get("servo_min_angle", 45)
@@ -344,7 +376,7 @@ class AsvHandler:
                     )
 
                     command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                    if time.time() - self.last_avoidance_time > 0.5:
+                    if time.time() - self.last_avoidance_time > 0.2:
                         self.recovering_from_avoidance = False
 
                 # === KONDISI DEFAULT: NAVIGASI WAYPOINT ===
