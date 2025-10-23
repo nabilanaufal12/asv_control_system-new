@@ -11,6 +11,7 @@ from navantara_backend.core.navigation import (
 )
 from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
+from navantara_backend.vision.cloud_utils import send_telemetry_to_firebase
 
 
 def map_value(x, in_min, in_max, out_min, out_max):
@@ -389,6 +390,7 @@ class AsvHandler:
 
             self.logger.log_telemetry(state_for_logic)
             self._update_and_emit_state()
+            send_telemetry_to_firebase(state_for_logic, self.config)
             self.socketio.sleep(0.1)
 
     def process_command(self, command, payload):

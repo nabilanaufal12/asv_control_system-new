@@ -1,10 +1,43 @@
 # src/navantara_backend/api/endpoints.py
-from flask import Blueprint, current_app
-
+from flask import Blueprint, current_app, Response
+import cv2
+import eventlet
+from navantara_backend.main import get_vision_service
 from navantara_backend.extensions import socketio
 
 api_blueprint = Blueprint("api", __name__)
 
+def generate_video_frames():
+    """Generator untuk streaming video frame."""
+    vision_service = get_vision_service() # Dapatkan instance di awal
+    if not vision_service:
+        print("ERROR: Vision service belum siap!")
+        # Mungkin yield frame error atau berhenti?
+        return
+    
+    while True:
+        frame_to_encode = None
+        # Ambil frame terbaru dengan aman menggunakan lock
+        # Akses lock dari instance VisionService yang ada di current_app
+        if hasattr(current_app, 'vision_service'):
+            with current_app.vision_service._frame_lock:
+                if current_app.vision_service._latest_processed_frame is not None:
+                    frame_to_encode = current_app.vision_service._latest_processed_frame.copy()
+
+        if frame_to_encode is not None:
+            # Encode frame ke JPEG (lebih umum daripada WebP)
+            (flag, encodedImage) = cv2.imencode(".jpg", frame_to_encode)
+
+            # Pastikan encoding berhasil
+            if not flag:
+                continue
+
+            # Yield frame dalam format multipart
+            yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' +
+                  bytearray(encodedImage) + b'\r\n')
+
+        # Beri jeda singkat agar tidak membebani CPU, gunakan eventlet.sleep
+        eventlet.sleep(0.05) # Jeda ~50ms
 
 @socketio.on("connect")
 def handle_connect():
@@ -63,3 +96,9 @@ def handle_socket_command(json_data):
         # kirim ke asv_handler
         current_app.asv_handler.process_command(command, payload)
     # --- AKHIR PERBAIKAN ---
+
+@api_blueprint.route('/live_video_feed')
+def live_video_feed():
+    """Rute untuk menyajikan video stream."""
+    return Response(generate_video_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')

@@ -20,6 +20,8 @@ from navantara_backend.vision.overlay_utils import (
 
 
 class VisionService:
+    _latest_processed_frame = None
+    _frame_lock = threading.Lock()
     def __init__(self, config, asv_handler, socketio):
         self.config = config
         self.asv_handler = asv_handler
@@ -197,6 +199,8 @@ class VisionService:
             cv2.imshow('Local ASV Feed (Tekan "q" untuk keluar)', final_frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 self.stop()
+        with VisionService._frame_lock:
+            VisionService._latest_processed_frame = final_frame.copy()
         return final_frame
 
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
