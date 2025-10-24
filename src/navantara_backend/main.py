@@ -5,12 +5,14 @@ import eventlet
 
 # --- TAMBAHAN IMPORT ---
 from flask import Flask, g, current_app, send_from_directory
+
 # -----------------------
 
 from navantara_backend.extensions import socketio
 from navantara_backend.core.asv_handler import AsvHandler
 from navantara_backend.services.vision_service import VisionService
 from navantara_backend.api.endpoints import api_blueprint
+
 
 def create_app():
     """
@@ -25,7 +27,7 @@ def create_app():
     app = Flask(
         __name__,
         static_folder=monitor_dir,  # Folder untuk file statis (css, js, images)
-        template_folder=monitor_dir # Folder untuk file HTML (monitor1.html)
+        template_folder=monitor_dir,  # Folder untuk file HTML (monitor1.html)
     )
     # -------------------------------------------------------------
 
@@ -55,12 +57,13 @@ def create_app():
     app.register_blueprint(api_blueprint)
 
     # --- TAMBAHAN: Route untuk menyajikan monitor1.html ---
-    @app.route('/')
+    @app.route("/")
     def index():
         # Mengirim file monitor1.html dari template_folder
         # (Flask secara otomatis mencari di folder yang ditentukan di atas)
         # Jika Anda tidak memindahkannya, gunakan: return send_from_directory('../../ASV_MONITOR', 'monitor1.html')
-        return send_from_directory(app.template_folder, 'monitor1.html')
+        return send_from_directory(app.template_folder, "monitor1.html")
+
     # --------------------------------------------------------
 
     # Inisialisasi SocketIO

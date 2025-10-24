@@ -7,7 +7,9 @@ import numpy as np
 
 from navantara_backend.services.serial_service import SerialHandler
 from navantara_backend.core.navigation import (
-    run_navigation_logic, PIDController, haversine_distance
+    run_navigation_logic,
+    PIDController,
+    haversine_distance,
 )
 from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
@@ -52,7 +54,6 @@ class AsvHandler:
             "nav_servo_cmd": 90,
             "nav_motor_cmd": 1500,
             "nav_gps_sats": 0,
-            
             # --- TAMBAHAN BARU ---
             "manual_servo_cmd": 90,
             "manual_motor_cmd": 1500,
@@ -147,13 +148,13 @@ class AsvHandler:
     def _read_from_serial_loop(self):
         while self.running:
             line = self.serial_handler.read_line()
-            
+
             # --- MODIFIKASI: Tambahkan parser untuk "DATA:MANUAL," ---
-            if line: # Hanya proses jika 'line' tidak kosong
+            if line:  # Hanya proses jika 'line' tidak kosong
                 if line.startswith("T:"):
                     print(f"[Serial] Menerima Telemetri ESP: {line}")
                     self._parse_telemetry(line)
-                
+
                 elif line.startswith("DATA:AUTO,WAYPOINT,"):
                     print(f"[Serial] Menerima Data Waypoint ESP: {line}")
                     self._parse_waypoint_data(line)
@@ -161,7 +162,7 @@ class AsvHandler:
                 elif line.startswith("DATA:MANUAL,"):
                     print(f"[Serial] Menerima Data Manual ESP: {line}")
                     self._parse_manual_data(line)
-                
+
                 # Menangkap pesan AI_MODE_ACTIVATED
                 elif "AI_MODE_ACTIVATED" in line:
                     print(f"[Serial] Konfirmasi ESP: {line}")
@@ -170,7 +171,7 @@ class AsvHandler:
                     # Hanya cetak jika itu bukan string kosong
                     if line.strip():
                         print(f"[Serial] Menerima data TIDAK DIKENAL: {line}")
-            
+
             # Selalu beri jeda singkat di setiap loop
             self.socketio.sleep(0.02)
             # --- AKHIR MODIFIKASI ---
@@ -207,17 +208,19 @@ class AsvHandler:
                  [errorHeading],[servoPos],[motorSpeed],[speed],[sats]"
         """
         try:
-            parts = line.split(',')
-            
+            parts = line.split(",")
+
             if len(parts) != 13:
-                print(f"[AsvHandler] Peringatan: Format data waypoint tidak dikenal. {line}")
+                print(
+                    f"[AsvHandler] Peringatan: Format data waypoint tidak dikenal. {line}"
+                )
                 return
 
             with self.state_lock:
                 self.current_state["nav_target_wp_index"] = int(parts[2])
                 self.current_state["nav_dist_to_wp"] = float(parts[3])
                 self.current_state["nav_target_bearing"] = float(parts[4])
-                self.current_state["heading"] = float(parts[5]) # Update heading
+                self.current_state["heading"] = float(parts[5])  # Update heading
                 self.current_state["nav_heading_error"] = float(parts[6])
                 self.current_state["nav_servo_cmd"] = int(parts[7])
                 self.current_state["nav_motor_cmd"] = int(parts[8])
@@ -226,10 +229,10 @@ class AsvHandler:
                 self.current_state["nav_gps_sats"] = int(parts[10])
                 self.current_state["latitude"] = float(parts[11])
                 self.current_state["longitude"] = float(parts[12])
-        
+
         except (ValueError, IndexError, TypeError) as e:
             print(f"[AsvHandler] Gagal mem-parsing data waypoint: {e}. Data: {line}")
-    
+
     # --- TAMBAHAN: Fungsi Parser Baru ---
     def _parse_manual_data(self, line):
         """
@@ -237,11 +240,13 @@ class AsvHandler:
         Format: "DATA:MANUAL,[heading],[speed],[sats],[servoPos],[motorMicros]"
         """
         try:
-            parts = line.split(',')
+            parts = line.split(",")
             if len(parts) != 6:
-                print(f"[AsvHandler] Peringatan: Format data manual tidak dikenal. {line}")
+                print(
+                    f"[AsvHandler] Peringatan: Format data manual tidak dikenal. {line}"
+                )
                 return
-            
+
             # parts[0] = "DATA:MANUAL"
             # parts[1] = heading
             # parts[2] = speed (kmph)
@@ -252,16 +257,15 @@ class AsvHandler:
             with self.state_lock:
                 self.current_state["heading"] = float(parts[1])
                 # Konversi speed dari kmph (sesuai ESP32) ke m/s (sesuai GUI)
-                self.current_state["speed"] = float(parts[2]) / 3.6 
+                self.current_state["speed"] = float(parts[2]) / 3.6
                 self.current_state["nav_gps_sats"] = int(parts[3])
                 self.current_state["manual_servo_cmd"] = int(parts[4])
                 self.current_state["manual_motor_cmd"] = int(parts[5])
-        
+
         except (ValueError, IndexError, TypeError) as e:
             print(f"[AsvHandler] Gagal mem-parsing data manual: {e}. Data: {line}")
-    # --- AKHIR TAMBAHAN ---
+        # --- AKHIR TAMBAHAN ---
         pass
-
 
     def main_logic_loop(self):
         self.socketio.start_background_task(self._read_from_serial_loop)
@@ -293,8 +297,8 @@ class AsvHandler:
 
             # Jika RC mengambil alih, jangan kirim perintah apapun
             if rc_mode_switch < 1500:
-                command_to_send = None # ESP32 akan menangani logika RC secara internal
-            
+                command_to_send = None  # ESP32 akan menangani logika RC secara internal
+
             # Jika mode GUI adalah MANUAL, kirim perintah manual
             elif state_for_logic.get("control_mode") == "MANUAL":
                 # Perintah manual (dari WASD) ditangani oleh _handle_manual_control
@@ -311,7 +315,7 @@ class AsvHandler:
                 if mission_completed:
                     command_to_send = "W\n"
                     # print("[AsvHandler] Misi Selesai. Mengirim 'W' (idle).")
-                
+
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
                 servo_min = actuator_config.get("servo_min_angle", 45)
@@ -347,7 +351,7 @@ class AsvHandler:
                         servo_cmd = int(
                             max(servo_min, min(servo_max, servo_default - correction))
                         )
-                        pwm_cmd = motor_base - 75 
+                        pwm_cmd = motor_base - 75
 
                         command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
 
@@ -440,7 +444,7 @@ class AsvHandler:
                 # === KONDISI DEFAULT: NAVIGASI WAYPOINT ===
                 else:
                     self.last_pixel_error = 0
-                    command_to_send = "W\n" # Minta ESP32 untuk navigasi waypoint
+                    command_to_send = "W\n"  # Minta ESP32 untuk navigasi waypoint
 
             # Hanya kirim jika ada perintah
             if command_to_send:
@@ -459,7 +463,7 @@ class AsvHandler:
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
             "CHANGE_MODE": self._handle_mode_change,
             "MANUAL_CONTROL": self._handle_manual_control,
-            "SET_WAYPOINTS": self._handle_set_waypoints, # Modifikasi fungsi ini
+            "SET_WAYPOINTS": self._handle_set_waypoints,  # Modifikasi fungsi ini
             "NAV_START": self._handle_start_mission,
             "NAV_RETURN": self._handle_initiate_rth,
             "UPDATE_PID": self._handle_update_pid,
@@ -515,7 +519,7 @@ class AsvHandler:
             # Hanya kirim jika mode GUI adalah MANUAL
             if self.current_state.get("control_mode") != "MANUAL":
                 return
-                
+
         keys, actuator_config = set(payload), self.config.get("actuators", {})
         pwm_stop, pwr = actuator_config.get(
             "motor_pwm_stop", 1500
@@ -527,21 +531,20 @@ class AsvHandler:
         )
         fwd = 1 if "W" in keys else -1 if "S" in keys else 0
         turn = 1 if "D" in keys else -1 if "A" in keys else 0
-        
+
         # Hitung perintah
         pwm = pwm_stop + fwd * pwr
         servo = servo_def - turn * (servo_def - servo_min)
         servo = max(servo_min, min(servo_max, servo))
-        
+
         # Kirim sebagai perintah AI "A," karena ESP32 mengharapkan ini
         # saat tidak dalam mode RC Manual
         self.serial_handler.send_command(f"A,{int(servo)},{int(pwm)}\n")
-        
+
         # Simpan secara lokal untuk GUI
         with self.state_lock:
-             self.current_state["manual_servo_cmd"] = int(servo)
-             self.current_state["manual_motor_cmd"] = int(pwm)
-
+            self.current_state["manual_servo_cmd"] = int(servo)
+            self.current_state["manual_motor_cmd"] = int(pwm)
 
     def set_streaming_status(self, status: bool):
         if self.is_streaming_to_gui != status:
@@ -574,7 +577,7 @@ class AsvHandler:
         self.logger.log_event(
             f"Mode kontrol GUI diubah ke: {self.current_state['control_mode']}"
         )
-        
+
         # Jika beralih ke mode MANUAL, kirim perintah netral
         if self.current_state["control_mode"] == "MANUAL":
             actuator_config = self.config.get("actuators", {})
@@ -585,30 +588,31 @@ class AsvHandler:
     def _handle_set_waypoints(self, payload):
         """Menangani penerimaan waypoints DAN arena dari GUI."""
         waypoints_data = payload.get("waypoints")
-        arena_id = payload.get("arena") # Ambil ID arena
+        arena_id = payload.get("arena")  # Ambil ID arena
 
         if not isinstance(waypoints_data, list):
-             print("[AsvHandler] Gagal set waypoints: Data tidak valid.")
-             return
+            print("[AsvHandler] Gagal set waypoints: Data tidak valid.")
+            return
 
         with self.state_lock:
             self.current_state["waypoints"] = waypoints_data
-            self.current_state["current_waypoint_index"] = 0 # Selalu mulai dari 0
-            self.current_state["active_arena"] = arena_id # Simpan arena
-            self.logger.log_event(f"Waypoints baru dimuat (Arena: {arena_id}). Jumlah: {len(waypoints_data)}")
+            self.current_state["current_waypoint_index"] = 0  # Selalu mulai dari 0
+            self.current_state["active_arena"] = arena_id  # Simpan arena
+            self.logger.log_event(
+                f"Waypoints baru dimuat (Arena: {arena_id}). Jumlah: {len(waypoints_data)}"
+            )
         # TODO: Kirim waypoints ini ke ESP32 jika ESP32 yang navigasi
         # self.serial_handler.send_command("WP_START\n")
         # for wp in payload:
         #    self.serial_handler.send_command(f"WP:{wp['lat']},{wp['lon']}\n")
         # self.serial_handler.send_command("WP_END\n")
 
-
     def _handle_start_mission(self, payload):
         with self.state_lock:
             if not self.current_state["waypoints"]:
                 return
             self.current_state["control_mode"] = "AUTO"
-            self.current_state["current_waypoint_index"] = 0 # Mulai ulang dari 0
+            self.current_state["current_waypoint_index"] = 0  # Mulai ulang dari 0
         self.logger.log_event("Misi navigasi dimulai.")
         # Perintah "W" akan dikirim oleh loop utama
         pass

@@ -19,9 +19,9 @@ def send_telemetry_to_firebase(telemetry_data, config):
         # Jika indeks >= jumlah waypoints, berarti selesai, kirim 0
         current_wp_index_zero_based = telemetry_data.get("current_waypoint_index", -1)
         total_waypoints = len(telemetry_data.get("waypoints", []))
-        point_to_send = 0 # Default jika tidak ada waypoint atau sudah selesai
+        point_to_send = 0  # Default jika tidak ada waypoint atau sudah selesai
         if total_waypoints > 0 and current_wp_index_zero_based < total_waypoints:
-             point_to_send = current_wp_index_zero_based + 1
+            point_to_send = current_wp_index_zero_based + 1
 
         data_to_send = {
             "gps": {
@@ -30,16 +30,18 @@ def send_telemetry_to_firebase(telemetry_data, config):
             },
             "hdg": telemetry_data.get("heading", 0.0),
             "cog": telemetry_data.get("cog", 0.0),
-            "sog": telemetry_data.get("speed", 0.0), # speed dalam m/s
+            "sog": telemetry_data.get("speed", 0.0),  # speed dalam m/s
             "jam": time.strftime("%H:%M:%S"),
-            "arena": active_arena if active_arena else "N/A", # Kirim arena
-            "point": point_to_send # Kirim indeks waypoint target (mulai dari 1)
+            "arena": active_arena if active_arena else "N/A",  # Kirim arena
+            "point": point_to_send,  # Kirim indeks waypoint target (mulai dari 1)
         }
         # --- MODIFIKASI SELESAI ---
 
         # Kirim data menggunakan PUT (akan menimpa data lama di path tersebut)
-        response = requests.put(FIREBASE_URL, json=data_to_send, timeout=5) # Timeout 5 detik
-        response.raise_for_status() # Akan error jika status code bukan 2xx
+        response = requests.put(
+            FIREBASE_URL, json=data_to_send, timeout=5
+        )  # Timeout 5 detik
+        response.raise_for_status()  # Akan error jika status code bukan 2xx
 
         # print(f"[Firebase] Data terkirim: {data_to_send}") # Opsional: uncomment untuk debug
 
@@ -70,10 +72,13 @@ def upload_image_to_supabase(image_buffer, filename, config):
         headers = {
             "Authorization": f"Bearer {TOKEN}",
             "Content-Type": "image/jpeg",
-            "x-upsert": "true", # Membuat file baru atau menimpa jika sudah ada
+            "x-upsert": "true",  # Membuat file baru atau menimpa jika sudah ada
         }
         response = requests.post(
-            ENDPOINT, headers=headers, data=image_buffer.tobytes(), timeout=10 # Timeout 10 detik
+            ENDPOINT,
+            headers=headers,
+            data=image_buffer.tobytes(),
+            timeout=10,  # Timeout 10 detik
         )
         if response.ok:
             print(f"? [CAPTURE] Berhasil! Gambar '{filename}' telah diunggah.")
