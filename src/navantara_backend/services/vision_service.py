@@ -201,7 +201,7 @@ class VisionService:
                 original_class = det["class"]
                 validated_class = self._validate_buoy_color(frame, det)
                 if original_class != validated_class:
-                    # print(f"🎨 [Color Correction] YOLO class '{original_class}' dikoreksi menjadi '{validated_class}'")
+                    # print(f"? [Color Correction] YOLO class '{original_class}' dikoreksi menjadi '{validated_class}'")
                     pass
                 det["class"] = validated_class
             if det["class"] in buoy_classes:
