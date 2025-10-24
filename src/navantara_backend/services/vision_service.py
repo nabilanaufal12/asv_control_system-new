@@ -22,6 +22,8 @@ from navantara_backend.vision.overlay_utils import (
 class VisionService:
     _latest_processed_frame = None
     _frame_lock = threading.Lock()
+    _latest_raw_frame_cam2 = None
+    _frame_lock_cam2 = threading.Lock()
     def __init__(self, config, asv_handler, socketio):
         self.config = config
         self.asv_handler = asv_handler
@@ -126,14 +128,28 @@ class VisionService:
 
     def run_capture_loops(self):
         if self.inference_engine.model is None:
-            return
+            # Jika tidak ada model AI, mungkin kita tetap ingin stream kedua kamera?
+            # Untuk sekarang, kita asumsikan AI diperlukan untuk kamera 1.
+            # print("[VisionService] Model AI tidak dimuat, capture loop tidak dimulai.")
+            # return # Hapus return jika ingin tetap stream walau tanpa AI
+            pass # Lanjutkan walau model AI tidak ada
+
         self.running = True
+        # Jalankan loop untuk kamera 1 (dengan deteksi AI)
         self.socketio.start_background_task(
-            self._capture_loop, self.camera_index_1, "frame_cam1", True
+            self._capture_loop,
+            self.camera_index_1,
+            "frame_cam1", # Event WebSocket untuk GUI
+            True # Terapkan deteksi AI
         )
+        # Jalankan loop untuk kamera 2 (tanpa deteksi AI, hanya stream mentah)
         self.socketio.start_background_task(
-            self._capture_loop, self.camera_index_2, "frame_cam2", False
+            self._capture_loop,
+            self.camera_index_2,
+            "frame_cam2", # Event WebSocket untuk GUI
+            False # JANGAN terapkan deteksi AI (hanya simpan frame mentah)
         )
+        print("[VisionService] Kedua capture loop kamera dimulai.")
 
     def stop(self):
         self.running = False
@@ -142,7 +158,9 @@ class VisionService:
 
     def _capture_loop(self, cam_index, event_name, apply_detection):
         cap = None
+        print(f"[Capture Loop {cam_index}] Memulai loop untuk kamera index {cam_index}...")
         while self.running:
+            frame = None # Reset frame di setiap iterasi luar
             try:
                 cap = cv2.VideoCapture(cam_index)
                 if not cap.isOpened():
@@ -170,7 +188,7 @@ class VisionService:
                 if self.running:
                     self.socketio.sleep(5)
 
-    def process_and_control(self, frame, is_mode_auto):
+    def process_and_control(self, frame):
         with self.asv_handler.state_lock:
             current_state = self.asv_handler.current_state.copy()
 
