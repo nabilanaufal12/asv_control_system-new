@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NAVANTARA - ASV Dashboard</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="/css/styles.css" />
     <link
       href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700;800&family=Inter:wght@400;500;700;800&display=swap"
       rel="stylesheet"
@@ -31,22 +31,22 @@
     <div class="dashboard">
       <header class="header">
         <div class="header-logos-left">
-          <img src="images/umrah.png" alt="UMRAH Logo" class="logo" />
-          <img src="images/src.png" alt="SRC Logo" class="logo" />
-        </div>
+          <img src="/images/umrah.png" alt="UMRAH Logo" class="logo" />
+          <img src="/images/src.png" alt="SRC Logo" class="logo" />
+          </div>
         <div class="header-title">
           <h1>NAVANTARA</h1>
           <h2>Universitas Maritim Raja Ali Haji</h2>
         </div>
         <div class="header-logos">
           <img
-            src="images/logo-kompetisi.png"
+            src="/images/logo-kompetisi.png"
             alt="Competition Logo"
             class="logo"
           />
-          <img src="images/logo-kki.png" alt="KKI Logo" class="logo" />
-          <img src="images/umm-logo.png" alt="UMM Logo" class="logo" />
-        </div>
+          <img src="/images/logo-kki.png" alt="KKI Logo" class="logo" />
+          <img src="/images/umm-logo.png" alt="UMM Logo" class="logo" />
+          </div>
       </header>
 
       <main class="main-content">
@@ -103,11 +103,13 @@
           <section class="camera-section">
             <div class="camera-feed">
               <h3>CAM 1</h3>
-              <div class="camera-container" id="cam1-container"></div>
+              <div class="camera-container" id="cam1-container">
+                </div>
             </div>
             <div class="camera-feed">
               <h3>CAM 2</h3>
-              <div class="camera-container" id="cam2-container"></div>
+              <div class="camera-container" id="cam2-container">
+                </div>
             </div>
           </section>
         </div>
@@ -140,17 +142,20 @@
             <div class="capture-container">
               <div class="capture-column">
                 <h4>Surface</h4>
-                <div class="capture-grid" id="surface-captures"></div>
+                <div class="capture-grid" id="surface-captures">
+                  </div>
               </div>
               <div class="capture-column">
                 <h4>Underwater</h4>
-                <div class="capture-grid" id="underwater-captures"></div>
+                <div class="capture-grid" id="underwater-captures">
+                  </div>
               </div>
             </div>
           </section>
         </div>
       </main>
     </div>
+
     <div class="modal" id="image-modal">
       <div class="modal-content">
         <img id="modal-img" src="" alt="Preview Image" />
@@ -163,10 +168,11 @@
       </div>
     </div>
 
-    <script src="js/firebase.js"></script>
-    <script src="js/supabase.js"></script>
-    <script src="js/main.js"></script>
+    <script src="/js/firebase.js"></script>
+    <script src="/js/supabase.js"></script>
+    <script src="/js/main.js"></script>
     <script>
+      // Logika JavaScript untuk canvas trajektori (tidak berubah)
       document.addEventListener("DOMContentLoaded", function () {
         const backgroundCtx = document.getElementById("background-canvas").getContext("2d");
         const gridCtx = document.getElementById("grid-canvas").getContext("2d");
@@ -182,14 +188,13 @@
         let currentArena = null;
         let predefinedPoints = [];
         let points = [];
-        
+
         function switchArena(arena) {
           if (currentArena === arena || !pointsData[arena]) return;
           currentArena = arena;
           predefinedPoints = pointsData[arena];
           arenaDisplay.textContent = arena;
-          if (arena === "A") { arenaABtn.classList.add("active"); arenaBBtn.classList.remove("active"); } 
-          else { arenaBBtn.classList.add("active"); arenaABtn.classList.remove("active"); }
+          // Tidak perlu update tombol A/B karena disembunyikan
           initialize();
         }
 
@@ -197,25 +202,31 @@
 
         function drawUpToPoint(pointNumber) {
           const maxPoints = predefinedPoints.length;
-          const targetPoint = Math.max(0, Math.min(pointNumber, maxPoints));
+          // Pastikan pointNumber valid, jika tidak, gambar semua titik sampai index tersebut
+          const targetPointIndex = Math.max(0, Math.min(pointNumber, maxPoints));
           points = [];
-          for (let i = 0; i < targetPoint; i++) {
+          for (let i = 0; i < targetPointIndex; i++) {
             points.push(predefinedPoints[i]);
           }
           drawAll();
         }
 
+
         window.addEventListener("setTrajectoryPoint", function (event) {
           const pointIndex = parseInt(event.detail.point, 10);
           if (!isNaN(pointIndex)) {
-            drawUpToPoint(pointIndex);
+             // pointIndex dari firebase dimulai dari 1, sedangkan array JS dari 0
+             // Jadi jika pointIndex 1, kita gambar sampai titik ke-1 (index 0)
+             drawUpToPoint(pointIndex);
+          } else {
+             drawUpToPoint(0); // Gambar kosong jika point tidak valid
           }
         });
-        
+
         function initialize() {
           drawBackground();
           drawGrid();
-          drawUpToPoint(0);
+          drawUpToPoint(lastKnownPoint); // Gunakan point terakhir yang diketahui
         }
 
         function drawBackground() {
@@ -225,50 +236,55 @@
           const img = new Image();
           img.onload = () => backgroundCtx.drawImage(img, 0, 0, 800, 500);
           img.onerror = () => {
-            backgroundCtx.fillStyle = "#f0f8ff";
+            backgroundCtx.fillStyle = "#f0f8ff"; // Warna fallback
             backgroundCtx.fillRect(0, 0, 800, 500);
             backgroundCtx.fillStyle = "#3498db";
             backgroundCtx.font = "bold 24px Arial";
             backgroundCtx.textAlign = "center";
-            backgroundCtx.fillText(`ARENA ${currentArena}`, 400, 250);
+            // Tampilkan arena saat ini jika gambar gagal dimuat
+            backgroundCtx.fillText(`ARENA ${currentArena || '?'}`, 400, 250);
           };
-          img.src = `Arena_${currentArena}.png`;
+          // MODIFIKASI PATH IMAGE
+          img.src = `/images/Arena_${currentArena || 'A'}.png`; // Default ke A jika belum ada
+          // AKHIR MODIFIKASI
         }
 
         function drawGrid() {
           gridCtx.clearRect(0, 0, 800, 500);
-          gridCtx.strokeStyle = "#e0e0e0";
+          gridCtx.strokeStyle = "#e0e0e0"; // Warna grid lebih terang
           gridCtx.lineWidth = 1;
           for (let x = 50; x < 800; x += 50) { gridCtx.beginPath(); gridCtx.moveTo(x, 0); gridCtx.lineTo(x, 500); gridCtx.stroke(); }
           for (let y = 50; y < 500; y += 50) { gridCtx.beginPath(); gridCtx.moveTo(0, y); gridCtx.lineTo(800, y); gridCtx.stroke(); }
-          gridCtx.strokeStyle = "#bdc3c7";
-          gridCtx.lineWidth = 2;
-          gridCtx.strokeRect(0, 0, 800, 500);
+          // Optional: Hapus border tebal jika tidak diperlukan
+          // gridCtx.strokeStyle = "#bdc3c7";
+          // gridCtx.lineWidth = 2;
+          // gridCtx.strokeRect(0, 0, 800, 500);
         }
 
         function drawPoint(x, y, index) {
-          pointCtx.fillStyle = "#8e44ad";
+          pointCtx.fillStyle = "#8e44ad"; // Warna titik ungu
           pointCtx.beginPath();
-          pointCtx.arc(x, y, 8, 0, Math.PI * 2);
+          pointCtx.arc(x, y, 6, 0, Math.PI * 2); // Ukuran titik sedikit lebih kecil
           pointCtx.fill();
-          pointCtx.strokeStyle = "#ffffff";
-          pointCtx.lineWidth = 2;
+          pointCtx.strokeStyle = "#ffffff"; // Outline putih
+          pointCtx.lineWidth = 1.5;
           pointCtx.stroke();
-          pointCtx.fillStyle = "#2c3e50";
-          pointCtx.font = "bold 16px Arial";
-          pointCtx.textAlign = "center";
-          pointCtx.fillText((index + 1).toString(), x, y - 25);
+          // Optional: Sembunyikan nomor titik jika terlalu ramai
+           pointCtx.fillStyle = "#2c3e50"; // Warna teks nomor
+           pointCtx.font = "bold 12px Arial"; // Ukuran font nomor
+           pointCtx.textAlign = "center";
+           pointCtx.fillText((index + 1).toString(), x, y - 15); // Posisi nomor di atas titik
         }
 
         function drawLine(x1, y1, x2, y2) {
-          lineCtx.strokeStyle = "#FFA500";
-          lineCtx.lineWidth = 3;
-          lineCtx.setLineDash([10, 5]);
+          lineCtx.strokeStyle = "#FFA500"; // Warna garis oranye
+          lineCtx.lineWidth = 2.5;         // Ketebalan garis
+          lineCtx.setLineDash([8, 4]);    // Pola garis putus-putus
           lineCtx.beginPath();
           lineCtx.moveTo(x1, y1);
           lineCtx.lineTo(x2, y2);
           lineCtx.stroke();
-          lineCtx.setLineDash([]);
+          lineCtx.setLineDash([]); // Reset pola garis
         }
 
         function drawAll() {
@@ -281,8 +297,10 @@
             }
           }
         }
-        
-        switchArena("A");
+
+        // Inisialisasi dengan arena default (misal 'A') jika belum ada data dari Firebase
+        switchArena(lastKnownArena || "A");
+
       });
     </script>
   </body>

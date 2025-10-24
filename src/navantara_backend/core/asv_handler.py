@@ -209,7 +209,7 @@ class AsvHandler:
         try:
             parts = line.split(',')
             
-            if len(parts) != 11:
+            if len(parts) != 13:
                 print(f"[AsvHandler] Peringatan: Format data waypoint tidak dikenal. {line}")
                 return
 
@@ -224,6 +224,8 @@ class AsvHandler:
                 # Konversi speed dari kmph ke m/s
                 self.current_state["speed"] = float(parts[9]) / 3.6
                 self.current_state["nav_gps_sats"] = int(parts[10])
+                self.current_state["latitude"] = float(parts[11])
+                self.current_state["longitude"] = float(parts[12])
         
         except (ValueError, IndexError, TypeError) as e:
             print(f"[AsvHandler] Gagal mem-parsing data waypoint: {e}. Data: {line}")

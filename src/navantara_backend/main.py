@@ -3,12 +3,11 @@ import json
 import os
 import eventlet
 
-from flask import Flask, g, current_app
+# --- TAMBAHAN IMPORT ---
+from flask import Flask, g, current_app, send_from_directory
+# -----------------------
 
-# 1. Impor instance socketio dari extensions.py
 from navantara_backend.extensions import socketio
-
-# 2. Impor semua komponen utama
 from navantara_backend.core.asv_handler import AsvHandler
 from navantara_backend.services.vision_service import VisionService
 from navantara_backend.api.endpoints import api_blueprint
@@ -17,9 +16,20 @@ def create_app():
     """
     Membuat dan mengkonfigurasi instance aplikasi Flask (Application Factory).
     """
-    app = Flask(__name__)
+    # --- MODIFIKASI: Tentukan static_folder dan template_folder ---
+    # Dapatkan path absolut ke direktori 'navantara_backend'
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    # Tentukan path ke folder ASV_MONITOR relatif terhadap backend_dir
+    monitor_dir = os.path.join(backend_dir, "ASV_MONITOR")
 
-    # 🔹 Muat konfigurasi dari file config.json
+    app = Flask(
+        __name__,
+        static_folder=monitor_dir,  # Folder untuk file statis (css, js, images)
+        template_folder=monitor_dir # Folder untuk file HTML (monitor1.html)
+    )
+    # -------------------------------------------------------------
+
+    # Muat konfigurasi
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(script_dir, "..", "..", "config", "config.json")
@@ -30,32 +40,34 @@ def create_app():
         print(f"[Server] KRITIS: Gagal memuat config.json. Error: {e}")
         exit(1)
 
-    # --- PERUBAHAN UTAMA: Inisialisasi layanan dengan referensi socketio ---
-    # Layanan sekarang dapat memanggil socketio.emit() secara langsung.
+    # Inisialisasi layanan
     asv_handler = AsvHandler(app.config["ASV_CONFIG"], socketio)
     vision_service = VisionService(app.config["ASV_CONFIG"], asv_handler, socketio)
-
-    # 🔹 Simpan instance service ke dalam konteks aplikasi
     app.asv_handler = asv_handler
     app.vision_service = vision_service
 
-    # 🔹 Sediakan service dalam konteks request
     @app.before_request
     def before_request():
         g.asv_handler = current_app.asv_handler
         g.vision_service = current_app.vision_service
 
-    # 🔹 Daftarkan semua endpoint API
+    # Daftarkan blueprint API (yang berisi /live_video_feed)
     app.register_blueprint(api_blueprint)
 
-    # 🔹 Inisialisasi SocketIO dengan mode async eventlet
+    # --- TAMBAHAN: Route untuk menyajikan monitor1.html ---
+    @app.route('/')
+    def index():
+        # Mengirim file monitor1.html dari template_folder
+        # (Flask secara otomatis mencari di folder yang ditentukan di atas)
+        # Jika Anda tidak memindahkannya, gunakan: return send_from_directory('../../ASV_MONITOR', 'monitor1.html')
+        return send_from_directory(app.template_folder, 'monitor1.html')
+    # --------------------------------------------------------
+
+    # Inisialisasi SocketIO
     socketio.init_app(app, async_mode="eventlet", cors_allowed_origins="*")
 
-    # --- PERUBAHAN UTAMA: Jalankan loop layanan sebagai greenlet kooperatif ---
-    # Ini menggantikan arsitektur berbasis thread dan lebih efisien.
-    print(
-        "🚀 Menjadwalkan layanan latar belakang (AsvHandler & VisionService) sebagai greenlet..."
-    )
+    # Jalankan loop layanan sebagai greenlet
+    print("? Menjadwalkan layanan latar belakang sebagai greenlet...")
     eventlet.spawn(asv_handler.main_logic_loop)
     eventlet.spawn(vision_service.run_capture_loops)
 
