@@ -316,6 +316,8 @@ class VisionService:
         detections, _ = self.inference_engine.infer(frame)
 
         validated_detections = []
+        green_boxes_detected = [] # List untuk menyimpan deteksi kotak hijau
+        blue_boxes_detected = []  # List untuk menyimpan deteksi kotak biru
         for det in detections:
             original_class = det.get("class")
             if "buoy" in original_class:
@@ -343,11 +345,14 @@ class VisionService:
             )
 
         # Misi fotografi (jika ada)
-        # green_boxes = [d for d in validated_detections if d.get("class") == "green_box"]
-        # blue_boxes = [d for d in validated_detections if d.get("class") == "blue_box"]
-        # if green_boxes or blue_boxes:
-        #    with self.asv_handler.state_lock: current_state_photo = self.asv_handler.current_state.copy()
-        #    self.handle_photography_mission(frame, green_boxes, blue_boxes, current_state_photo)
+        green_boxes = [d for d in validated_detections if d.get("class") == "green_box"]
+        blue_boxes = [d for d in validated_detections if d.get("class") == "blue_box"]
+        if green_boxes_detected or blue_boxes_detected:
+            # Ambil state ASV terbaru
+            with self.asv_handler.state_lock: current_state_photo = self.asv_handler.current_state.copy()
+            # Panggil fungsi fotografi dengan frame yang sesuai (frame dari cam 1)
+            # Fungsi fotografi akan memilih frame cam 2 jika blue box terdeteksi
+            self.handle_photography_mission(frame, green_boxes_detected, blue_boxes_detected, current_state_photo)
 
         return annotated_frame
 
@@ -406,36 +411,62 @@ class VisionService:
                 "GATE_TRAVERSAL_COMMAND", {"active": False}
             )
 
-    def handle_photography_mission(
-        self, original_frame, green_boxes, blue_boxes, current_state
-    ):
-        # Implementasi misi fotografi Anda (dipertahankan)
-        mission_name = "Surface Imaging" if green_boxes else "Underwater Imaging"
+    # Di dalam class VisionService:
+    def handle_photography_mission(self, frame_cam1, green_boxes, blue_boxes, current_state):
+        """Mengambil snapshot dengan overlay, menggunakan frame kamera yang sesuai."""
+
+        frame_to_use = None
+        mission_name = None
+        filename_prefix = None
+        image_count = 0
+
+        if green_boxes: # Jika terdeteksi kotak hijau (surface)
+            frame_to_use = frame_cam1 # Gunakan frame dari kamera 1 (yang diproses AI)
+            mission_name = "Surface Imaging"
+            filename_prefix = "surface"
+            image_count = self.surface_image_count
+            self.surface_image_count += 1
+            print(f"? [CAPTURE] Deteksi Green Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 1.")
+
+        elif blue_boxes: # Jika terdeteksi kotak biru (underwater)
+            # --- MODIFIKASI: Ambil frame CAM 2 ---
+            # Ambil frame terbaru dari kamera 2 (mentah) menggunakan lock yang sesuai
+            with VisionService._frame_lock_cam2:
+                if VisionService._latest_raw_frame_cam2 is not None:
+                    frame_to_use = VisionService._latest_raw_frame_cam2.copy()
+                else:
+                    print("?? [CAPTURE] Deteksi Blue Box, tapi frame CAM 2 tidak tersedia.")
+                    return # Jangan lakukan apa-apa jika frame cam 2 tidak ada
+            # --- AKHIR MODIFIKASI ---
+            mission_name = "Underwater Imaging"
+            filename_prefix = "underwater"
+            image_count = self.underwater_image_count
+            self.underwater_image_count += 1
+            print(f"? [CAPTURE] Deteksi Blue Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 2.")
+
+        # Jika tidak ada frame yang dipilih
+        if frame_to_use is None or mission_name is None:
+            return
+
+        # Buat overlay dan snapshot
         try:
-            overlay_data = create_overlay_from_html(
-                current_state, mission_type=mission_name
-            )
-            snapshot = apply_overlay(original_frame.copy(), overlay_data)
+            overlay_data = create_overlay_from_html(current_state, mission_type=mission_name)
+            snapshot = apply_overlay(frame_to_use, overlay_data) # Gunakan frame_to_use
         except Exception as e:
             print(f"[Photography] Gagal membuat overlay: {e}")
-            snapshot = original_frame.copy()
+            snapshot = frame_to_use # Fallback ke frame tanpa overlay
 
-        filename = (
-            f"surface_{self.surface_image_count}.jpg"
-            if green_boxes
-            else f"underwater_{self.underwater_image_count}.jpg"
-        )
-        if green_boxes:
-            self.surface_image_count += 1
-        else:
-            self.underwater_image_count += 1
-        ret, buffer = cv2.imencode(".jpg", snapshot)
+        # Encode dan unggah
+        filename = f"{filename_prefix}_{image_count}.jpg"
+        ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 90]) # Kualitas JPEG 90
         if ret and buffer is not None:
-            self.socketio.start_background_task(
-                upload_image_to_supabase, buffer, filename, self.config
-            )
+            # Jalankan upload di background task
+            self.socketio.start_background_task(upload_image_to_supabase, buffer, filename, self.config)
         else:
             print(f"[Photography] Gagal encode gambar {filename}")
+            # Reset counter jika gagal encode?
+            if filename_prefix == "surface": self.surface_image_count -= 1
+            else: self.underwater_image_count -= 1
 
     def validate_and_trigger_investigation(self, poi_data, frame, current_state):
         # Implementasi validasi POI Anda (dipertahankan)
