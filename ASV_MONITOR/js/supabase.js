@@ -1,43 +1,54 @@
-// js/supabase.js
+// file: ASV_MONITOR/js/supabase.js
 
 let videoStream = null; // Variabel global untuk menyimpan stream kamera
 
+// --- MODIFIKASI DIMULAI ---
+
 function setupCamera(elements) {
-  // Hanya menampilkan feed kamera, tanpa tombol potret
-  async function startCamera() {
-    try {
-      videoStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
-      });
+  // Ganti IP '127.0.0.1' dengan IP asli Jetson Anda
+  // jika Anda mengakses monitor dari perangkat lain (misal: laptop).
+  // Jika Anda membuka monitor di Jetson itu sendiri, '127.0.0.1' sudah benar.
+  const JETSON_IP = "127.0.0.1"; 
+  const STREAM_URL = `http://${JETSON_IP}:5000/live_video_feed`;
 
-      const videoElement = document.createElement("video");
-      videoElement.srcObject = videoStream;
-      videoElement.autoplay = true;
-      videoElement.playsInline = true;
-      videoElement.className = "camera-feed";
-
-      elements.cam1Container.innerHTML = "";
-      elements.cam1Container.appendChild(videoElement);
-    } catch (error) {
-      console.error("Camera error:", error);
+  // Hentikan penggunaan webcam lokal (getUserMedia)
+  // dan langsung buat elemen <img> untuk menampilkan stream.
+  
+  // Setup untuk CAM 1 (Stream Utama)
+  try {
+    const imgElement = document.createElement("img");
+    imgElement.src = STREAM_URL;
+    imgElement.alt = "Memuat stream dari ASV...";
+    imgElement.style.width = "100%";
+    imgElement.style.height = "100%";
+    imgElement.style.objectFit = "cover";
+    
+    // Tampilkan error jika stream gagal dimuat
+    imgElement.onerror = () => {
       elements.cam1Container.innerHTML =
-        '<div class="error">Kamera tidak dapat diakses</div>';
-    }
+        '<div class="error">Gagal memuat stream. Pastikan backend berjalan dan IP benar.</div>';
+    };
+    
+    elements.cam1Container.innerHTML = "";
+    elements.cam1Container.appendChild(imgElement);
 
-    // Simulasikan kamera kedua
-    elements.cam2Container.innerHTML =
-      '<div class="camera-placeholder">CAM 2 FEED</div>';
+  } catch (error) {
+    console.error("Gagal memulai stream:", error);
+    elements.cam1Container.innerHTML =
+      '<div class="error">Error saat setup stream.</div>';
   }
 
-  startCamera();
-
-  // Membersihkan stream saat halaman ditutup untuk mematikan kamera
-  window.addEventListener("beforeunload", () => {
-    if (videoStream) {
-      videoStream.getTracks().forEach((track) => track.stop());
-    }
-  });
+  // Simulasikan kamera kedua (seperti kode asli)
+  elements.cam2Container.innerHTML =
+    '<div class="camera-placeholder">CAM 2 FEED (WebSocket)</div>';
+  
+  // Catatan: Kode stream WebSocket untuk cam2 dari GUI utama 
+  // (api_client.py) belum diimplementasikan di monitor ini.
+  // Monitor ini sekarang hanya menampilkan stream utama via HTTP.
 }
+
+// --- MODIFIKASI SELESAI ---
+
 
 async function renderGallery(config, elements) {
   try {

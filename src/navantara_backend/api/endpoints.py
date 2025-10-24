@@ -7,37 +7,56 @@ from navantara_backend.extensions import socketio
 
 api_blueprint = Blueprint("api", __name__)
 
-def generate_video_frames():
-    """Generator untuk streaming video frame."""
-    vision_service = current_app.vision_service
+# --- MODIFIKASI DIMULAI ---
+
+def generate_video_frames(vision_service):
+    """
+    Generator untuk streaming video frame.
+    Menerima instance vision_service untuk menghindari 'RuntimeError'.
+    """
     if not vision_service:
-        print("ERROR: Vision service belum siap!")
-        # Mungkin yield frame error atau berhenti?
+        print("ERROR: Vision service tidak diteruskan ke generator video!")
         return
-    
+
     while True:
         frame_to_encode = None
-        # Ambil frame terbaru dengan aman menggunakan lock
-        # Akses lock dari instance VisionService yang ada di current_app
         
-        with current_app.vision_service._frame_lock:
-            if current_app.vision_service._latest_processed_frame is not None:
-                frame_to_encode = current_app.vision_service._latest_processed_frame.copy()
+        # 1. Ambil frame terbaru dengan aman menggunakan lock
+        #    dari instance vision_service yang diteruskan
+        with vision_service._frame_lock:
+            if vision_service._latest_processed_frame is not None:
+                frame_to_encode = vision_service._latest_processed_frame.copy()
 
         if frame_to_encode is not None:
-            # Encode frame ke JPEG (lebih umum daripada WebP)
-            (flag, encodedImage) = cv2.imencode(".jpg", frame_to_encode)
+            
+            # 2. Gunakan kompresi .webp yang efisien (dari test_cam_server.py)
+            (flag, encodedImage) = cv2.imencode(
+                '.webp', frame_to_encode, [cv2.IMWRITE_WEBP_QUALITY, 50]
+            )
 
-            # Pastikan encoding berhasil
             if not flag:
                 continue
 
-            # Yield frame dalam format multipart
-            yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' +
+            # 3. Yield frame dalam format multipart
+            yield(b'--frame\r\n' b'Content-Type: image/webp\r\n\r\n' +
                   bytearray(encodedImage) + b'\r\n')
-
-        # Beri jeda singkat agar tidak membebani CPU, gunakan eventlet.sleep
+        
+        # 4. Gunakan eventlet.sleep agar kooperatif
         eventlet.sleep(0.05) # Jeda ~50ms
+
+@api_blueprint.route('/live_video_feed')
+def live_video_feed():
+    """Rute untuk menyajikan video stream."""
+    
+    # Ambil instance vision_service saat konteks aplikasi masih aktif
+    vision_service_instance = current_app.vision_service
+    
+    # Teruskan instance tersebut ke generator
+    return Response(generate_video_frames(vision_service_instance),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+# --- MODIFIKASI SELESAI ---
+
 
 @socketio.on("connect")
 def handle_connect():
@@ -97,8 +116,4 @@ def handle_socket_command(json_data):
         current_app.asv_handler.process_command(command, payload)
     # --- AKHIR PERBAIKAN ---
 
-@api_blueprint.route('/live_video_feed')
-def live_video_feed():
-    """Rute untuk menyajikan video stream."""
-    return Response(generate_video_frames(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
+# Rute lama /live_video_feed dipindahkan ke atas
