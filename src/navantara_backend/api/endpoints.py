@@ -2,14 +2,14 @@
 from flask import Blueprint, current_app, Response
 import cv2
 import eventlet
-from navantara_backend.main import get_vision_service
+
 from navantara_backend.extensions import socketio
 
 api_blueprint = Blueprint("api", __name__)
 
 def generate_video_frames():
     """Generator untuk streaming video frame."""
-    vision_service = get_vision_service() # Dapatkan instance di awal
+    vision_service = current_app.vision_service
     if not vision_service:
         print("ERROR: Vision service belum siap!")
         # Mungkin yield frame error atau berhenti?
@@ -19,10 +19,10 @@ def generate_video_frames():
         frame_to_encode = None
         # Ambil frame terbaru dengan aman menggunakan lock
         # Akses lock dari instance VisionService yang ada di current_app
-        if hasattr(current_app, 'vision_service'):
-            with current_app.vision_service._frame_lock:
-                if current_app.vision_service._latest_processed_frame is not None:
-                    frame_to_encode = current_app.vision_service._latest_processed_frame.copy()
+        
+        with current_app.vision_service._frame_lock:
+            if current_app.vision_service._latest_processed_frame is not None:
+                frame_to_encode = current_app.vision_service._latest_processed_frame.copy()
 
         if frame_to_encode is not None:
             # Encode frame ke JPEG (lebih umum daripada WebP)

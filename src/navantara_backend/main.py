@@ -13,10 +13,7 @@ from navantara_backend.core.asv_handler import AsvHandler
 from navantara_backend.services.vision_service import VisionService
 from navantara_backend.api.endpoints import api_blueprint
 
-_vision_service_instance = None
-
 def create_app():
-    global _vision_service_instance
     """
     Membuat dan mengkonfigurasi instance aplikasi Flask (Application Factory).
     """
@@ -37,7 +34,6 @@ def create_app():
     # Layanan sekarang dapat memanggil socketio.emit() secara langsung.
     asv_handler = AsvHandler(app.config["ASV_CONFIG"], socketio)
     vision_service = VisionService(app.config["ASV_CONFIG"], asv_handler, socketio)
-    _vision_service_instance = vision_service
 
     # 🔹 Simpan instance service ke dalam konteks aplikasi
     app.asv_handler = asv_handler
@@ -65,6 +61,3 @@ def create_app():
 
     print("[Server] Konfigurasi aplikasi selesai.")
     return app
-
-def get_vision_service():
-    return _vision_service_instance
