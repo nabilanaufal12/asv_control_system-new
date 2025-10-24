@@ -219,6 +219,9 @@ class VisionService:
             f"[{cam_id_log}] Memulai loop untuk kamera index {cam_index} (AI: {apply_detection})..."
         )
 
+        LOCAL_FEED_WIDTH = 320  # Ubah ukuran ini (misal: 320, 480)
+        LOCAL_FEED_HEIGHT = 240 # Ubah ukuran ini (misal: 240, 320)
+
         while self.running:
             frame = None
             try:
@@ -277,10 +280,15 @@ class VisionService:
                         self.socketio.emit(event_name, buffer.tobytes())
 
                 if self.show_local_feed and apply_detection:
-                    cv2.imshow(f"Local Feed {cam_id_log}", frame_to_emit)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        self.stop()
-                        break
+                    cv2.destroyWindow(f'Local Feed {cam_id_log}')
+                    try:
+                        # Ubah ukuran frame *sebelum* ditampilkan
+                        display_frame = cv2.resize(frame_to_emit, (LOCAL_FEED_WIDTH, LOCAL_FEED_HEIGHT))
+                        cv2.imshow(f'Local Feed {cam_id_log}', display_frame) # Tampilkan frame yang sudah diresize
+                        if cv2.waitKey(1) & 0xFF == ord('q'):
+                            self.stop(); break
+                    except Exception as e:
+                        print(f"[{cam_id_log}] Error resizing/showing local feed: {e}")
 
                 eventlet.sleep(0.02)  # Target ~50 FPS
 
