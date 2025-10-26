@@ -14,14 +14,19 @@ def send_telemetry_to_firebase(telemetry_data, config):
         # --- MODIFIKASI DIMULAI ---
         # Ambil data arena dan indeks waypoint dari state
         active_arena = telemetry_data.get("active_arena")
-        # Kita kirim indeks waypoint yang sedang dituju (dimulai dari 0)
-        # Tambah 1 agar sesuai ekspektasi monitor (dimulai dari 1)
-        # Jika indeks >= jumlah waypoints, berarti selesai, kirim 0
-        current_wp_index_zero_based = telemetry_data.get("current_waypoint_index", -1)
-        total_waypoints = len(telemetry_data.get("waypoints", []))
-        point_to_send = 0  # Default jika tidak ada waypoint atau sudah selesai
-        if total_waypoints > 0 and current_wp_index_zero_based < total_waypoints:
-            point_to_send = current_wp_index_zero_based + 1
+        use_dummy = telemetry_data.get("use_dummy_counter", False)
+        point_to_send = 0 # Default
+
+        if use_dummy:
+            # Gunakan counter dummy jika mode debug aktif
+            point_to_send = telemetry_data.get("debug_waypoint_counter", 0)
+            print(f"[Firebase] Mengirim dummy point: {point_to_send}") # Debug
+        else:
+            # Gunakan logika waypoint asli
+            current_wp_index_zero_based = telemetry_data.get("current_waypoint_index", -1)
+            total_waypoints = len(telemetry_data.get("waypoints", []))
+            if total_waypoints > 0 and current_wp_index_zero_based < total_waypoints:
+                point_to_send = current_wp_index_zero_based + 1
 
         data_to_send = {
             "gps": {

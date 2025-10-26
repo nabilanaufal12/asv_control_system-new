@@ -162,6 +162,8 @@ class MainWindow(QMainWindow):
             self.api_client.request_data_stream
         )
 
+        self.settings_panel.debug_command_sent.connect(self.api_client.send_command)
+
         # --- PERUBAHAN UTAMA: Hubungkan sinyal dari ControlPanel ke fungsi logika ---
         self.control_panel.manual_button_clicked.connect(
             lambda: self.set_mode("MANUAL")

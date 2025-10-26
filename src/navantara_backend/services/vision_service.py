@@ -427,7 +427,7 @@ class VisionService:
             filename_prefix = "surface"
             image_count = self.surface_image_count
             self.surface_image_count += 1
-            print(f"? [CAPTURE] Deteksi Green Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 1.")
+            #print(f"? [CAPTURE] Deteksi Green Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 1.")
 
         elif blue_boxes: # Jika terdeteksi kotak biru (underwater)
             # --- MODIFIKASI: Ambil frame CAM 2 ---
@@ -436,14 +436,14 @@ class VisionService:
                 if VisionService._latest_raw_frame_cam2 is not None:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
                 else:
-                    print("?? [CAPTURE] Deteksi Blue Box, tapi frame CAM 2 tidak tersedia.")
+                    #print("?? [CAPTURE] Deteksi Blue Box, tapi frame CAM 2 tidak tersedia.")
                     return # Jangan lakukan apa-apa jika frame cam 2 tidak ada
             # --- AKHIR MODIFIKASI ---
             mission_name = "Underwater Imaging"
             filename_prefix = "underwater"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
-            print(f"? [CAPTURE] Deteksi Blue Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 2.")
+            #print(f"? [CAPTURE] Deteksi Blue Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 2.")
 
         # Jika tidak ada frame yang dipilih
         if frame_to_use is None or mission_name is None:

@@ -76,19 +76,21 @@ class DebugPanel(QWidget):
 
         # Hubungkan tombol ke fungsi yang memancarkan sinyal
         self.counter_plus_btn.clicked.connect(
-            lambda: self.debug_command_sent.emit("AI_CONTROL", "COUNTER_PLUS")
+            lambda: self.debug_command_sent.emit("DEBUG_WP_COUNTER", {"action": "INC"})
         )
         self.counter_min_btn.clicked.connect(
-            lambda: self.debug_command_sent.emit("AI_CONTROL", "COUNTER_MIN")
-        )
-        self.inverse_btn.clicked.connect(
-            lambda: self.debug_command_sent.emit("AI_CONTROL", "INVERSE")
-        )
-        self.motor_set_btn.clicked.connect(
-            lambda: self.debug_command_sent.emit("AI_CONTROL", "MOTOR_SET")
+            lambda: self.debug_command_sent.emit("DEBUG_WP_COUNTER", {"action": "DEC"})
         )
         self.reset_btn.clicked.connect(
-            lambda: self.debug_command_sent.emit("AI_CONTROL", "RESET")
+            lambda: self.debug_command_sent.emit("DEBUG_WP_COUNTER", {"action": "RESET"})
+        )
+
+        # Tombol lain (jika masih diperlukan, bisa dihubungkan nanti)
+        self.inverse_btn.clicked.connect(
+            lambda: print("Tombol Inverse ditekan (belum terhubung)")
+        )
+        self.motor_set_btn.clicked.connect(
+            lambda: print("Tombol Motor Set ditekan (belum terhubung)")
         )
 
         self.send_specific_data_btn.clicked.connect(self.send_data)

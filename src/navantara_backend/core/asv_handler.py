@@ -58,6 +58,8 @@ class AsvHandler:
             "manual_servo_cmd": 90,
             "manual_motor_cmd": 1500,
             "active_arena": None,
+            "debug_waypoint_counter": 0, # Counter dummy
+            "use_dummy_counter": False,   # Flag untuk mode debug
             # --- AKHIR TAMBAHAN ---
         }
 
@@ -469,6 +471,7 @@ class AsvHandler:
             "UPDATE_PID": self._handle_update_pid,
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
             "GATE_TRAVERSAL_COMMAND": self._handle_gate_traversal_command,
+            "DEBUG_WP_COUNTER": self._handle_debug_counter,
         }
         # --- AKHIR MODIFIKASI ---
         handler = command_handlers.get(command)
@@ -491,6 +494,26 @@ class AsvHandler:
             if is_active:
                 self.gate_target.update(payload)
                 self.vision_target["active"] = False  # Pastikan mode lain nonaktif
+
+    def _handle_debug_counter(self, payload):
+        """Menangani increment/decrement dummy waypoint counter."""
+        action = payload.get("action")
+        with self.state_lock:
+            # Otomatis aktifkan mode dummy saat tombol ini digunakan
+            self.current_state["use_dummy_counter"] = True 
+            
+            if action == "INC":
+                self.current_state["debug_waypoint_counter"] += 1
+            elif action == "DEC":
+                self.current_state["debug_waypoint_counter"] = max(0, self.current_state["debug_waypoint_counter"] - 1)
+            elif action == "RESET":
+                self.current_state["debug_waypoint_counter"] = 0
+            
+            # Kita batasi 9, karena data waypoint di monitor ada 9 titik
+            max_points_in_monitor = 9
+            self.current_state["debug_waypoint_counter"] = min(self.current_state["debug_waypoint_counter"], max_points_in_monitor)
+            
+            print(f"[AsvHandler] Debug counter diatur ke: {self.current_state['debug_waypoint_counter']}")
 
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
@@ -613,6 +636,7 @@ class AsvHandler:
                 return
             self.current_state["control_mode"] = "AUTO"
             self.current_state["current_waypoint_index"] = 0  # Mulai ulang dari 0
+            self.current_state["use_dummy_counter"] = False
         self.logger.log_event("Misi navigasi dimulai.")
         # Perintah "W" akan dikirim oleh loop utama
         pass
