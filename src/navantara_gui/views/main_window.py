@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
         self.set_mode("MANUAL")  # Atur mode awal saat start
 
         print("Memulai koneksi klien API ke server...")
-        self.api_client.connect()
+        self.api_client.connect_to_server()
 
         self.showMaximized()
 
@@ -157,6 +157,10 @@ class MainWindow(QMainWindow):
     def connect_signals(self):
         """Menghubungkan semua sinyal dan slot antar komponen."""
         self.header.theme_changed_requested.connect(self.toggle_theme)
+
+        self.video_view.toggle_camera_requested.connect(
+            self.api_client.request_data_stream
+        )
 
         # --- PERUBAHAN UTAMA: Hubungkan sinyal dari ControlPanel ke fungsi logika ---
         self.control_panel.manual_button_clicked.connect(
