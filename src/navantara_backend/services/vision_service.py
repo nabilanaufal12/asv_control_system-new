@@ -345,13 +345,14 @@ class VisionService:
             )
 
         # Misi fotografi (jika ada)
-        green_boxes = [d for d in validated_detections if d.get("class") == "green_box"]
-        blue_boxes = [d for d in validated_detections if d.get("class") == "blue_box"]
+        green_boxes_detected = [d for d in validated_detections if d.get("class") == "green_box"]
+        blue_boxes_detected = [d for d in validated_detections if d.get("class") == "blue_box"]
+
+        # Cek apakah ada kotak hijau atau biru terdeteksi
         if green_boxes_detected or blue_boxes_detected:
             # Ambil state ASV terbaru
             with self.asv_handler.state_lock: current_state_photo = self.asv_handler.current_state.copy()
-            # Panggil fungsi fotografi dengan frame yang sesuai (frame dari cam 1)
-            # Fungsi fotografi akan memilih frame cam 2 jika blue box terdeteksi
+            # Panggil fungsi fotografi dengan frame DARI KAMERA INI (CAM 1, sebelum anotasi)
             self.handle_photography_mission(frame, green_boxes_detected, blue_boxes_detected, current_state_photo)
 
         return annotated_frame

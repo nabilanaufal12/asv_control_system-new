@@ -17,9 +17,7 @@ from PySide6.QtGui import QDoubleValidator
 
 class WaypointsPanel(QGroupBox):
     # --- MODIFIKASI 1: Ubah tipe sinyal ke dict ---
-    send_waypoints = Signal(
-        dict
-    )  # Sekarang mengirim {'waypoints': [...], 'arena': 'A'/'B'}
+    send_waypoints = Signal(dict) # Sekarang mengirim {'waypoints': [...], 'arena': 'A'/'B'}
     # ---------------------------------------------
     add_current_pos_requested = Signal()
     waypoints_updated = Signal(list)
@@ -29,7 +27,7 @@ class WaypointsPanel(QGroupBox):
         super().__init__(title)
         self.config = config
         # --- MODIFIKASI 2: Tambahkan variabel untuk menyimpan arena aktif ---
-        self.current_arena = None  # Awalnya belum ada arena yang dipilih
+        self.current_arena = None # Awalnya belum ada arena yang dipilih
         # -----------------------------------------------------------------
         main_layout = QVBoxLayout()
 
@@ -99,9 +97,8 @@ class WaypointsPanel(QGroupBox):
 
     # --- MODIFIKASI 4: Fungsi baru untuk menangani load mission ---
     def _on_load_mission(self, arena_id):
-        self.current_arena = arena_id  # Simpan arena yang di-load
-        self.load_mission_requested.emit(arena_id)  # Minta MainWindow memuat data
-
+        self.current_arena = arena_id # Simpan arena yang di-load
+        self.load_mission_requested.emit(arena_id) # Minta MainWindow memuat data
     # -------------------------------------------------------------
 
     @Slot(list)
@@ -126,7 +123,9 @@ class WaypointsPanel(QGroupBox):
             self.waypoints_list.addItem(waypoint_text)
             self._emit_updated_waypoints()
         else:
-            print("[GUI] Gagal menambah waypoint: Posisi saat ini tidak valid.")
+            print(
+                "[GUI] Gagal menambah waypoint: Posisi saat ini tidak valid."
+            )
 
     def add_manual_waypoint(self):
         lat_text = self.lat_input.text().replace(",", ".")
@@ -148,8 +147,7 @@ class WaypointsPanel(QGroupBox):
 
     def delete_waypoint(self):
         selected_items = self.waypoints_list.selectedItems()
-        if not selected_items:
-            return
+        if not selected_items: return
         for item in selected_items:
             self.waypoints_list.takeItem(self.waypoints_list.row(item))
         self._emit_updated_waypoints()
@@ -174,17 +172,14 @@ class WaypointsPanel(QGroupBox):
             print("[WaypointsPanel] Tidak ada waypoint untuk dikirim.")
             return
         if self.current_arena is None:
-            print(
-                "[WaypointsPanel] Peringatan: Tidak ada arena (A/B) yang dipilih/di-load."
-            )
+            print("[WaypointsPanel] Peringatan: Tidak ada arena (A/B) yang dipilih/di-load.")
             # Anda bisa memutuskan untuk mengirim None, atau default ke 'A', atau tidak mengirim sama sekali
             # current_arena_to_send = None
-            current_arena_to_send = "A"  # Default ke A jika belum diset
+            current_arena_to_send = "A" # Default ke A jika belum diset
         else:
-            current_arena_to_send = self.current_arena
+             current_arena_to_send = self.current_arena
 
         payload = {"waypoints": all_waypoints, "arena": current_arena_to_send}
         self.send_waypoints.emit(payload)
         print(f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {payload}")
-
     # ---------------------------------------------

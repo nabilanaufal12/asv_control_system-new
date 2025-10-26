@@ -29,7 +29,7 @@ def send_telemetry_to_firebase(telemetry_data, config):
                 "lng": telemetry_data.get("longitude", 0.0),
             },
             "hdg": telemetry_data.get("heading", 0.0),
-            "cog": telemetry_data.get("cog", 0.0),
+            "cog": telemetry_data.get("nav_heading_error", 0.0),
             "sog": telemetry_data.get("speed", 0.0),  # speed dalam m/s
             "jam": time.strftime("%H:%M:%S"),
             "arena": active_arena if active_arena else "N/A",  # Kirim arena
