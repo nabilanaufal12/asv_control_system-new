@@ -326,7 +326,7 @@ class AsvHandler:
 
                 if mission_completed:
                     command_to_send = "W\n"
-                    # print("[AsvHandler] Misi Selesai. Mengirim 'W' (idle).")
+                    print("[AsvHandler] Misi Selesai. Mengirim 'W' (idle).")
 
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
@@ -364,6 +364,8 @@ class AsvHandler:
                             max(servo_min, min(servo_max, servo_default - correction))
                         )
                         pwm_cmd = motor_base - 75
+
+                        print(f"[Gate Traversal] Sending -> Servo: {servo_cmd}, PWM: {int(pwm_cmd)}")
 
                         command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
 
@@ -409,6 +411,8 @@ class AsvHandler:
                         )
                         pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
 
+                        print(f"[Obstacle Avoid] Sending -> Servo: {servo_cmd}, PWM: {pwm_cmd}")
+
                         command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
                     else:
                         self.gate_context["last_gate_config"] = None
@@ -448,6 +452,8 @@ class AsvHandler:
                     self.is_avoiding = False
                     self.avoidance_direction = None
                     servo_cmd, pwm_cmd = servo_default, 1300
+
+                    print(f"[Recovery] Sending -> Servo: {servo_cmd}, PWM: {pwm_cmd}")
 
                     command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
                     if time.time() - self.last_avoidance_time > 0.2:
@@ -575,6 +581,7 @@ class AsvHandler:
         pwm = pwm_stop + fwd * pwr
         servo = servo_def - turn * (servo_def - servo_min)
         servo = max(servo_min, min(servo_max, servo))
+        print(f"[Manual Control] Sending -> Servo: {int(servo)}, PWM: {int(pwm)}")
 
         # Kirim sebagai perintah AI "A," karena ESP32 mengharapkan ini
         # saat tidak dalam mode RC Manual

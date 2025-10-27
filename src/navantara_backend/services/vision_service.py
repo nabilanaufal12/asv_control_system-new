@@ -75,7 +75,7 @@ class VisionService:
             "obstacle_cooldown_period_sec", 2.0
         )  # Ambil dari config
         # self.show_local_feed = vision_cfg.get("show_local_video_feed", False)
-        self.show_local_feed = True
+        self.show_local_feed = False
 
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get("camera_detection", {})
