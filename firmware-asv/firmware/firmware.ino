@@ -6,7 +6,6 @@
 // ---------------- GPS ----------------
 TinyGPSPlus gps;
 HardwareSerial gpsSerial(1);
-// Sesuaikan dengan pin GPS
 #define GPS_RX 15
 #define GPS_TX 17
 
@@ -17,31 +16,31 @@ HardwareSerial gpsSerial(1);
 // ---------------- Servo dan ESC ----------------
 Servo rudderServo;
 Servo motorESC;
-Servo auxOutput; // DARI KODE MANUAL: Tambahkan servo untuk output tambahan
+Servo auxOutput; // Output tambahan (CH8)
 
 // ---------------- PID ----------------
 double Kp = 2.0, Ki = 0.0, Kd = 0.5;
 double error, lastError = 0, integral = 0;
 
 // ---------------- Waypoint ----------------
-#define MAX_DATA 15 // Maksimal 15 titik data
+#define MAX_DATA 15
 Preferences preferences;
 float latitudes[MAX_DATA];
 float longitudes[MAX_DATA];
 int dataIndex = 0;
-int counter = 0; // Counter untuk navigasi waypoint
+int counter = 0; // Counter waypoint
 
 bool captureTriggered = false;
 bool wasInCaptureMode = false;
 bool wasInSaveMode = false;
 
-// --- [FIX] VARIABEL BARU UNTUK KONTROL DARI JETSON ---
-char serialCommand = 'W'; // Default ke mode Waypoint ('W')
-int ai_servo_val = 90;    // Nilai default untuk servo
-int ai_motor_val = 1500;  // Nilai default untuk motor (netral)
+// --- Variabel Kontrol dari Jetson ---
+char serialCommand = 'W'; // Default: Waypoint
+int ai_servo_val = 90;
+int ai_motor_val = 1500;
 
 // ---------------- Haversine ----------------
-#define R 6371000.0
+#define R 6371000.0 // Radius Bumi (meter)
 double haversine(double lat1, double lon1, double lat2, double lon2) {
   double dLat = radians(lat2 - lat1);
   double dLon = radians(lon2 - lon1);
@@ -61,10 +60,10 @@ double bearing(double lat1, double lon1, double lat2, double lon2) {
   double y = sin(dLon) * cos(lat2);
   double x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
   double brng = atan2(y, x);
-  return fmod((degrees(brng) + 360.0), 360.0);
+  return fmod((degrees(brng) + 360.0), 360.0); // Hasil 0-360 derajat
 }
 
-// ---------------- Baca heading CMPS12 ----------------
+// ---------------- Baca Kompas CMPS12 ----------------
 float readCompass() {
   Wire.beginTransmission(CMPS12_ADDRESS);
   Wire.write(ANGLE_16BIT_REGISTER);
@@ -75,37 +74,35 @@ float readCompass() {
     byte highByte = Wire.read();
     byte lowByte = Wire.read();
     unsigned int angle16 = (highByte << 8) | lowByte;
-    return angle16 / 10.0;
+    return angle16 / 10.0; // Hasil dalam derajat (0-359.9)
   }
-  return -1; // Return -1 jika gagal membaca
+  return -1; // Error
 }
 
-// ---------------- PID untuk servo ----------------
+// ---------------- PID Servo ----------------
 int PID_servo(double setpoint, double input) {
-  error = input - setpoint; // Logika servo sudah dibalik
+  error = input - setpoint; // Logika servo dibalik
 
-  // Wrap error to +/- 180 degrees
+  // Wrap error +/- 180
   if (error > 180) error -= 360;
   if (error < -180) error += 360;
 
   integral += error;
+  // TODO: Tambahkan anti-windup jika perlu
   double derivative = error - lastError;
   lastError = error;
 
   double output = Kp * error + Ki * integral + Kd * derivative;
+  int servoPos = 90 + output; // Asumsi 90 tengah
 
-  int servoPos = 90 + output; // Assume 90 is center
-
-  // Clamp servo position
-  if (servoPos > 180) servoPos = 180;
-  if (servoPos < 0) servoPos = 0;
-
+  // Batasi output servo
+  servoPos = constrain(servoPos, 0, 180);
   return servoPos;
 }
 
-// ---------------- PPM INPUT ----------------
+// ---------------- PPM Input RC ----------------
 #define PPM_PIN 4
-#define CHANNELS 10 // Jumlah channel PPM
+#define CHANNELS 10
 volatile int ppm[CHANNELS];
 volatile byte ppmCounter = 0;
 volatile unsigned long lastMicros = 0;
@@ -115,28 +112,24 @@ void IRAM_ATTR ppmISR() {
   unsigned long diff = now - lastMicros;
   lastMicros = now;
 
-  if (diff > 3000) { // Sync pulse detected
+  if (diff > 3000) { // Sync pulse (> 3ms)
     ppmCounter = 0;
-  } else {
-    if (ppmCounter < CHANNELS) {
-      ppm[ppmCounter] = diff;
-      ppmCounter++;
-    }
+  } else if (ppmCounter < CHANNELS) {
+    ppm[ppmCounter++] = diff;
   }
 }
 
 int readChannel(byte ch, int minVal = 1000, int maxVal = 2000, int defaultVal = 1500) {
   if (ch < CHANNELS) {
     int val = ppm[ch];
-    // Basic validation for PPM values
-    if (val >= 800 && val <= 2200) return val;
+    if (val >= 800 && val <= 2200) return val; // Validasi sederhana
   }
   return defaultVal;
 }
 
-// ---------------- Fungsi Manajemen Data GPS ----------------
+// ---------------- Manajemen Waypoint (Preferences) ----------------
 void saveDataToMemory() {
-  preferences.begin("gps-data", false);
+  preferences.begin("gps-data", false); // Buka untuk tulis
   preferences.putUInt("dataCount", dataIndex);
   for (int i = 0; i < dataIndex; i++) {
     String latKey = "lat" + String(i);
@@ -145,14 +138,15 @@ void saveDataToMemory() {
     preferences.putFloat(lngKey.c_str(), longitudes[i]);
   }
   preferences.end();
-  Serial.println("? Data waypoint disimpan ke memori.");
+  Serial.println("? Data waypoint disimpan ke NVS.");
 }
 
 void loadDataFromMemory() {
-  preferences.begin("gps-data", true); // Read-only mode
+  preferences.begin("gps-data", true); // Buka untuk baca
   dataIndex = preferences.getUInt("dataCount", 0);
   if (dataIndex > MAX_DATA) {
-    Serial.println("? Peringatan: Data tersimpan melebihi MAX_DATA. Dibatasi.");
+    Serial.print("? Peringatan: Data di NVS > MAX_DATA. Dibatasi ke ");
+    Serial.println(MAX_DATA);
     dataIndex = MAX_DATA;
   }
   for (int i = 0; i < dataIndex; i++) {
@@ -162,7 +156,7 @@ void loadDataFromMemory() {
     longitudes[i] = preferences.getFloat(lngKey.c_str(), 0.0);
   }
   preferences.end();
-  Serial.print("? Data waypoint dimuat dari memori: ");
+  Serial.print("? Data waypoint dimuat dari NVS: ");
   Serial.print(dataIndex);
   Serial.println(" titik.");
 }
@@ -172,61 +166,54 @@ void clearAllData() {
   preferences.clear();
   preferences.end();
   dataIndex = 0;
-  Serial.println("? Semua data waypoint di memori telah dihapus.");
+  Serial.println("? Semua data waypoint di NVS dihapus.");
 }
 
 void displayAllData() {
   if (dataIndex > 0) {
-    Serial.println("? DATA KOORDINAT TERSIMPAN:");
-    Serial.println("==========================================");
+    Serial.println("? == Data Waypoint Tersimpan ==");
     for (int i = 0; i < dataIndex; i++) {
-      Serial.print("Titik ");
-      if (i < 9) Serial.print("0"); // Leading zero for single digits
+      Serial.print("  Titik ");
       Serial.print(i + 1);
       Serial.print(": ");
       Serial.print(latitudes[i], 6);
       Serial.print(", ");
       Serial.println(longitudes[i], 6);
     }
-    Serial.println("==========================================");
-    Serial.print("Total: ");
+    Serial.print("? Total: ");
     Serial.print(dataIndex);
     Serial.print("/");
-    Serial.print(MAX_DATA);
-    Serial.println(" titik");
+    Serial.println(MAX_DATA);
+    Serial.println("? =============================");
   } else {
-    Serial.println("? Tidak ada data koordinat yang tersimpan.");
+    Serial.println("? Tidak ada waypoint tersimpan.");
   }
 }
 
-// ---------------- MODE FLAG ----------------
+// ---------------- Mode Flag ----------------
 bool isManual = true;
 
-// --- Fungsi untuk Membaca Perintah Serial dari Jetson ---
+// --- Baca Perintah Serial dari Jetson ---
 void checkSerialInput() {
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
-    input.trim(); // Hapus spasi atau karakter tak terlihat
+    input.trim();
 
     if (input.length() > 0) {
-      serialCommand = input.charAt(0); // Ambil karakter pertama sebagai perintah
+      serialCommand = input.charAt(0); // 'A' atau 'W'
 
-      // Jika perintahnya adalah 'A', parse nilai servo dan motor
       if (serialCommand == 'A') {
         int firstComma = input.indexOf(',');
         int secondComma = input.indexOf(',', firstComma + 1);
 
         if (firstComma > 0 && secondComma > 0) {
-          String servoStr = input.substring(firstComma + 1, secondComma);
-          String motorStr = input.substring(secondComma + 1);
-          ai_servo_val = servoStr.toInt();
-          ai_motor_val = motorStr.toInt();
+          ai_servo_val = input.substring(firstComma + 1, secondComma).toInt();
+          ai_motor_val = input.substring(secondComma + 1).toInt();
         } else {
-           Serial.println("? Peringatan: Format perintah 'A' tidak valid.");
-           serialCommand = 'W'; // Kembali ke default jika format salah
+           Serial.println("? Format Perintah 'A' salah, kembali ke 'W'.");
+           serialCommand = 'W'; // Fallback
         }
       }
-      // Jika perintah lain (misal 'W'), tidak perlu parsing lagi
     }
   }
 }
@@ -235,13 +222,13 @@ void checkSerialInput() {
 void setup() {
   Serial.begin(115200);
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
-  Wire.begin(21, 22); // SDA, SCL pins for CMPS12
+  Wire.begin(21, 22); // SDA, SCL
 
   rudderServo.attach(18);
   motorESC.attach(19);
-  auxOutput.attach(23); // Pin untuk output tambahan (CH8)
+  auxOutput.attach(23); // CH8
 
-  // Initialize actuators to neutral positions
+  // Set netral
   rudderServo.write(90);
   motorESC.writeMicroseconds(1500);
   auxOutput.writeMicroseconds(1500);
@@ -249,203 +236,199 @@ void setup() {
   pinMode(PPM_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(PPM_PIN), ppmISR, RISING);
 
-  loadDataFromMemory(); // Muat data waypoint saat startup
+  loadDataFromMemory(); // Muat waypoints
 
-  Serial.println("");
-  Serial.println("======================================");
-  Serial.println("?   ASV NAVANTARA - ESP32 Firmware   ?");
-  Serial.println("======================================");
-  Serial.print("? Data tersimpan: ");
-  Serial.print(dataIndex);
-  Serial.print("/");
-  Serial.print(MAX_DATA);
-  Serial.println(" titik");
-  Serial.println("======================================");
+  Serial.println("\n=================================");
+  Serial.println("? ASV NAVANTARA - Firmware Siap ?");
+  Serial.println("=================================");
+  displayAllData(); // Tampilkan waypoint awal
+  Serial.println("? Menunggu input RC/Serial...");
+  Serial.println("---------------------------------");
 }
 
-// --- VARIABEL GLOBAL UNTUK TELEMETRI ---
+// --- Variabel Global Telemetri ---
 float heading = 0.0;
-double lat = 0.0, lon = 0.0, speed = 0.0; // speed in kmph
+double lat = 0.0, lon = 0.0;
+double speed = 0.0; // km/jam
 int sats = 0;
-// ----------------------------------------
+// ---------------------------------
 
-// ================= LOOP =================
+// ================= LOOP UTAMA =================
 void loop() {
-  // --- Baca Sensor di Awal Loop ---
+  // --- 1. Baca Semua Sensor ---
   while (gpsSerial.available()) {
     gps.encode(gpsSerial.read());
   }
 
+  // Update variabel global telemetri
   if (gps.location.isValid()) {
     lat = gps.location.lat();
     lon = gps.location.lng();
-    speed = gps.speed.kmph(); // Simpan kecepatan dalam km/jam
-  } else {
-    // Reset jika GPS tidak valid untuk sementara
-    lat = 0.0;
-    lon = 0.0;
-    speed = 0.0;
-  }
+  } else { lat = 0.0; lon = 0.0; } // Reset jika tidak valid
+
+  if (gps.speed.isValid()) {
+      speed = gps.speed.kmph();
+  } else { speed = 0.0; }
+
   if (gps.satellites.isValid()) {
     sats = gps.satellites.value();
-  } else {
-    sats = 0;
-  }
+  } else { sats = 0; }
+
   heading = readCompass();
-  if (heading == -1) {
-    // Handle error pembacaan kompas jika perlu
-    // Serial.println("? Peringatan: Gagal membaca kompas.");
-  }
+  if (heading == -1) { heading = 0.0; /* Handle error? */ }
 
-  checkSerialInput(); // Baca perintah dari Jetson
+  // --- 2. Baca Perintah Serial dari Jetson ---
+  checkSerialInput();
 
-  // Baca input dari Remote Control (RC)
-  int ch1 = readChannel(0); // Rudder (Kanan/Kiri)
-  int ch3 = readChannel(2); // Throttle (Maju/Mundur)
-  int ch5 = readChannel(4); // Mode Selector (Manual/Auto)
-  int ch6 = readChannel(5); // Waypoint Capture/Save trigger
-  int ch8 = readChannel(7); // Auxiliary Output
+  // --- 3. Baca Input RC ---
+  int ch1_rudder = readChannel(0);
+  int ch3_throttle = readChannel(2);
+  int ch5_mode = readChannel(4); // < 1500 Manual, >= 1500 Auto
+  int ch6_wp_ctrl = readChannel(5); // Kontrol Waypoint
+  int ch8_aux = readChannel(7);
 
-  // ----------------- MANUAL MODE (RC Override) -----------------
-  if (ch5 < 1500) {
+  // --- 4. Tentukan Mode & Eksekusi Logika ---
+
+  // ----------- MODE MANUAL (RC Override) -----------
+  if (ch5_mode < 1500) {
     if (!isManual) {
-      Serial.println("? Beralih ke MODE MANUAL (RC)...");
-      rudderServo.write(90);             // Set netral saat ganti mode
+      Serial.println("? >> Mode MANUAL (RC Aktif) <<");
+      // Set netral aktuator saat beralih mode
+      rudderServo.write(90);
       motorESC.writeMicroseconds(1500);
       auxOutput.writeMicroseconds(1500);
       isManual = true;
+      // Reset state mode rekam/simpan
       wasInCaptureMode = false;
       wasInSaveMode = false;
     }
 
-    // Kontrol Manual Langsung dari RC
-    int servoPosManual = map(ch1, 1000, 2000, 0, 180);
+    // Kontrol langsung dari RC
+    int servoPosManual = map(ch1_rudder, 1000, 2000, 0, 180);
     rudderServo.write(servoPosManual);
-    motorESC.writeMicroseconds(ch3);
-    auxOutput.writeMicroseconds(ch8);
+    motorESC.writeMicroseconds(ch3_throttle);
+    auxOutput.writeMicroseconds(ch8_aux);
 
-    // --- Logika Penyimpanan Waypoint di Mode MANUAL ---
-    if (ch6 >= 1400 && ch6 <= 1600) { // Mode Rekam Aktif
+    // Logika Simpan Waypoint via RC (CH6)
+    if (ch6_wp_ctrl >= 1400 && ch6_wp_ctrl <= 1600) { // Posisi tengah: Siap Rekam
       if (!wasInCaptureMode) {
-        Serial.println("? MODE REKAM AKTIF: Siap merekam waypoint baru via RC.");
+        Serial.println("? Mode Rekam WP Aktif (RC)");
         wasInCaptureMode = true;
-        captureTriggered = false; // Reset trigger
+        captureTriggered = false;
       }
-      wasInSaveMode = false; // Keluar dari mode save jika masuk mode rekam
-    } else if (ch6 > 1900) { // Tombol Rekam Ditekan
+      wasInSaveMode = false;
+    } else if (ch6_wp_ctrl > 1900) { // Posisi atas: Rekam Titik
       if (wasInCaptureMode && !captureTriggered) {
-        if (wasInSaveMode) { // Jika sebelumnya di mode save, hapus dulu
-          clearAllData();
-          wasInSaveMode = false;
-        }
+        if (wasInSaveMode) { clearAllData(); wasInSaveMode = false; } // Hapus jika sebelumnya save
 
         if (dataIndex >= MAX_DATA) {
-          Serial.println("? Memori waypoint penuh. Tidak bisa menambah titik.");
+          Serial.println("? Memori WP Penuh!");
+        } else if (gps.location.isValid()) {
+          latitudes[dataIndex] = lat;
+          longitudes[dataIndex] = lon;
+          dataIndex++;
+          saveDataToMemory(); // Simpan langsung
+          Serial.print("? Titik WP "); Serial.print(dataIndex); Serial.println(" direkam.");
         } else {
-          if (gps.location.isValid()) {
-            latitudes[dataIndex] = lat; // Gunakan lat global yang sudah dibaca
-            longitudes[dataIndex] = lon; // Gunakan lon global yang sudah dibaca
-            dataIndex++;
-            saveDataToMemory(); // Langsung simpan setiap titik
-            Serial.print("? Titik ke-");
-            Serial.print(dataIndex);
-            Serial.println(" direkam.");
-          } else {
-            Serial.println("? GPS belum valid. Tidak dapat merekam waypoint.");
-          }
+          Serial.println("? GPS belum valid, WP tidak direkam.");
         }
-        captureTriggered = true; // Hanya rekam sekali per tekanan
+        captureTriggered = true; // Hanya rekam sekali
       }
-      // Keluar dari mode rekam setelah tombol ditekan
-      // wasInCaptureMode = false; // Opsional: tetap di mode rekam?
-    } else if (ch6 < 1100) { // Tombol Simpan/Tampilkan Ditekan
+      // wasInCaptureMode = false; // Tetap aktif sampai CH6 netral?
+    } else if (ch6_wp_ctrl < 1100) { // Posisi bawah: Simpan/Tampilkan
       if (!wasInSaveMode) {
-        // saveDataToMemory(); // Sudah disimpan per titik, tidak perlu lagi?
-        Serial.println("? Menampilkan semua waypoint tersimpan...");
+        // saveDataToMemory(); // Sudah disimpan per titik
+        Serial.println("? Menampilkan Waypoint Tersimpan...");
         displayAllData();
         wasInSaveMode = true;
       }
-      wasInCaptureMode = false; // Keluar dari mode rekam jika masuk mode save
-    } else { // Posisi netral CH6
+      wasInCaptureMode = false;
+    } else { // Posisi netral: Reset state
       wasInCaptureMode = false;
       wasInSaveMode = false;
-      captureTriggered = false; // Reset trigger saat kembali ke netral
+      captureTriggered = false;
     }
 
-    // --- Kirim Telemetri Mode Manual ---
+    // Kirim Telemetri Mode Manual (Termasuk Lat/Lon)
     Serial.print("DATA:MANUAL,");
-    Serial.print(heading, 1); // 1 desimal untuk heading
+    Serial.print(heading, 1);
     Serial.print(",");
-    Serial.print(speed, 1);   // 1 desimal untuk speed (kmph)
+    Serial.print(speed, 1); // kmph
     Serial.print(",");
     Serial.print(sats);
     Serial.print(",");
-    Serial.print(servoPosManual); // Posisi servo dari RC
+    Serial.print(servoPosManual);
     Serial.print(",");
-    Serial.println(ch3);          // Nilai motor dari RC
+    Serial.print(ch3_throttle); // Nilai PWM throttle RC
+    Serial.print(",");         // Tambahan koma
+    Serial.print(lat, 6);      // Tambah Latitude
+    Serial.print(",");         // Tambahan koma
+    Serial.println(lon, 6);    // Tambah Longitude (println di akhir)
 
   }
-  // ----------------- AUTO MODE (Dikontrol Jetson atau Waypoint Internal) -----------------
+  // ----------- MODE AUTO (Kontrol Jetson atau Waypoint Internal) -----------
   else {
     if (isManual) {
-      Serial.println("? Beralih ke MODE AUTO...");
-      rudderServo.write(90); // Set netral saat ganti mode
+      Serial.println("? >> Mode AUTO Aktif <<");
+      // Set netral aktuator saat beralih mode
+      rudderServo.write(90);
       motorESC.writeMicroseconds(1500);
       isManual = false;
       counter = 0; // Reset counter waypoint
     }
 
-    // --- Logika Prioritas di Mode Auto ---
+    // Prioritaskan Perintah 'A' (AI) dari Jetson
     if (serialCommand == 'A') {
-      // PRIORITAS 1: Perintah AI dari Jetson
       rudderServo.write(ai_servo_val);
       motorESC.writeMicroseconds(ai_motor_val);
 
-      // Kirim konfirmasi kembali ke Jetson
+      // Kirim Konfirmasi & Telemetri Mode AI (Termasuk Lat/Lon)
       Serial.print("DATA:AUTO,AI_MODE_ACTIVATED,SERVO:");
       Serial.print(ai_servo_val);
       Serial.print(",MOTOR:");
-      Serial.println(ai_motor_val);
+      Serial.print(ai_motor_val); // Ganti println -> print
+      Serial.print(",");         // Tambah koma
+      Serial.print(lat, 6);      // Tambah Latitude
+      Serial.print(",");         // Tambah koma
+      Serial.println(lon, 6);    // Tambah Longitude (println di akhir)
 
-    } else if (serialCommand == 'W') {
-      // PRIORITAS 2: Navigasi Waypoint Internal ESP32
-      if (dataIndex > 0 && gps.location.isValid()) { // Hanya jika ada waypoint & GPS valid
-        if (counter >= dataIndex) { // Semua waypoint selesai
+    }
+    // Jika Perintah 'W' (Waypoint) dari Jetson
+    else if (serialCommand == 'W') {
+      // Jalankan Navigasi Waypoint Internal ESP32
+      if (dataIndex > 0 && gps.location.isValid()) {
+        if (counter >= dataIndex) { // Misi Selesai
           rudderServo.write(90);
-          motorESC.writeMicroseconds(1500); // Berhenti (atau 1000 jika perlu)
+          motorESC.writeMicroseconds(1500); // Berhenti (netral)
           Serial.println("DATA:AUTO,WAYPOINT_COMPLETED");
-
-        } else { // Navigasi ke waypoint 'counter'
+        } else { // Navigasi ke Waypoint[counter]
           double targetLat = latitudes[counter];
           double targetLon = longitudes[counter];
-
           double dist = haversine(lat, lon, targetLat, targetLon);
           double targetBearing = bearing(lat, lon, targetLat, targetLon);
 
-          // Hitung error heading & jalankan PID
-          // 'heading' sudah dibaca di awal loop
+          // PID Control
           double errorHeading = targetBearing - heading;
           if (errorHeading > 180) errorHeading -= 360;
           if (errorHeading < -180) errorHeading += 360;
           int servoPosAuto = PID_servo(targetBearing, heading);
           rudderServo.write(servoPosAuto);
 
-          // Logika kecepatan motor sederhana berdasarkan jarak
-          int motorSpeedAuto = 1700; // Kecepatan default
-          if (dist < 3.0) motorSpeedAuto = 1600; // Pelan saat dekat
-          if (dist < 1.0) motorSpeedAuto = 1500; // Netral saat sangat dekat
+          // Kontrol Kecepatan Sederhana
+          int motorSpeedAuto = 1700; // Default speed
+          if (dist < 3.0) motorSpeedAuto = 1600;
+          if (dist < 1.0) motorSpeedAuto = 1500;
           motorESC.writeMicroseconds(motorSpeedAuto);
 
-          // Pindah ke waypoint berikutnya jika sudah dekat
+          // Cek Jarak & Pindah Waypoint
           if (dist < 1.5) {
             counter++;
-            Serial.print("? Mencapai waypoint, lanjut ke titik ");
-            Serial.println(counter + 1);
+            Serial.print("? Mencapai WP, lanjut ke #"); Serial.println(counter + 1);
           }
 
-          // Kirim Telemetri Navigasi Waypoint
+          // Kirim Telemetri Navigasi Waypoint (Termasuk Lat/Lon)
           Serial.print("DATA:AUTO,WAYPOINT,");
-          Serial.print(counter + 1); // Indeks waypoint target (mulai dari 1)
+          Serial.print(counter + 1); // WP target (1-based index)
           Serial.print(",");
           Serial.print(dist, 1);
           Serial.print(",");
@@ -461,20 +444,21 @@ void loop() {
           Serial.print(",");
           Serial.print(speed, 1); // Kecepatan saat ini (kmph)
           Serial.print(",");
-          Serial.println(sats);
+          Serial.print(sats);     // Ganti println -> print
+          Serial.print(",");      // Tambah koma
+          Serial.print(lat, 6);   // Tambah Latitude
+          Serial.print(",");      // Tambah koma
+          Serial.println(lon, 6); // Tambah Longitude (println di akhir)
         }
-      } else { // Masalah di mode Waypoint (tidak ada data atau GPS tidak valid)
+      } else { // Kondisi Error di Mode Waypoint
         rudderServo.write(90);
         motorESC.writeMicroseconds(1500); // Netral
-        if (dataIndex == 0) {
-          Serial.println("DATA:AUTO,NO_WAYPOINTS");
-        } else {
-          Serial.println("DATA:AUTO,GPS_INVALID");
-        }
+        if (dataIndex == 0) Serial.println("DATA:AUTO,NO_WAYPOINTS");
+        else Serial.println("DATA:AUTO,GPS_INVALID");
       }
     }
-    // Jika ada serialCommand lain (selain 'A' atau 'W'), abaikan di mode AUTO
+    // Abaikan serialCommand lain jika ada
   }
 
-  delay(100); // Jeda loop utama
+  delay(100); // Jeda utama loop
 }

@@ -15,15 +15,17 @@ def send_telemetry_to_firebase(telemetry_data, config):
         # Ambil data arena dan indeks waypoint dari state
         active_arena = telemetry_data.get("active_arena")
         use_dummy = telemetry_data.get("use_dummy_counter", False)
-        point_to_send = 0 # Default
+        point_to_send = 0  # Default
 
         if use_dummy:
             # Gunakan counter dummy jika mode debug aktif
             point_to_send = telemetry_data.get("debug_waypoint_counter", 0)
-            print(f"[Firebase] Mengirim dummy point: {point_to_send}") # Debug
+            print(f"[Firebase] Mengirim dummy point: {point_to_send}")  # Debug
         else:
             # Gunakan logika waypoint asli
-            current_wp_index_zero_based = telemetry_data.get("current_waypoint_index", -1)
+            current_wp_index_zero_based = telemetry_data.get(
+                "current_waypoint_index", -1
+            )
             total_waypoints = len(telemetry_data.get("waypoints", []))
             if total_waypoints > 0 and current_wp_index_zero_based < total_waypoints:
                 point_to_send = current_wp_index_zero_based + 1
@@ -64,13 +66,13 @@ def upload_image_to_supabase(image_buffer, filename, config):
     """Mengunggah buffer gambar ke Supabase Storage."""
     try:
         # --- PERUBAHAN DI SINI ---
-        print(f"? [CAPTURE] Memulai proses unggah untuk '{filename}'...")
+        # print(f"? [CAPTURE] Memulai proses unggah untuk '{filename}'...")
         api_config = config.get("api_urls", {})
         ENDPOINT_TEMPLATE, TOKEN = api_config.get("supabase_endpoint"), api_config.get(
             "supabase_token"
         )
         if not ENDPOINT_TEMPLATE or not TOKEN:
-            print(f"? [CAPTURE] Gagal: Konfigurasi Supabase tidak ditemukan.")
+            # print(f"? [CAPTURE] Gagal: Konfigurasi Supabase tidak ditemukan.")
             return
 
         ENDPOINT = ENDPOINT_TEMPLATE.replace("{filename}", filename)
