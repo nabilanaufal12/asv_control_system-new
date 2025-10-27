@@ -74,7 +74,8 @@ class VisionService:
         self.obstacle_cooldown_period = vision_cfg.get(
             "obstacle_cooldown_period_sec", 2.0
         )  # Ambil dari config
-        self.show_local_feed = vision_cfg.get("show_local_video_feed", False)
+        # self.show_local_feed = vision_cfg.get("show_local_video_feed", False)
+        self.show_local_feed = True
 
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get("camera_detection", {})
@@ -206,6 +207,7 @@ class VisionService:
         """Menghentikan semua loop penangkapan."""
         print("[VisionService] Menghentikan loop penangkapan...")
         self.running = False
+
         if self.show_local_feed:
             cv2.destroyAllWindows()
 
@@ -220,7 +222,7 @@ class VisionService:
         )
 
         LOCAL_FEED_WIDTH = 320  # Ubah ukuran ini (misal: 320, 480)
-        LOCAL_FEED_HEIGHT = 240 # Ubah ukuran ini (misal: 240, 320)
+        LOCAL_FEED_HEIGHT = 240  # Ubah ukuran ini (misal: 240, 320)
 
         while self.running:
             frame = None
@@ -243,6 +245,7 @@ class VisionService:
                         continue
 
                 ret, frame = cap.read()
+
                 if not ret or frame is None:
                     print(
                         f"[{cam_id_log}] Gagal membaca frame. Menutup & mencoba membuka ulang..."
@@ -279,16 +282,78 @@ class VisionService:
                     if ret_encode:
                         self.socketio.emit(event_name, buffer.tobytes())
 
-                if self.show_local_feed and apply_detection:
-                    cv2.destroyWindow(f'Local Feed {cam_id_log}')
-                    try:
-                        # Ubah ukuran frame *sebelum* ditampilkan
-                        display_frame = cv2.resize(frame_to_emit, (LOCAL_FEED_WIDTH, LOCAL_FEED_HEIGHT))
-                        cv2.imshow(f'Local Feed {cam_id_log}', display_frame) # Tampilkan frame yang sudah diresize
-                        if cv2.waitKey(1) & 0xFF == ord('q'):
-                            self.stop(); break
-                    except Exception as e:
-                        print(f"[{cam_id_log}] Error resizing/showing local feed: {e}")
+                # if self.show_local_feed and apply_detection:
+                #    cv2.destroyWindow(f'Local Feed {cam_id_log}')
+                #    try:
+                # Ubah ukuran frame *sebelum* ditampilkan
+                #        display_frame = cv2.resize(frame_to_emit, (LOCAL_FEED_WIDTH, LOCAL_FEED_HEIGHT))
+                #        cv2.imshow(f'Local Feed {cam_id_log}', display_frame) # Tampilkan frame yang sudah diresize
+                #        if cv2.waitKey(1) & 0xFF == ord('q'):
+                #            self.stop(); break
+                #    except Exception as e:
+                #        print(f"[{cam_id_log}] Error resizing/showing local feed: {e}")
+
+                if self.show_local_feed:
+                    if apply_detection:  # HANYA thread CAM1 (AI) yang akan menampilkan
+                        try:
+                            # 1. Siapkan frame CAM1 (AI) - KIRI
+                            frame_cam1_resized = cv2.resize(
+                                frame_to_emit, (LOCAL_FEED_WIDTH, LOCAL_FEED_HEIGHT)
+                            )
+
+                            # 2. Ambil dan siapkan frame CAM2 (Raw) - KANAN
+                            frame_cam2 = None
+                            with VisionService._frame_lock_cam2:  # Kunci thread CAM2
+                                if VisionService._latest_raw_frame_cam2 is not None:
+                                    frame_cam2 = (
+                                        VisionService._latest_raw_frame_cam2.copy()
+                                    )
+
+                            if frame_cam2 is not None:
+                                frame_cam2_resized = cv2.resize(
+                                    frame_cam2, (LOCAL_FEED_WIDTH, LOCAL_FEED_HEIGHT)
+                                )
+                            else:
+                                # Buat frame hitam jika CAM2 belum siap
+                                frame_cam2_resized = np.zeros(
+                                    (LOCAL_FEED_HEIGHT, LOCAL_FEED_WIDTH, 3),
+                                    dtype=np.uint8,
+                                )
+                                cv2.putText(
+                                    frame_cam2_resized,
+                                    "CAM 2 (Waiting)",
+                                    (
+                                        LOCAL_FEED_WIDTH // 2 - 60,
+                                        LOCAL_FEED_HEIGHT // 2,
+                                    ),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.5,
+                                    (255, 255, 255),
+                                    1,
+                                )
+
+                            # 4. Gabungkan (stack) kedua frame secara horizontal
+                            # (CAM1 di kiri, CAM2 di kanan)
+                            combined_frame = np.hstack(
+                                (frame_cam1_resized, frame_cam2_resized)
+                            )
+
+                            # 5. Tampilkan frame gabungan dalam SATU jendela
+                            cv2.imshow(
+                                "NAVANTARA - Local Monitor (AI | Raw)", combined_frame
+                            )
+
+                            if cv2.waitKey(1) & 0xFF == ord("q"):
+                                self.stop()
+                                break
+
+                        except Exception as e:
+                            print(
+                                f"[{cam_id_log}] Error resizing/showing combined feed: {e}"
+                            )
+
+                    # Thread CAM2 (apply_detection == False) tidak melakukan apa-apa
+                    # Ini penting agar hanya ada SATU thread yang mengontrol imshow
 
                 eventlet.sleep(0.02)  # Target ~50 FPS
 
@@ -316,7 +381,7 @@ class VisionService:
         detections, _ = self.inference_engine.infer(frame)
 
         validated_detections = []
-        green_boxes_detected = [] # List untuk menyimpan deteksi kotak hijau
+        green_boxes_detected = []  # List untuk menyimpan deteksi kotak hijau
         blue_boxes_detected = []  # List untuk menyimpan deteksi kotak biru
         for det in detections:
             original_class = det.get("class")
@@ -345,15 +410,22 @@ class VisionService:
             )
 
         # Misi fotografi (jika ada)
-        green_boxes_detected = [d for d in validated_detections if d.get("class") == "green_box"]
-        blue_boxes_detected = [d for d in validated_detections if d.get("class") == "blue_box"]
+        green_boxes_detected = [
+            d for d in validated_detections if d.get("class") == "green_box"
+        ]
+        blue_boxes_detected = [
+            d for d in validated_detections if d.get("class") == "blue_box"
+        ]
 
         # Cek apakah ada kotak hijau atau biru terdeteksi
         if green_boxes_detected or blue_boxes_detected:
             # Ambil state ASV terbaru
-            with self.asv_handler.state_lock: current_state_photo = self.asv_handler.current_state.copy()
+            with self.asv_handler.state_lock:
+                current_state_photo = self.asv_handler.current_state.copy()
             # Panggil fungsi fotografi dengan frame DARI KAMERA INI (CAM 1, sebelum anotasi)
-            self.handle_photography_mission(frame, green_boxes_detected, blue_boxes_detected, current_state_photo)
+            self.handle_photography_mission(
+                frame, green_boxes_detected, blue_boxes_detected, current_state_photo
+            )
 
         return annotated_frame
 
@@ -413,7 +485,9 @@ class VisionService:
             )
 
     # Di dalam class VisionService:
-    def handle_photography_mission(self, frame_cam1, green_boxes, blue_boxes, current_state):
+    def handle_photography_mission(
+        self, frame_cam1, green_boxes, blue_boxes, current_state
+    ):
         """Mengambil snapshot dengan overlay, menggunakan frame kamera yang sesuai."""
 
         frame_to_use = None
@@ -421,29 +495,29 @@ class VisionService:
         filename_prefix = None
         image_count = 0
 
-        if green_boxes: # Jika terdeteksi kotak hijau (surface)
-            frame_to_use = frame_cam1 # Gunakan frame dari kamera 1 (yang diproses AI)
+        if green_boxes:  # Jika terdeteksi kotak hijau (surface)
+            frame_to_use = frame_cam1  # Gunakan frame dari kamera 1 (yang diproses AI)
             mission_name = "Surface Imaging"
             filename_prefix = "surface"
             image_count = self.surface_image_count
             self.surface_image_count += 1
-            #print(f"? [CAPTURE] Deteksi Green Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 1.")
+            # print(f"? [CAPTURE] Deteksi Green Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 1.")
 
-        elif blue_boxes: # Jika terdeteksi kotak biru (underwater)
+        elif blue_boxes:  # Jika terdeteksi kotak biru (underwater)
             # --- MODIFIKASI: Ambil frame CAM 2 ---
             # Ambil frame terbaru dari kamera 2 (mentah) menggunakan lock yang sesuai
             with VisionService._frame_lock_cam2:
                 if VisionService._latest_raw_frame_cam2 is not None:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
                 else:
-                    #print("?? [CAPTURE] Deteksi Blue Box, tapi frame CAM 2 tidak tersedia.")
-                    return # Jangan lakukan apa-apa jika frame cam 2 tidak ada
+                    # print("?? [CAPTURE] Deteksi Blue Box, tapi frame CAM 2 tidak tersedia.")
+                    return  # Jangan lakukan apa-apa jika frame cam 2 tidak ada
             # --- AKHIR MODIFIKASI ---
             mission_name = "Underwater Imaging"
             filename_prefix = "underwater"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
-            #print(f"? [CAPTURE] Deteksi Blue Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 2.")
+            # print(f"? [CAPTURE] Deteksi Blue Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 2.")
 
         # Jika tidak ada frame yang dipilih
         if frame_to_use is None or mission_name is None:
@@ -451,23 +525,30 @@ class VisionService:
 
         # Buat overlay dan snapshot
         try:
-            overlay_data = create_overlay_from_html(current_state, mission_type=mission_name)
-            snapshot = apply_overlay(frame_to_use, overlay_data) # Gunakan frame_to_use
+            overlay_data = create_overlay_from_html(
+                current_state, mission_type=mission_name
+            )
+            snapshot = apply_overlay(frame_to_use, overlay_data)  # Gunakan frame_to_use
         except Exception as e:
             print(f"[Photography] Gagal membuat overlay: {e}")
-            snapshot = frame_to_use # Fallback ke frame tanpa overlay
+            snapshot = frame_to_use  # Fallback ke frame tanpa overlay
 
         # Encode dan unggah
         filename = f"{filename_prefix}_{image_count}.jpg"
-        ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 90]) # Kualitas JPEG 90
+        ret, buffer = cv2.imencode(
+            ".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 90]
+        )  # Kualitas JPEG 90
         if ret and buffer is not None:
             # Jalankan upload di background task
-            self.socketio.start_background_task(upload_image_to_supabase, buffer, filename, self.config)
+            # self.socketio.start_background_task(upload_image_to_supabase, buffer, filename, self.config)
+            pass
         else:
             print(f"[Photography] Gagal encode gambar {filename}")
             # Reset counter jika gagal encode?
-            if filename_prefix == "surface": self.surface_image_count -= 1
-            else: self.underwater_image_count -= 1
+            if filename_prefix == "surface":
+                self.surface_image_count -= 1
+            else:
+                self.underwater_image_count -= 1
 
     def validate_and_trigger_investigation(self, poi_data, frame, current_state):
         # Implementasi validasi POI Anda (dipertahankan)

@@ -58,8 +58,8 @@ class AsvHandler:
             "manual_servo_cmd": 90,
             "manual_motor_cmd": 1500,
             "active_arena": None,
-            "debug_waypoint_counter": 0, # Counter dummy
-            "use_dummy_counter": False,   # Flag untuk mode debug
+            "debug_waypoint_counter": 0,  # Counter dummy
+            "use_dummy_counter": False,  # Flag untuk mode debug
             # --- AKHIR TAMBAHAN ---
         }
 
@@ -236,16 +236,19 @@ class AsvHandler:
             print(f"[AsvHandler] Gagal mem-parsing data waypoint: {e}. Data: {line}")
 
     # --- TAMBAHAN: Fungsi Parser Baru ---
+    # --- TAMBAHAN: Fungsi Parser Baru ---
     def _parse_manual_data(self, line):
         """
         Mem-parsing data telemetri mode manual.
-        Format: "DATA:MANUAL,[heading],[speed],[sats],[servoPos],[motorMicros]"
+        Format DARI LOG: "DATA:MANUAL,[heading],[speed],[sats],[servoPos],[motorMicros],[lat],[lon]"
         """
         try:
             parts = line.split(",")
-            if len(parts) != 6:
+
+            # --- PERBAIKAN: Ubah cek dari 6 ke 8 ---
+            if len(parts) != 8:
                 print(
-                    f"[AsvHandler] Peringatan: Format data manual tidak dikenal. {line}"
+                    f"[AsvHandler] Peringatan: Format data manual tidak dikenal (diharapkan 8, didapat {len(parts)}). {line}"
                 )
                 return
 
@@ -255,6 +258,8 @@ class AsvHandler:
             # parts[3] = sats
             # parts[4] = servoPos
             # parts[5] = motorMicros
+            # parts[6] = latitude (dari log)
+            # parts[7] = longitude (dari log)
 
             with self.state_lock:
                 self.current_state["heading"] = float(parts[1])
@@ -263,6 +268,11 @@ class AsvHandler:
                 self.current_state["nav_gps_sats"] = int(parts[3])
                 self.current_state["manual_servo_cmd"] = int(parts[4])
                 self.current_state["manual_motor_cmd"] = int(parts[5])
+
+                # --- TAMBAHAN: Parse data lat/lon yang baru ---
+                self.current_state["latitude"] = float(parts[6])
+                self.current_state["longitude"] = float(parts[7])
+                # --- AKHIR TAMBAHAN ---
 
         except (ValueError, IndexError, TypeError) as e:
             print(f"[AsvHandler] Gagal mem-parsing data manual: {e}. Data: {line}")
@@ -500,20 +510,26 @@ class AsvHandler:
         action = payload.get("action")
         with self.state_lock:
             # Otomatis aktifkan mode dummy saat tombol ini digunakan
-            self.current_state["use_dummy_counter"] = True 
-            
+            self.current_state["use_dummy_counter"] = True
+
             if action == "INC":
                 self.current_state["debug_waypoint_counter"] += 1
             elif action == "DEC":
-                self.current_state["debug_waypoint_counter"] = max(0, self.current_state["debug_waypoint_counter"] - 1)
+                self.current_state["debug_waypoint_counter"] = max(
+                    0, self.current_state["debug_waypoint_counter"] - 1
+                )
             elif action == "RESET":
                 self.current_state["debug_waypoint_counter"] = 0
-            
+
             # Kita batasi 9, karena data waypoint di monitor ada 9 titik
             max_points_in_monitor = 9
-            self.current_state["debug_waypoint_counter"] = min(self.current_state["debug_waypoint_counter"], max_points_in_monitor)
-            
-            print(f"[AsvHandler] Debug counter diatur ke: {self.current_state['debug_waypoint_counter']}")
+            self.current_state["debug_waypoint_counter"] = min(
+                self.current_state["debug_waypoint_counter"], max_points_in_monitor
+            )
+
+            print(
+                f"[AsvHandler] Debug counter diatur ke: {self.current_state['debug_waypoint_counter']}"
+            )
 
     def _handle_vision_target_update(self, payload):
         with self.state_lock:

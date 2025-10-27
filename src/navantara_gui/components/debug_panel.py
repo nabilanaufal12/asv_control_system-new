@@ -82,7 +82,9 @@ class DebugPanel(QWidget):
             lambda: self.debug_command_sent.emit("DEBUG_WP_COUNTER", {"action": "DEC"})
         )
         self.reset_btn.clicked.connect(
-            lambda: self.debug_command_sent.emit("DEBUG_WP_COUNTER", {"action": "RESET"})
+            lambda: self.debug_command_sent.emit(
+                "DEBUG_WP_COUNTER", {"action": "RESET"}
+            )
         )
 
         # Tombol lain (jika masih diperlukan, bisa dihubungkan nanti)

@@ -27,7 +27,7 @@ class ApiClient(QObject):
         self.sio = socketio.Client()
         self.setup_event_handlers()
 
-    def connect_to_server(self): # <-- NAMA DIGANTI
+    def connect_to_server(self):  # <-- NAMA DIGANTI
         """
         Memulai koneksi ke server. Pustaka menangani koneksi non-blocking
         secara internal, sehingga tidak perlu thread manual.
@@ -42,8 +42,8 @@ class ApiClient(QObject):
     def setup_event_handlers(self):
         """Mendefinisikan callback untuk event yang diterima dari server."""
 
-        @self.sio.on('connect')  # <-- PASTIKAN MENGGUNAKAN .on('connect')
-        def on_sio_connect():     # <-- PASTIKAN NAMA FUNGSI SUDAH DIGANTI
+        @self.sio.on("connect")  # <-- PASTIKAN MENGGUNAKAN .on('connect')
+        def on_sio_connect():  # <-- PASTIKAN NAMA FUNGSI SUDAH DIGANTI
             self.connection_status_changed.emit(True, "Terhubung ke Backend")
             print("Berhasil terhubung! Meminta stream data dari server...")
             # --- PERBAIKAN: Gunakan background task untuk menghindari race condition ---
