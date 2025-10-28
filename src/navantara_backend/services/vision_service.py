@@ -13,10 +13,14 @@ from navantara_backend.vision.inference_engine import InferenceEngine
 
 # Hapus import path_planner jika tidak digunakan di sini
 # from navantara_backend.vision.path_planner import dwa_path_planning
-from navantara_backend.vision.cloud_utils import (
-    # send_telemetry_to_firebase, # Firebase dipanggil dari asv_handler
-    upload_image_to_supabase,
-)
+
+# --- MODIFIKASI: Seluruh blok import cloud_utils di-comment ---
+# from navantara_backend.vision.cloud_utils import (
+#     # send_telemetry_to_firebase, # Firebase dipanggil dari asv_handler
+#     # upload_image_to_supabase,
+# )
+# --- AKHIR MODIFIKASI ---
+
 from navantara_backend.vision.overlay_utils import (
     create_overlay_from_html,
     apply_overlay,
@@ -551,7 +555,9 @@ class VisionService:
         )  # Kualitas JPEG 90
         if ret and buffer is not None:
             # Jalankan upload di background task
+            # --- MODIFIKASI: Panggilan Supabase di-comment ---
             # self.socketio.start_background_task(upload_image_to_supabase, buffer, filename, self.config)
+            # --- AKHIR MODIFIKASI ---
             pass
         else:
             print(f"[Photography] Gagal encode gambar {filename}")
