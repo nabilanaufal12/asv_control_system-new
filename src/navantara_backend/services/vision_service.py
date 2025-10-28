@@ -276,8 +276,19 @@ class VisionService:
                     frame_to_emit = frame
 
                 if should_emit_to_gui:
+                    # --- OPTIMASI DI SINI ---
+                    # Kecilkan frame sebelum dikirim ke GUI
+                    try:
+                        gui_frame = cv2.resize(frame_to_emit, (640, 480)) # atau (480, 320)
+                    except:
+                        gui_frame = frame_to_emit # Fallback
+
                     ret_encode, buffer = cv2.imencode(
-                        ".jpg", frame_to_emit, [cv2.IMWRITE_JPEG_QUALITY, 70]
+                        ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 60] # Kualitas 60
+                    )
+
+                    ret_encode, buffer = cv2.imencode(
+                        ".jpg", frame_to_emit, [cv2.IMWRITE_JPEG_QUALITY, 30]
                     )
                     if ret_encode:
                         self.socketio.emit(event_name, buffer.tobytes())
@@ -536,7 +547,7 @@ class VisionService:
         # Encode dan unggah
         filename = f"{filename_prefix}_{image_count}.jpg"
         ret, buffer = cv2.imencode(
-            ".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 90]
+            ".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 30]
         )  # Kualitas JPEG 90
         if ret and buffer is not None:
             # Jalankan upload di background task
@@ -563,8 +574,8 @@ class VisionService:
             self.recent_detections.clear()
 
     # --- Slot dari GUI (HAPUS DECORATOR @Slot) ---
-    def set_gui_listening(self, payload: dict):  # Hapus @Slot, ubah argumen ke dict
-        status = payload.get("status", False)
+    def set_gui_listening(self, status: bool):  # <-- Ubah argumen menjadi status: bool
+        # Hapus baris 'payload.get()'
         with self.settings_lock:
             if self.gui_is_listening != status:
                 print(f"[VisionService] GUI Listening: {status}")
