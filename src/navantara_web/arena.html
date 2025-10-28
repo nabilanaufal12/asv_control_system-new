@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Koordinat Arena A & B (Simple)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(to bottom, #3498db, #2c3e50);
+            padding: 20px;
+        }
+        .container {
+            background-color: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 25px;
+            text-align: center;
+            max-width: 900px;
+            width: 100%;
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        .arena-selector {
+            margin-bottom: 15px;
+        }
+        .arena-selector button {
+            background: linear-gradient(to bottom, #9b59b6, #8e44ad);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 50px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            margin: 0 10px;
+        }
+        .arena-selector button.active {
+            background: linear-gradient(to bottom, #2ecc71, #27ae60);
+            transform: scale(1.1);
+        }
+        #canvas-container {
+            position: relative;
+            margin: 20px auto;
+            width: 800px;
+            height: 500px;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: white;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #background-canvas { z-index: 1; }
+        #grid-canvas { z-index: 2; }
+        #line-canvas { z-index: 3; }
+        #point-canvas { z-index: 4; }
+        .button-container {
+            margin-top: 20px;
+        }
+        #next-btn {
+            background: linear-gradient(to bottom, #f39c12, #e67e22);
+            color: white;
+            border: none;
+            padding: 12px 35px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 50px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        #next-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+        #next-btn:disabled {
+            background: linear-gradient(to bottom, #bdc3c7, #95a5a6);
+            cursor: not-allowed;
+            transform: none;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin: 15px 0;
+            gap: 10px;
+        }
+        .step {
+            width: 35px; height: 35px; border-radius: 50%;
+            background: #ecf0f1; display: flex; align-items: center;
+            justify-content: center; font-weight: bold;
+        }
+        .step.active {
+            background: #2ecc71; color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="arena-title">Sistem Koordinat</h1>
+        
+        <div class="arena-selector">
+            <button id="arena-a-btn">Arena A</button>
+            <button id="arena-b-btn">Arena B</button>
+        </div>
+        
+        
+        
+        <div id="canvas-container">
+            <canvas id="background-canvas" width="800" height="500"></canvas>
+            <canvas id="grid-canvas" width="800" height="500"></canvas>
+            <canvas id="line-canvas" width="800" height="500"></canvas>
+            <canvas id="point-canvas" width="800" height="500"></canvas>
+        </div>
+        
+        <div class="button-container">
+            <button id="next-btn">Next</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const backgroundCtx = document.getElementById('background-canvas').getContext('2d');
+            const gridCtx = document.getElementById('grid-canvas').getContext('2d');
+            const lineCtx = document.getElementById('line-canvas').getContext('2d');
+            const pointCtx = document.getElementById('point-canvas').getContext('2d');
+            
+            const nextBtn = document.getElementById('next-btn');
+            const arenaABtn = document.getElementById('arena-a-btn');
+            const arenaBBtn = document.getElementById('arena-b-btn');
+            const arenaTitle = document.getElementById('arena-title');
+            
+            
+            const pointsData = {
+                A: [
+                    {x: 680, y: 448}, {x: 632, y: 251}, {x: 692, y: 90},
+                    {x: 400, y: 90}, {x: 177, y: 92}, {x: 140, y: 256},
+                    {x: 167, y: 431}, {x: 312, y: 407}, {x: 628, y: 450}
+                ],
+                B: [
+                    {x: 115, y: 449}, {x: 165, y: 252}, {x: 120, y: 94},
+                    {x: 408, y: 91}, {x: 650, y: 86}, {x: 659, y: 251},
+                    {x: 617, y: 425}, {x: 480, y: 409}, {x: 156, y: 451}
+                ]
+            };
+            
+            let currentArena = 'A';
+            let predefinedPoints = pointsData.A;
+            let points = [];
+            let maxPoints = predefinedPoints.length;
+            let currentPointIndex = 0;
+
+            function switchArena(arena) {
+                currentArena = arena;
+                predefinedPoints = pointsData[arena];
+                arenaTitle.textContent = `Sistem Koordinat - Arena ${currentArena}`;
+                
+                if (arena === 'A') {
+                    arenaABtn.classList.add('active');
+                    arenaBBtn.classList.remove('active');
+                } else {
+                    arenaBBtn.classList.add('active');
+                    arenaABtn.classList.remove('active');
+                }
+                
+                initialize();
+            }
+            
+            arenaABtn.addEventListener('click', () => switchArena('A'));
+            arenaBBtn.addEventListener('click', () => switchArena('B'));
+            
+            function initialize() {
+                drawBackground();
+                drawGrid();
+                
+                points = [];
+                currentPointIndex = 0;
+                
+                
+                lineCtx.clearRect(0, 0, 800, 500);
+                pointCtx.clearRect(0, 0, 800, 500);
+                
+                nextBtn.disabled = false;
+            }
+            
+            function drawBackground() {
+                backgroundCtx.clearRect(0, 0, 800, 500);
+                backgroundCtx.fillStyle = '#FFFFFF';
+                backgroundCtx.fillRect(0, 0, 800, 500);
+                
+                const img = new Image();
+                img.onload = () => backgroundCtx.drawImage(img, 0, 0, 800, 500);
+                img.onerror = () => {
+                    backgroundCtx.fillStyle = '#f0f8ff';
+                    backgroundCtx.fillRect(0, 0, 800, 500);
+                    backgroundCtx.fillStyle = '#3498db';
+                    backgroundCtx.font = 'bold 24px Arial';
+                    backgroundCtx.textAlign = 'center';
+                    backgroundCtx.fillText(`ARENA ${currentArena}`, 400, 250);
+                };
+                img.src = `Arena_${currentArena}.png`;
+            }
+
+            function drawGrid() {
+                gridCtx.clearRect(0, 0, 800, 500);
+                gridCtx.strokeStyle = '#e0e0e0';
+                gridCtx.lineWidth = 1;
+                for (let x = 50; x < 800; x += 50) {
+                    gridCtx.beginPath(); gridCtx.moveTo(x, 0); gridCtx.lineTo(x, 500); gridCtx.stroke();
+                }
+                for (let y = 50; y < 500; y += 50) {
+                    gridCtx.beginPath(); gridCtx.moveTo(0, y); gridCtx.lineTo(800, y); gridCtx.stroke();
+                }
+                gridCtx.strokeStyle = '#bdc3c7';
+                gridCtx.lineWidth = 2;
+                gridCtx.strokeRect(0, 0, 800, 500);
+            }
+
+            function drawPoint(x, y, index) {
+                pointCtx.fillStyle = '#8e44ad';
+                pointCtx.beginPath();
+                pointCtx.arc(x, y, 8, 0, Math.PI * 2);
+                pointCtx.fill();
+                pointCtx.strokeStyle = '#ffffff';
+                pointCtx.lineWidth = 2;
+                pointCtx.stroke();
+                
+                pointCtx.fillStyle = '#2c3e50';
+                pointCtx.font = 'bold 16px Arial';
+                pointCtx.textAlign = 'center';
+                pointCtx.fillText((index + 1).toString(), x, y - 25);
+            }
+
+            function drawLine(x1, y1, x2, y2) {
+                lineCtx.strokeStyle = '#FFA500';
+                lineCtx.lineWidth = 3;
+                lineCtx.setLineDash([10, 5]);
+                lineCtx.beginPath();
+                lineCtx.moveTo(x1, y1);
+                lineCtx.lineTo(x2, y2);
+                lineCtx.stroke();
+                lineCtx.setLineDash([]);
+            }
+
+            function drawAll() {
+                lineCtx.clearRect(0, 0, 800, 500);
+                pointCtx.clearRect(0, 0, 800, 500);
+                for (let i = 0; i < points.length; i++) {
+                    drawPoint(points[i].x, points[i].y, i);
+                    if (i > 0) {
+                        drawLine(points[i-1].x, points[i-1].y, points[i].x, points[i].y);
+                    }
+                }
+            }
+
+            
+
+            nextBtn.addEventListener('click', function() {
+                if (currentPointIndex >= maxPoints) return;
+                
+                points.push(predefinedPoints[currentPointIndex]);
+                currentPointIndex++;
+                
+                drawAll();
+                
+                
+                if (points.length === maxPoints) {
+                    nextBtn.disabled = true;
+                }
+            });
+            
+            switchArena('A');
+        });
+    </script>
+</body>
+</html>

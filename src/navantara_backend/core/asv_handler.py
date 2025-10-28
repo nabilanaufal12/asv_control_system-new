@@ -93,6 +93,8 @@ class AsvHandler:
         self.ekf = SimpleEKF(np.zeros(5), np.eye(5) * 0.1)
         self.last_ekf_update_time = time.time()
 
+        self.use_dummy_serial = self.config.get("serial_connection", {}).get("use_dummy_serial", False)
+
         self.logger = MissionLogger()
         self.logger.log_event("AsvHandler diinisialisasi.")
         print("[AsvHandler] Handler diinisialisasi untuk operasi backend.")
@@ -100,6 +102,11 @@ class AsvHandler:
         self.initiate_auto_connection()
 
     def initiate_auto_connection(self):
+        
+        if self.use_dummy_serial:
+            print("[AsvHandler] Mode DUMMY SERIAL aktif. Koneksi serial fisik dilewati.")
+        return
+    
         print("[AsvHandler] Memulai upaya koneksi serial otomatis...")
         baud_rate = self.config.get("serial_connection", {}).get(
             "default_baud_rate", 115200
