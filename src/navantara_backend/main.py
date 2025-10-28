@@ -24,11 +24,12 @@ def create_app():
     # Tentukan path ke folder ASV_MONITOR relatif terhadap backend_dir
     monitor_dir = os.path.join(backend_dir, "ASV_MONITOR")
 
-    app = Flask(
-        __name__,
-        static_folder=monitor_dir,  # Folder untuk file statis (css, js, images)
-        template_folder=monitor_dir,  # Folder untuk file HTML (monitor1.html)
-    )
+    app = Flask(__name__,
+            template_folder=os.path.abspath(
+                'src/navantara_web'), # <-- UBAH INI
+            static_folder=os.path.abspath(
+                'src/navantara_web')  # <-- UBAH INI
+            )
     # -------------------------------------------------------------
 
     # Muat konfigurasi
@@ -64,6 +65,13 @@ def create_app():
         # Jika Anda tidak memindahkannya, gunakan: return send_from_directory('../../ASV_MONITOR', 'monitor1.html')
         return send_from_directory(app.template_folder, "monitor1.html")
 
+    # --------------------------------------------------------
+
+    # --- TAMBAHKAN KODE BARU ANDA DI SINI ---
+    @app.route("/local")
+    def monitor_local():
+        # Ini akan menyajikan file 'monitor_local.html' yang baru Anda buat
+        return send_from_directory(app.template_folder, "monitor_local.html")
     # --------------------------------------------------------
 
     # Inisialisasi SocketIO
