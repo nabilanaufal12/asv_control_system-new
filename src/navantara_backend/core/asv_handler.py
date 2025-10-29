@@ -116,7 +116,10 @@ class AsvHandler:
         self.serial_handler.find_and_connect_esp32(baud_rate)
 
     def _update_and_emit_state(self):
-        if self.running and self.is_streaming_to_gui:
+        # === MODIFIKASI: Hapus cek 'self.is_streaming_to_gui' ===
+        # if self.running and self.is_streaming_to_gui: (LAMA)
+        if self.running: # (BARU)
+        # === AKHIR MODIFIKASI ===
             with self.state_lock:
                 state_copy = self.current_state.copy()
                 state_copy["is_connected_to_serial"] = self.serial_handler.is_connected
