@@ -14,7 +14,7 @@ from navantara_backend.core.navigation import (
 from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
 # --- MODIFIKASI: Import Firebase di-comment ---
-# from navantara_backend.vision.cloud_utils import send_telemetry_to_firebase
+from navantara_backend.vision.cloud_utils import send_telemetry_to_firebase
 # --- AKHIR MODIFIKASI ---
 
 
@@ -117,8 +117,8 @@ class AsvHandler:
 
     def _update_and_emit_state(self):
         # === MODIFIKASI: Hapus cek 'self.is_streaming_to_gui' ===
-        # if self.running and self.is_streaming_to_gui: (LAMA)
-        if self.running: # (BARU)
+        if self.running and self.is_streaming_to_gui: #(LAMA)
+        # if self.running: # (BARU)
         # === AKHIR MODIFIKASI ===
             with self.state_lock:
                 state_copy = self.current_state.copy()
@@ -484,7 +484,7 @@ class AsvHandler:
             self._update_and_emit_state()
             
             # --- MODIFIKASI: Panggilan Firebase di-comment ---
-            # send_telemetry_to_firebase(state_for_logic, self.config)
+            send_telemetry_to_firebase(state_for_logic, self.config)
             # --- AKHIR MODIFIKASI ---
             
             self.socketio.sleep(0.1)

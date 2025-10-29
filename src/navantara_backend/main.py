@@ -87,6 +87,13 @@ def create_app():
         return send_from_directory(app.template_folder, "monitor_local.html")
     # --------------------------------------------------------
 
+    # === TAMBAHKAN KODE BARU INI UNTUK HALAMAN DEBUG ===
+    @app.route("/debug")
+    def debug_telemetry():
+        # Ini akan menyajikan file 'debug_telemetry.html'
+        return send_from_directory(app.template_folder, "debug_telemetry.html")
+    # === AKHIR KODE BARU ===
+
     # Inisialisasi SocketIO
     socketio.init_app(app, async_mode="eventlet", cors_allowed_origins="*")
 

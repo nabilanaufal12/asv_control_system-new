@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Debug Telemetri Jetson</title>
+    <style>
+        body { font-family: monospace; background: #2b2b2b; color: #f1f1f1; }
+        pre { background: #3c3c3c; padding: 15px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Data Telemetri Mentah</h1>
+    <p>Halaman ini akan menampilkan data mentah (JSON) yang diterima dari server.</p>
+    <pre id="data-display">Menunggu data dari event 'telemetry_update'...</pre>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        console.log("Memulai skrip debug...");
+
+        // Hubungkan ke namespace default (sama seperti GUI)
+        const socket = io();
+
+        socket.on('connect', () => {
+            console.log('BERHASIL terhubung ke server Socket.IO!');
+        });
+
+        socket.on('disconnect', () => {
+            console.warn('TERPUTUS dari server Socket.IO.');
+        });
+
+        // Ini adalah listener utama
+        socket.on('telemetry_update', (data) => {
+            // Tampilkan di konsol browser (F12)
+            console.log("Menerima 'telemetry_update':", data);
+
+            // Tampilkan di halaman web
+            const display = document.getElementById('data-display');
+            // Ubah objek data JavaScript menjadi teks JSON yang rapi
+            display.textContent = JSON.stringify(data, null, 2);
+        });
+    </script>
+</body>
+</html>
