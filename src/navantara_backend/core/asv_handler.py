@@ -117,8 +117,8 @@ class AsvHandler:
 
     def _update_and_emit_state(self):
         # === MODIFIKASI: Hapus cek 'self.is_streaming_to_gui' ===
-        if self.running and self.is_streaming_to_gui: #(LAMA)
-        # if self.running: # (BARU)
+        # if self.running and self.is_streaming_to_gui: #(LAMA)
+        if self.running: # (BARU)
         # === AKHIR MODIFIKASI ===
             with self.state_lock:
                 state_copy = self.current_state.copy()

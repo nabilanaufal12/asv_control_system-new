@@ -114,6 +114,8 @@ function setupLocalSocketIO(elements) {
 
     socket.on('connect', () => {
         console.log('Terhubung ke server Socket.IO (Jetson) via /local');
+        console.log('Mengirim permintaan stream ke server...');
+        socket.emit("request_stream", {"status": true});
     });
 
     socket.on('disconnect', () => {
