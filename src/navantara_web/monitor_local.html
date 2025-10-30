@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NAVANTARA - ASV Dashboard (LOKAL)</title> <link rel="stylesheet" href="styles.css" />
+    <title>NAVANTARA - ASV Dashboard (LOKAL - SSE)</title> <link rel="stylesheet" href="styles.css" />
     <link
       href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700;800&family=Inter:wght@400;500;700;800&display=swap"
       rel="stylesheet"
@@ -13,6 +13,8 @@
      crossorigin=""/>
 
     <style>
+      /* ... (Semua CSS Anda yang ada tetap di sini, tidak berubah) ... */
+      
       /* Menyembunyikan elemen yang tidak diperlukan lagi */
       .arena-selector,
       .button-container {
@@ -132,13 +134,13 @@
             <div class="camera-feed">
               <h3>SURFACE CAM</h3>
               <div class="camera-container" id="cam1-container">
-                <img src="/live_video_feed" alt="Camera 1 Feed">
+                <img src="http://192.168.1.18:5000/live_video_feed" alt="Camera 1 Feed">
                 </div>
             </div>
             <div class="camera-feed">
               <h3>UNDERWATER CAM</h3>
               <div class="camera-container" id="cam2-container">
-                <img src="/live_video_feed_cam2" alt="Camera 2 Feed">
+                <img src="http://192.168.1.18:5000/live_video_feed_cam2" alt="Camera 2 Feed">
                 </div>
             </div>
           </section>
@@ -157,8 +159,7 @@
                 <span>TIME:</span><span id="time-value">...</span>
               </div>
               <div class="info-item">
-                <span>GPS:</span><span id="gps-value">...</span>
-              </div>
+                <span>GPS:</span><span id="gps-value">Connecting...</span> </div>
               <div class="info-item">
                 <span>SOG:</span><span id="sog-value">0 km/jam</span>
               </div>
@@ -206,12 +207,10 @@
      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
      crossorigin=""></script>
 
-    <script src="/socket.io/socket.io.js"></script>
-    
     <script src="js/main_local.js"></script> 
     
     <script>
-      // Script canvas Anda (TIDAK BERUBAH)
+      // ... (Seluruh <script> canvas Anda yang ada tetap di sini, tidak berubah) ...
       document.addEventListener("DOMContentLoaded", function () {
         const backgroundCtx = document.getElementById("background-canvas")?.getContext("2d"); // Tambah ?.
         const gridCtx = document.getElementById("grid-canvas")?.getContext("2d");

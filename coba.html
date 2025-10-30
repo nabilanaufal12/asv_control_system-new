@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test EventSource (CORS Fixed)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #data-container {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        #status { color: green; }
+        #status.error { color: red; }
+    </style>
+</head>
+<body>
+
+    <h1>Data Stream dari Server</h1>
+    <h3 id="status">Menghubungkan...</h3>
+    <div id="data-container">
+        Menunggu data...
+    </div>
+
+    <script>
+        // Ambil elemen untuk menampilkan data dan status
+        const dataContainer = document.getElementById('data-container');
+        const statusElement = document.getElementById('status');
+
+        // 1. Ganti IP ini dengan IP server Anda
+        const serverURL = 'http://192.168.1.18:5000/data';
+
+        console.log(`Menghubungkan ke ${serverURL}`);
+
+        // 2. Buat koneksi EventSource
+        const eventSource = new EventSource(serverURL);
+
+        // 3. Dipanggil saat koneksi berhasil dibuka
+        eventSource.onopen = function() {
+            console.log("Koneksi EventSource dibuka.");
+            statusElement.textContent = "Terhubung!";
+            statusElement.className = "connected";
+        };
+
+        // 4. Dipanggil setiap kali ada data baru (event 'message')
+        eventSource.onmessage = function(event) {
+            console.log("Data diterima:", event.data);
+            
+            // Parse data JSON yang diterima dari server
+            const data = JSON.parse(event.data);
+            
+            // Tampilkan data di halaman HTML
+            dataContainer.innerHTML = `
+                <p><strong>ID Data:</strong> ${data.id}</p>
+                <p><strong>Suhu:</strong> ${data.suhu} °C</p>
+                <p><strong>Kelembaban:</strong> ${data.kelembaban} %</p>
+                <hr>
+                <p><em>Data mentah: ${event.data}</em></p>
+            `;
+        };
+
+        // 5. Dipanggil jika terjadi error (termasuk error CORS jika belum diperbaiki)
+        eventSource.onerror = function(err) {
+            console.error("EventSource failed:", err);
+            statusElement.textContent = "Error! Gagal terhubung ke server.";
+            statusElement.className = "error";
+            
+            // Anda bisa menutup koneksi jika error
+            // eventSource.close();
+        };
+
+    </script>
+
+</body>
+</html>

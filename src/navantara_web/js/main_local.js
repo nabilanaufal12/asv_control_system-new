@@ -62,11 +62,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Panggilan fungsi Anda yang lain
   setupTabs(ELEMENTS);
 
-  // === MODIFIKASI: Panggil setupLocalSocketIO ===
+  // === MODIFIKASI: Panggil setupLocalSocketIO (yang sekarang isinya SSE) ===
   if (typeof setupLocalSocketIO === 'function') {
     // Tidak perlu CONFIG, hanya ELEMENTS
     setupLocalSocketIO(ELEMENTS); 
-    console.log("Memulai setupLocalSocketIO...");
+    console.log("Memulai setupLocalSocketIO (mode SSE)...");
   } else {
     console.error("Fungsi setupLocalSocketIO tidak ditemukan.");
   }
@@ -103,40 +103,51 @@ function setupTabs(elements) {
 }
 
 
-// === TAMBAHAN: FUNGSI BARU UNTUK SOCKET.IO ===
+// === MODIFIKASI TOTAL: Menggunakan Server-Sent Events (SSE) ===
 
 /**
- * Memulai koneksi Socket.IO lokal dan mengatur listener.
+ * Memulai koneksi Server-Sent Events (SSE) lokal dan mengatur listener.
+ * (Menggantikan fungsi Socket.IO yang lama)
  */
 function setupLocalSocketIO(elements) {
-    // 1. Hubungkan ke server Socket.IO
-    const socket = io();
+    
+    // 1. Tentukan URL endpoint streaming baru kita.
+    // IP 192.168.1.20 diambil dari config.json Anda.
+    const serverURL = 'http://192.168.1.18:5000/stream-telemetry'; 
 
-    socket.on('connect', () => {
-        console.log('Terhubung ke server Socket.IO (Jetson) via /local');
-        console.log('Mengirim permintaan stream ke server...');
-        socket.emit("request_stream", {"status": true});
-    });
+    console.log(`[SSE] Menghubungkan ke ${serverURL}`);
 
-    socket.on('disconnect', () => {
-        console.warn('Terputus dari server Socket.IO (Jetson)');
-        // Opsional: Tampilkan status 'DISCONNECTED' di UI
+    // 2. Buat koneksi EventSource
+    const eventSource = new EventSource(serverURL);
+
+    // 3. Dipanggil saat koneksi berhasil dibuka
+    eventSource.onopen = function() {
+        console.log('[SSE] Koneksi berhasil dibuka.');
+        if (elements.gpsValue) elements.gpsValue.textContent = "Waiting for data...";
+    };
+
+    // 4. Dipanggil jika terjadi error koneksi
+    eventSource.onerror = function(err) {
+        console.error("[SSE] Koneksi EventSource gagal:", err);
         if (elements.gpsValue) elements.gpsValue.textContent = "DISCONNECTED";
         if (headingLine) {
             map.removeLayer(headingLine);
             headingLine = null;
         }
-    });
+    };
 
-    // 2. Dengarkan event 'telemetry_update'
-    socket.on('telemetry_update', (data) => {
-        // 'data' adalah objek state_copy yang dikirim dari asv_handler.py
+    // 5. Dipanggil SETIAP KALI data baru diterima dari server
+    eventSource.onmessage = function(event) {
+        
+        // 'event.data' adalah string JSON yang dikirim dari Flask
+        const data = JSON.parse(event.data); 
+
         if (!data) {
-            console.warn("Menerima data telemetry_update null.");
+            console.warn("[SSE] Menerima data null.");
             return;
         }
 
-        // 3. Perbarui UI (logika disalin dari firebase.js dan DIMODIFIKASI)
+        // --- MULAI LOGIKA UPDATE UI (Logika ini SAMA PERSIS dengan kode Anda sebelumnya) ---
         
         // Kontrol Arena
         const arena = data.active_arena; // <-- Key SUDAH BENAR
@@ -169,11 +180,10 @@ function setupLocalSocketIO(elements) {
         // --- PEMBARUAN PETA GPS & GARIS HDG ---
         let currentLatLng = null;
         
-        // === PERBAIKAN 1: BACA data.latitude dan data.longitude ===
+        // === BACA data.latitude dan data.longitude ===
         const lat = data.latitude;
         const lng = data.longitude;
-        // === AKHIR PERBAIKAN 1 ===
-
+        
         if (lat !== undefined && lng !== undefined && (lat !== lastKnownGps.lat || lng !== lastKnownGps.lng)) {
             lastKnownGps.lat = lat;
             lastKnownGps.lng = lng;
@@ -201,11 +211,10 @@ function setupLocalSocketIO(elements) {
         // --- PEMBARUAN ELEMEN HTML LAINNYA ---
         let currentHdg = null;
         if (elements.hdgValue) {
-            // === PERBAIKAN 2: BACA data.heading ===
+            // === BACA data.heading ===
             if (data.heading !== undefined) {
                 try {
                     const hdgNum = parseFloat(data.heading);
-                    // === AKHIR PERBAIKAN 2 ===
                     if (isNaN(hdgNum)) throw new Error("HDG bukan angka");
                     elements.hdgValue.textContent = `${Math.round(hdgNum)}°`;
                     currentHdg = hdgNum;
@@ -220,7 +229,7 @@ function setupLocalSocketIO(elements) {
             }
         }
 
-        // === PERBAIKAN 3: BACA data.speed dan KONVERSI ke km/jam ===
+        // === BACA data.speed dan KONVERSI ke km/jam ===
         if (elements.sogValue) {
             if (data.speed !== undefined) { // Baca 'speed' (m/s)
                 try {
@@ -239,14 +248,12 @@ function setupLocalSocketIO(elements) {
                 elements.sogValue.textContent = "N/A";
             }
         }
-        // === AKHIR PERBAIKAN 3 ===
         
         // Update COG (Kita gunakan nav_heading_error sebagai COG di monitor ini)
         if (elements.cogValue) {
-            // === PERBAIKAN 4: BACA data.nav_heading_error ===
+            // === BACA data.nav_heading_error ===
             elements.cogValue.textContent =
             data.nav_heading_error !== undefined ? `${Math.round(parseFloat(data.nav_heading_error)) || 0}°` : "N/A";
-            // === AKHIR PERBAIKAN 4 ===
         }
 
         // Update HARI, TANGGAL, dan WAKTU (menggunakan waktu LOKAL BROWSER)
@@ -273,14 +280,15 @@ function setupLocalSocketIO(elements) {
             map.removeLayer(headingLine);
             headingLine = null;
         }
-    });
+        // --- AKHIR LOGIKA UPDATE UI ---
+    }
 
     // Perbarui waktu lokal setiap detik
     setInterval(() => updateDateTime(elements), 1000);
 }
 
 
-// === TAMBAHAN: FUNGSI HELPER (Disalin dari firebase.js) ===
+// === FUNGSI HELPER (TIDAK BERUBAH) ===
 
 /**
  * Memperbarui elemen DAY, DATE, dan TIME menggunakan waktu lokal browser.

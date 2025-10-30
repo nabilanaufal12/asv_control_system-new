@@ -2,9 +2,10 @@
 import json
 import os
 import eventlet
+import time
 
 # --- TAMBAHAN IMPORT ---
-from flask import Flask, g, current_app, send_from_directory, jsonify
+from flask import Flask, g, current_app, send_from_directory, jsonify, Response, stream_with_context
 from flask_cors import CORS # <--- 2. TAMBAHKAN IMPORT BARU INI
 
 # -----------------------
@@ -123,6 +124,38 @@ def create_app():
             
         except Exception as e:
             return jsonify({"error": str(e), "message": "Gagal mengambil data state."}), 500
+    # --- AKHIR DARI ENDPOINT BARU ---
+
+    @app.route('/stream-telemetry')
+    def stream_telemetry():
+        """
+        Endpoint streaming Server-Sent Events (SSE) untuk telemetri.
+        """
+        def telemetry_stream():
+            """Generator untuk stream data."""
+            try:
+                while True:
+                    # Ambil data telemetri terbaru dari asv_handler
+                    # Ini adalah cara thread-safe (greenlet-safe)
+                    with current_app.asv_handler.state_lock:
+                        data = current_app.asv_handler.current_state.copy()
+                    
+                    # Format data sebagai JSON
+                    json_data = json.dumps(data)
+                    
+                    # Kirim data dalam format SSE: "data: ...\n\n"
+                    yield f"data: {json_data}\n\n"
+                    
+                    # Kirim data 10 kali per detik (sesuai loop utama asv_handler)
+                    eventlet.sleep(0.1) 
+            except Exception as e:
+                # Tangani jika klien terputus
+                print(f"[SSE Stream] Klien terputus: {e}")
+            finally:
+                print("[SSE Stream] Menghentikan stream telemetri.")
+
+        # Kembalikan Response streaming
+        return Response(stream_with_context(telemetry_stream()), content_type='text/event-stream')
     # --- AKHIR DARI ENDPOINT BARU ---
 
     # Inisialisasi SocketIO
