@@ -214,7 +214,7 @@ def handle_socket_command(json_data):
             if hasattr(current_app.vision_service, method_name):
                 getattr(current_app.vision_service, method_name)(payload)
             else:
-                print(f"[API] Perintah vision tidak dikenal: {command}")
+                print(f"[APyield (b'--frame\r\nI] Perintah vision tidak dikenal: {command}")
         else:
             current_app.asv_handler.process_command(command, payload)
     except Exception as e:
