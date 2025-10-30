@@ -4,7 +4,8 @@ import os
 import eventlet
 
 # --- TAMBAHAN IMPORT ---
-from flask import Flask, g, current_app, send_from_directory
+from flask import Flask, g, current_app, send_from_directory, jsonify
+from flask_cors import CORS # <--- 2. TAMBAHKAN IMPORT BARU INI
 
 # -----------------------
 
@@ -37,6 +38,8 @@ def create_app():
             template_folder=web_folder_path,
             static_folder=web_folder_path
             )
+    
+    CORS(app)  # <--- 3. INISIALISASI CORS DI SINI
     
     print(f"[Server] Web template_folder diatur ke: {web_folder_path}")
     print(f"[Server] Web static_folder diatur ke: {web_folder_path}")
@@ -93,6 +96,34 @@ def create_app():
         # Ini akan menyajikan file 'debug_telemetry.html'
         return send_from_directory(app.template_folder, "debug_telemetry.html")
     # === AKHIR KODE BARU ===
+
+    # --- 4. TAMBAHKAN ENDPOINT API BARU DI SINI ---
+    @app.route("/api/telemetry")
+    def api_get_telemetry():
+        """
+        Endpoint API HTTP untuk mengambil data telemetri terbaru sebagai JSON.
+        """
+        try:
+            state_data = current_app.asv_handler.current_state
+            
+            with current_app.asv_handler.state_lock:
+                data_copy = state_data.copy()
+            
+            # Buat respons JSON
+            response = jsonify(data_copy)
+            
+            # --- TAMBAHAN UNTUK ANTI-CACHE ---
+            # Memberi tahu browser untuk tidak menyimpan cache
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            # --- AKHIR TAMBAHAN ---
+            
+            return response # <--- Mengembalikan respons yang sudah dimodifikasi
+            
+        except Exception as e:
+            return jsonify({"error": str(e), "message": "Gagal mengambil data state."}), 500
+    # --- AKHIR DARI ENDPOINT BARU ---
 
     # Inisialisasi SocketIO
     socketio.init_app(app, async_mode="eventlet", cors_allowed_origins="*")
