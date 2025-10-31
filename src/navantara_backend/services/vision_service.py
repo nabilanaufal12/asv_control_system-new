@@ -7,6 +7,7 @@ import time
 import traceback
 import threading
 import eventlet  # Pastikan eventlet diimpor
+import os
 
 # Impor dari modul lain di backend Anda
 from navantara_backend.vision.inference_engine import InferenceEngine
@@ -389,6 +390,96 @@ class VisionService:
         if cap and cap.isOpened():
             cap.release()
         print(f"[{cam_id_log}] Loop dihentikan.")
+
+    def trigger_manual_capture(self, capture_type: str):
+        """
+        Memicu pengambilan gambar manual (Surface/Underwater)
+        dengan overlay telemetri.
+        Dipanggil oleh endpoint API.
+        """
+        print(f"[Capture] Menerima trigger manual untuk: {capture_type}")
+        
+        frame_to_use = None
+        mission_name = None
+        filename_prefix = None
+        image_count = 0
+
+        # 1. Dapatkan state telemetri saat ini
+        try:
+            with self.asv_handler.state_lock:
+                current_state = self.asv_handler.current_state.copy()
+        except Exception as e:
+            print(f"[Capture] Gagal mendapatkan state ASV: {e}")
+            return {"status": "error", "message": "Gagal mendapatkan state ASV."}
+
+        # 2. Dapatkan frame kamera yang relevan
+        if capture_type == 'surface':
+            # Ambil frame CAM 1 (Surface)
+            with VisionService._frame_lock_cam1:
+                if VisionService._latest_processed_frame_cam1 is not None:
+                    # Kita gunakan frame yang sudah diproses AI (dengan anotasi)
+                    frame_to_use = VisionService._latest_processed_frame_cam1.copy()
+                else:
+                    print("[Capture] Gagal: Frame CAM 1 (Surface) tidak tersedia.")
+                    return {"status": "error", "message": "Frame CAM 1 tidak tersedia."}
+            
+            mission_name = "Surface Imaging (Manual)"
+            filename_prefix = "surface"
+            image_count = self.surface_image_count
+            self.surface_image_count += 1
+
+        elif capture_type == 'underwater':
+            # Ambil frame CAM 2 (Underwater)
+            with VisionService._frame_lock_cam2:
+                if VisionService._latest_raw_frame_cam2 is not None:
+                    # Kita gunakan frame mentah CAM 2
+                    frame_to_use = VisionService._latest_raw_frame_cam2.copy()
+                else:
+                    print("[Capture] Gagal: Frame CAM 2 (Underwater) tidak tersedia.")
+                    return {"status": "error", "message": "Frame CAM 2 tidak tersedia."}
+
+            mission_name = "Underwater Imaging (Manual)"
+            filename_prefix = "underwater"
+            image_count = self.underwater_image_count
+            self.underwater_image_count += 1
+        
+        else:
+            return {"status": "error", "message": "Tipe capture tidak valid."}
+
+
+        # 3. Buat Overlay (seperti permintaan "ada tulisan nya e")
+        try:
+            overlay_data = create_overlay_from_html(
+                current_state, mission_type=mission_name
+            )
+            snapshot = apply_overlay(frame_to_use, overlay_data)
+        except Exception as e:
+            print(f"[Capture] Gagal membuat overlay: {e}")
+            snapshot = frame_to_use  # Fallback ke frame tanpa overlay
+
+        # 4. Simpan file ke folder logs/captures/
+        filename = f"{filename_prefix}_{image_count}.jpg"
+        save_dir = os.path.join(os.getcwd(), 'logs', 'captures')
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+
+        try:
+            # Gunakan kualitas 90 agar tulisan jelas
+            ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            if ret:
+                with open(save_path, 'wb') as f:
+                    f.write(buffer)
+                print(f"[Capture] Foto manual BERHASIL disimpan: {save_path}")
+                return {"status": "success", "file": filename}
+            else:
+                raise Exception("cv2.imencode gagal")
+                
+        except Exception as e:
+            print(f"[Capture] Gagal menyimpan file {filename}: {e}")
+            # Rollback counter jika gagal
+            if filename_prefix == "surface": self.surface_image_count -= 1
+            else: self.underwater_image_count -= 1
+            return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
 
     # --- KODE LAMA ANDA UNTUK PROSES AI, NAVIGASI, FOTOGRAFI (DIPERTAHANKAN) ---
     def process_and_control(self, frame, is_mode_auto):  # Tambah is_mode_auto
