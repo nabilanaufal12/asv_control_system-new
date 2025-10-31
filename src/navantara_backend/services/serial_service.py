@@ -6,6 +6,7 @@ import serial.tools.list_ports
 import threading
 import time
 import random
+import json
 
 class SerialHandler:
     def __init__(self, config):
@@ -13,10 +14,11 @@ class SerialHandler:
         self.serial_port = None
         self.serial_lock = threading.Lock()
         self.is_connected = False
+        self.read_buffer = b""  # <-- [PERBAIKAN] Buffer internal untuk data
 
         self.use_dummy_serial = self.config.get("serial_connection", {}).get("use_dummy_serial", False)
         if self.use_dummy_serial:
-            self.is_connected = True  # Langsung set 'connected'
+            self.is_connected = True
             self.dummy_heading = 90.0
             self.dummy_lat = -6.918000
             self.dummy_lon = 107.618500
@@ -25,34 +27,29 @@ class SerialHandler:
             self.dummy_motor = 1500
             print("=================================================")
             print("  [PERINGATAN] MODE SERIAL DUMMY AKTIF  ")
-            print("  Backend akan menghasilkan data serial palsu.  ")
+            print("  Backend akan menghasilkan data serial JSON palsu.  ")
             print("=================================================")
 
     def connect(self, port_name, baudrate):
         self.disconnect()
-        time.sleep(0.1) # Beri jeda singkat sebelum mencoba koneksi baru
+        time.sleep(0.1)
         try:
             print(f"[Serial] Mencoba terhubung ke {port_name} @ {baudrate}...")
             new_port = serial.Serial(port_name, int(baudrate), timeout=1)
-
-            # --- [SOLUSI] TAMBAHKAN BLOK INI ---
-            # 1. Membersihkan semua data sampah sisa bootloader dari buffer input.
+            
+            # --- [INI SUDAH BENAR] ---
             new_port.reset_input_buffer()
-            # 2. Beri waktu 1.5 detik agar ESP32 selesai booting sepenuhnya
-            #    sebelum kita mulai membaca datanya.
             print(f"[Serial] Koneksi {port_name} berhasil. Menunggu ESP32 boot (1.5 d)...")
             time.sleep(1.5) 
-            # 3. Bersihkan buffer sekali lagi untuk jaga-jaga jika ada sisa data boot.
             new_port.reset_input_buffer() 
             print(f"[Serial] ESP32 siap. Buffer bersih.")
-            # --- [AKHIR SOLUSI] ---
+            # --- [AKHIR] ---
 
             with self.serial_lock:
                 self.serial_port = new_port
             self.is_connected = True
-            
-            # Pindahkan pesan sukses ke setelah jeda
-            print(f"[Serial] Berhasil terhubung dan sinkron dengan {port_name}") 
+            self.read_buffer = b"" # <-- [PERBAIKAN] Pastikan buffer bersih saat konek
+            print(f"[Serial] Berhasil terhubung dan sinkron dengan {port_name}")
             return True
         except serial.SerialException as e:
             print(f"[Serial] Gagal membuka {port_name}: {e}")
@@ -64,10 +61,7 @@ class SerialHandler:
         descriptors = self.config.get("serial_connection", {}).get(
             "auto_connect_descriptors", []
         )
-        
-        # Coba port yang mengandung deskriptor terlebih dahulu
         for port in ports:
-            # Periksa port.description dan port.hwid untuk kecocokan yang lebih baik
             port_info = f"{port.description} {port.hwid}".lower()
             for desc in descriptors:
                 if desc.lower() in port_info:
@@ -75,11 +69,8 @@ class SerialHandler:
                     if self.connect(port.device, baudrate):
                         return True
         
-        # Jika tidak ada yang cocok, coba port USB pertama yang ditemukan
-        print("[Serial] Tidak ada ESP32 yang cocok dengan deskriptor. Mencoba /dev/ttyUSB0...")
+        print("[Serial] Tidak ada ESP32 yang cocok. Mencoba /dev/ttyUSB0...")
         default_port_to_try = "/dev/ttyUSB0"
-        
-        # Cek apakah /dev/ttyUSB0 ada di daftar port
         port_exists = any(p.device == default_port_to_try for p in ports)
         
         if port_exists:
@@ -97,10 +88,11 @@ class SerialHandler:
                 self.serial_port.close()
                 print("[Serial] Port ditutup.")
         self.is_connected = False
+        self.read_buffer = b"" # <-- [PERBAIKAN] Bersihkan buffer saat disconnect
 
     def send_command(self, command_string):
         if not self.is_connected or self.use_dummy_serial:
-            return # Jangan kirim apapun jika dummy atau tidak terhubung
+            return 
             
         with self.serial_lock:
             if self.serial_port:
@@ -108,53 +100,77 @@ class SerialHandler:
                     self.serial_port.write(command_string.encode("utf-8"))
                 except Exception as e:
                     print(f"[Serial] Gagal mengirim data: {e}")
-                    self.disconnect() # Putuskan koneksi jika terjadi error
+                    self.disconnect()
 
     def read_line(self):
-        # --- LOGIKA DUMMY (Tidak Berubah) ---
+        # --- [LOGIKA DUMMY (Tidak Berubah)] ---
         if self.use_dummy_serial:
-            with self.serial_lock: # Tambahkan lock di sekitar dummy logic
-                time.sleep(0.5)  # Simulasikan jeda pengiriman data dari ESP32
-
-                # Update nilai-nilai dummy agar terlihat bergerak
+            with self.serial_lock: 
+                time.sleep(0.5)
                 self.dummy_heading = (self.dummy_heading + 1.5) % 360
                 self.dummy_lat += 0.00001 * random.uniform(0.8, 1.2)
                 self.dummy_lon += 0.000005 * random.uniform(0.8, 1.2)
                 self.dummy_data_counter += 1
-
+                dummy_data = {
+                    "heading": round(self.dummy_heading, 1),
+                    "lat": round(self.dummy_lat, 6),
+                    "lon": round(self.dummy_lon, 6),
+                    "speed_kmh": round(1.2 + random.uniform(-0.1, 0.1), 1),
+                    "sats": 10
+                }
                 if self.dummy_data_counter % 2 == 0:
                     self.dummy_servo = 110 if self.dummy_servo == 90 else 90
                     self.dummy_motor = 1550 if self.dummy_motor == 1500 else 1500
-                    dummy_string = f"DATA:MANUAL,{self.dummy_heading:.1f},1.2,10,{self.dummy_servo},{self.dummy_motor},{self.dummy_lat:.6f},{self.dummy_lon:.6f}"
-                    return dummy_string
+                    dummy_data.update({
+                        "mode": "MANUAL", "status": "ACTIVE",
+                        "servo_out": self.dummy_servo, "motor_out": self.dummy_motor
+                    })
                 else:
                     dist_to_wp = 15.0 - (self.dummy_data_counter % 10)
                     target_bearing = 120.0
                     heading_error = target_bearing - self.dummy_heading
                     if heading_error > 180: heading_error -= 360
                     if heading_error < -180: heading_error += 360
-
-                    dummy_string = f"DATA:AUTO,WAYPOINT,2,{dist_to_wp:.1f},{target_bearing:.1f},{self.dummy_heading:.1f},{heading_error:.1f},100,1600,1.1,11,{self.dummy_lat:.6f},{self.dummy_lon:.6f}"
-                    return dummy_string
+                    dummy_data.update({
+                        "mode": "AUTO", "status": "WAYPOINT",
+                        "servo_out": 100, "motor_out": 1600,
+                        "wp_target_idx": 2, "wp_dist_m": round(dist_to_wp, 1),
+                        "wp_target_brg": round(target_bearing, 1),
+                        "wp_error_hdg": round(heading_error, 1)
+                    })
+                return json.dumps(dummy_data)
         # --- AKHIR LOGIKA DUMMY ---
 
-        # --- Logika Asli (jika mode dummy tidak aktif) ---
+        # --- [MODIFIKASI BESAR] Logika Asli dengan Buffering ---
         if not self.is_connected:
-            return None # Jangan coba membaca jika tidak terhubung
+            return None
 
         with self.serial_lock:
             if self.serial_port:
                 try:
-                    # Cek dulu apakah ada data yang menunggu
+                    # 1. Baca SEMUA data yang tersedia di buffer serial OS
                     if self.serial_port.in_waiting > 0:
-                        line = self.serial_port.readline()
-                        return (
-                            line.decode("utf-8", errors="ignore")
-                            .strip()
-                        )
+                        data_in = self.serial_port.read(self.serial_port.in_waiting)
+                        self.read_buffer += data_in
+                    
+                    # 2. Cari pemisah baris (newline) di buffer internal kita
+                    newline_pos = self.read_buffer.find(b'\n')
+                    
+                    if newline_pos != -1:
+                        # 3. Jika newline ditemukan, kita punya satu baris lengkap
+                        # Ambil baris lengkap (sebelum newline)
+                        line = self.read_buffer[:newline_pos]
+                        
+                        # Simpan sisa data (setelah newline) untuk panggilan berikutnya
+                        self.read_buffer = self.read_buffer[newline_pos + 1:]
+                        
+                        # 4. Kembalikan baris yang sudah bersih (decode dan strip)
+                        return line.decode("utf-8", errors="ignore").strip()
                     else:
-                        # Tidak ada data, kembalikan None agar loop bisa tidur
+                        # 5. Jika tidak ada newline, kita masih menunggu data
+                        # Kembalikan None agar tidak memblokir
                         return None 
+
                 except serial.SerialException as e:
                     print(f"[Serial] Error membaca data: {e}. Memutuskan koneksi.")
                     self.disconnect()
