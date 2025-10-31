@@ -33,6 +33,9 @@ class AsvHandler:
         self.state_lock = threading.Lock()
         self.is_streaming_to_gui = False
 
+        # --- [REFAKTOR ARSITEKTURAL] ---
+        # Semua state yang dibagikan antar thread/greenlet (logic loop, handlers, vision)
+        # harus disimpan di dalam self.current_state agar dapat di-lock dengan benar.
         self.current_state = {
             "control_mode": "AUTO", "latitude": -6.9180, "longitude": 107.6185,
             "heading": 90.0, "cog": 0.0, "speed": 0.0, "battery_voltage": 12.5,
@@ -44,16 +47,19 @@ class AsvHandler:
             "nav_gps_sats": 0, "manual_servo_cmd": 90, "manual_motor_cmd": 1500,
             "active_arena": None, "debug_waypoint_counter": 0, "use_dummy_counter": False,
             "esp_status": None, 
+            
+            # State yang dipindahkan ke sini dari atribut class:
+            "vision_target": {"active": False},
+            "gate_target": {"active": False},
+            "avoidance_direction": None,
+            "is_avoiding": False,
+            "gate_context": {"last_gate_config": None},
+            "recovering_from_avoidance": False,
+            "last_avoidance_time": 0,
+            "last_pixel_error": 0, # Meskipun hanya dipakai di logic loop, dipindah agar konsisten
         }
+        # --- [AKHIR REFAKTOR] ---
 
-        self.vision_target = {"active": False}
-        self.gate_target = {"active": False}
-        self.last_pixel_error = 0
-        self.avoidance_direction = None
-        self.is_avoiding = False
-        self.gate_context = {"last_gate_config": None}
-        self.recovering_from_avoidance = False # <-- Pastikan 'ance' (bukan 'ANCE')
-        self.last_avoidance_time = 0
 
         # ... (PID, EKF, Logger tidak berubah) ...
         pid_config = self.config.get("navigation", {}).get("heading_pid", {})
@@ -86,21 +92,25 @@ class AsvHandler:
                 if not self.serial_handler.is_connected:
                     state_copy["status"] = "DISCONNECTED (SERIAL)"
                 rc_mode_switch = state_copy.get("rc_channels", [1500] * 6)[4] 
+                
+                # --- [REFAKTOR ARSITEKTURAL] ---
+                # Baca state dari 'state_copy' yang di-lock, bukan 'self.attribut'
                 if rc_mode_switch < 1500:
                     state_copy["status"] = "RC MANUAL OVERRIDE"
                     state_copy["control_mode"] = "MANUAL"
-                elif self.gate_target["active"]:
+                elif state_copy["gate_target"]["active"]: # <-- Diubah
                     state_copy["status"] = "AI: GATE TRAVERSAL"
-                elif (self.vision_target["active"] and self.gate_context["last_gate_config"]):
-                    state_copy["status"] = (f"AI: CONTEXTUAL AVOIDANCE ({self.gate_context['last_gate_config']})")
-                elif self.vision_target["active"]:
+                elif (state_copy["vision_target"]["active"] and state_copy["gate_context"]["last_gate_config"]): # <-- Diubah
+                    state_copy["status"] = (f"AI: CONTEXTUAL AVOIDANCE ({state_copy['gate_context']['last_gate_config']})")
+                elif state_copy["vision_target"]["active"]: # <-- Diubah
                     state_copy["status"] = "AI: SIMPLE AVOIDANCE"
                 
                 # --- [PERBAIKAN TYPO ADA DI SINI] ---
-                elif self.recovering_from_avoidance: # <-- 'ance' huruf kecil
+                elif state_copy["recovering_from_avoidance"]: # <-- Diubah
                 # ------------------------------------
                     state_copy["status"] = "RECOVERING: STRAIGHTENING COURSE"
-                
+                # --- [AKHIR REFAKTOR] ---
+
                 elif state_copy["control_mode"] == "AUTO":
                     esp_status = state_copy.get("esp_status", "WAYPOINT")
                     total_wps = len(state_copy.get("waypoints", []))
@@ -186,8 +196,12 @@ class AsvHandler:
                                 np.degrees(self.ekf.state[2]) + 360
                             ) % 360
 
+                # --- [REFAKTOR ARSITEKTURAL] ---
+                # Salin state *sekali* di dalam lock. Ini adalah "snapshot" atomik
+                # dari semua state yang relevan untuk siklus logika ini.
                 with self.state_lock:
                     state_for_logic = self.current_state.copy()
+                # --- [AKHIR REFAKTOR] ---
 
                 rc_mode_switch = state_for_logic.get("rc_channels", [1500] * 6)[4]
                 command_to_send = None
@@ -218,18 +232,28 @@ class AsvHandler:
                     servo_max = actuator_config.get("servo_max_angle", 135)
                     motor_base = actuator_config.get("motor_pwm_auto_base", 1300)
 
+                    # --- [REFAKTOR ARSITEKTURAL] ---
+                    # Baca dari snapshot 'state_for_logic', bukan 'self.attribut'
+                    
                     # === PRIORITAS 3.1: MELEWATI GERBANG (GATE TRAVERSAL) ===
-                    if self.gate_target.get("active", False):
-                        self.recovering_from_avoidance = False
-                        self.is_avoiding = False
-                        self.avoidance_direction = None
-                        frame_width = self.gate_target.get("frame_width", 640)
-                        gate_center_x = self.gate_target.get("gate_center_x")
-                        red_buoy_x = self.gate_target.get("red_buoy_x")
-                        green_buoy_x = self.gate_target.get("green_buoy_x")
+                    if state_for_logic["gate_target"].get("active", False):
+                        # Tulis perubahan state turunan ke dalam lock
+                        with self.state_lock:
+                            self.current_state["recovering_from_avoidance"] = False
+                            self.current_state["is_avoiding"] = False
+                            self.current_state["avoidance_direction"] = None
+                        
+                        frame_width = state_for_logic["gate_target"].get("frame_width", 640)
+                        gate_center_x = state_for_logic["gate_target"].get("gate_center_x")
+                        red_buoy_x = state_for_logic["gate_target"].get("red_buoy_x")
+                        green_buoy_x = state_for_logic["gate_target"].get("green_buoy_x")
+                        
                         if red_buoy_x is not None and green_buoy_x is not None:
-                            if red_buoy_x < green_buoy_x: self.gate_context["last_gate_config"] = ("red_left_green_right")
-                            else: self.gate_context["last_gate_config"] = ("green_left_red_right")
+                            # Tulis ke gate_context di dalam lock
+                            with self.state_lock:
+                                if red_buoy_x < green_buoy_x: self.current_state["gate_context"]["last_gate_config"] = ("red_left_green_right")
+                                else: self.current_state["gate_context"]["last_gate_config"] = ("green_left_red_right")
+
                         if gate_center_x is not None:
                             pixel_error = gate_center_x - (frame_width / 2)
                             correction = map_value(pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0)
@@ -240,20 +264,24 @@ class AsvHandler:
                             logging.info(f"[AsvHandler] AI CONTROL [Gate] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
 
                     # === PRIORITAS 3.2: PENGHINDARAN TUNGGAL BERKONTEKS ===
-                    elif (self.vision_target.get("active", False) and self.gate_context["last_gate_config"]):
-                        self.recovering_from_avoidance = False
-                        self.is_avoiding = True
-                        frame_width = self.vision_target.get("frame_width", 640)
-                        obj_center_x = self.vision_target.get("object_center_x")
-                        obj_class = self.vision_target.get("obstacle_class")
-                        last_config = self.gate_context["last_gate_config"]
+                    elif (state_for_logic["vision_target"].get("active", False) and state_for_logic["gate_context"]["last_gate_config"]):
+                        with self.state_lock:
+                            self.current_state["recovering_from_avoidance"] = False
+                            self.current_state["is_avoiding"] = True
+                        
+                        frame_width = state_for_logic["vision_target"].get("frame_width", 640)
+                        obj_center_x = state_for_logic["vision_target"].get("object_center_x")
+                        obj_class = state_for_logic["vision_target"].get("obstacle_class")
+                        last_config = state_for_logic["gate_context"]["last_gate_config"]
                         target_side = None
+                        
                         if last_config == "red_left_green_right":
                             if obj_class == "red_buoy": target_side = "left"
                             elif obj_class == "green_buoy": target_side = "right"
                         elif last_config == "green_left_red_right":
                             if obj_class == "green_buoy": target_side = "left"
                             elif obj_class == "red_buoy": target_side = "right"
+                        
                         if target_side:
                             target_x = (frame_width * 0.2 if target_side == "left" else frame_width * 0.8)
                             pixel_error = obj_center_x - target_x
@@ -261,45 +289,61 @@ class AsvHandler:
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
                             pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
                             command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                            # --- [FORMAT LOG LAMA] ---
                             logging.info(f"[AsvHandler] AI CONTROL [Avoid Ctx] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
                         else:
-                            self.gate_context["last_gate_config"] = None
+                            # Konteks tidak cocok, reset
+                            with self.state_lock:
+                                self.current_state["gate_context"]["last_gate_config"] = None
 
                     # === PRIORITAS 3.3: PENGHINDARAN TUNGGAL SEDERHANA (TANPA KONTEKS) ===
-                    elif self.vision_target.get("active", False):
-                        self.recovering_from_avoidance = False
-                        self.is_avoiding = True
-                        frame_width = self.vision_target.get("frame_width", 640)
-                        object_center_x = self.vision_target.get("object_center_x", frame_width / 2)
-                        if self.avoidance_direction is None:
-                            if object_center_x < frame_width / 2: self.avoidance_direction = "right"
-                            else: self.avoidance_direction = "left"
-                        target_x = (frame_width * 0.8 if self.avoidance_direction == "right" else frame_width * 0.2)
+                    elif state_for_logic["vision_target"].get("active", False):
+                        with self.state_lock:
+                            self.current_state["recovering_from_avoidance"] = False
+                            self.current_state["is_avoiding"] = True
+                        
+                        frame_width = state_for_logic["vision_target"].get("frame_width", 640)
+                        object_center_x = state_for_logic["vision_target"].get("object_center_x", frame_width / 2)
+                        
+                        # avoidance_direction dibaca dari state_for_logic
+                        current_avoid_dir = state_for_logic["avoidance_direction"]
+                        if current_avoid_dir is None:
+                            if object_center_x < frame_width / 2: new_dir = "right"
+                            else: new_dir = "left"
+                            # Tulis dir baru ke state utama
+                            with self.state_lock:
+                                self.current_state["avoidance_direction"] = new_dir
+                            current_avoid_dir = new_dir # Gunakan dir baru untuk siklus ini
+                        
+                        target_x = (frame_width * 0.8 if current_avoid_dir == "right" else frame_width * 0.2)
                         pixel_error = object_center_x - target_x
                         correction_deg = (pixel_error / (frame_width / 2)) * 45.0
                         servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
                         pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 3))
                         command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                        # --- [FORMAT LOG LAMA] ---
                         logging.info(f"[AsvHandler] AI CONTROL [Avoid] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
 
                     # === PRIORITAS 3.4: FASE RECOVERY/PELURUSAN SETELAH MENGHINDAR ===
-                    elif self.recovering_from_avoidance:
-                        self.is_avoiding = False
-                        self.avoidance_direction = None
+                    elif state_for_logic["recovering_from_avoidance"]:
+                        with self.state_lock:
+                            self.current_state["is_avoiding"] = False
+                            self.current_state["avoidance_direction"] = None
+                        
                         servo_cmd, pwm_cmd = servo_default, 1300
                         command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                        # --- [FORMAT LOG LAMA] ---
                         logging.info(f"[AsvHandler] AI CONTROL [Recovery] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
-                        if time.time() - self.last_avoidance_time > 0.2:
-                            self.recovering_from_avoidance = False
+                        
+                        # Baca last_avoidance_time dari snapshot
+                        if time.time() - state_for_logic["last_avoidance_time"] > 0.2:
+                            with self.state_lock:
+                                self.current_state["recovering_from_avoidance"] = False
 
                     # === PRIORITAS 3.5 (DEFAULT): NAVIGASI WAYPOINT ===
                     else:
-                        self.last_pixel_error = 0
+                        with self.state_lock:
+                            self.current_state["last_pixel_error"] = 0
                         command_to_send = "W\n"
                         logging.info("[AsvHandler] WAYPOINT CONTROL -> Mengirim: W")
+                    # --- [AKHIR REFAKTOR] ---
 
                 # Kirim perintah (jika ada)
                 if command_to_send:
@@ -319,6 +363,11 @@ class AsvHandler:
     # ... (Sisa file: process_command, _handle_... functions) ...
 
     def process_command(self, command, payload):
+        # --- [DEBUG] DITAMBAHKAN ---
+        # Log ini akan menangkap *SETIAP* perintah yang masuk ke handler
+        logging.critical(f"[Handler DEBUG] MENERIMA process_command: {command}")
+        # --- [AKHIR DEBUG] ---
+
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
             "CHANGE_MODE": self._handle_mode_change,
@@ -338,17 +387,30 @@ class AsvHandler:
             logging.warning(f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'")
 
     def _handle_gate_traversal_command(self, payload):
+        # --- [DEBUG] DITAMBAHKAN ---
+        logging.critical(f"[Handler DEBUG] MENJALANKAN _handle_gate_traversal. Payload active: {payload.get('active')}")
+        # --- [AKHIR DEBUG] ---
+
         with self.state_lock:
-            was_active = self.gate_target.get("active", False)
+            # --- [REFAKTOR ARSITEKTURAL] ---
+            # Tulis ke self.current_state, bukan self.attribut
+            was_active = self.current_state["gate_target"].get("active", False)
             is_active = payload.get("active", False)
             if was_active and not is_active:
                 logging.info("[AsvHandler] Gate traversal complete. Initiating recovery...")
-                self.recovering_from_avoidance = True
-                self.last_avoidance_time = time.time()
-            self.gate_target["active"] = is_active
+                self.current_state["recovering_from_avoidance"] = True
+                self.current_state["last_avoidance_time"] = time.time()
+            
+            self.current_state["gate_target"]["active"] = is_active
             if is_active:
-                self.gate_target.update(payload)
-                self.vision_target["active"] = False
+                self.current_state["gate_target"].update(payload)
+                self.current_state["vision_target"]["active"] = False
+            # --- [AKHIR REFAKTOR] ---
+
+            # --- [DEBUG] DITAMBAHKAN ---
+            logging.critical(f"[Handler DEBUG] State self.current_state['gate_target']['active'] SEKARANG: {self.current_state['gate_target']['active']}")
+            # --- [AKHIR DEBUG] ---
+
 
     def _handle_debug_counter(self, payload):
         action = payload.get("action")
@@ -366,19 +428,25 @@ class AsvHandler:
 
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
-            if self.gate_target.get("active", False):
+            # --- [REFAKTOR ARSITEKTURAL] ---
+            # Tulis ke self.current_state, bukan self.attribut
+            if self.current_state["gate_target"].get("active", False):
                 return
-            was_active = self.vision_target.get("active", False)
+            
+            was_active = self.current_state["vision_target"].get("active", False)
             is_active = payload.get("active", False)
+            
             if was_active and not is_active:
                 logging.info("[AsvHandler] Obstacle cleared. Initiating recovery...")
-                self.recovering_from_avoidance = True
-                self.last_avoidance_time = time.time()
-                self.is_avoiding = False
-                self.avoidance_direction = None
-            self.vision_target["active"] = is_active
+                self.current_state["recovering_from_avoidance"] = True
+                self.current_state["last_avoidance_time"] = time.time()
+                self.current_state["is_avoiding"] = False
+                self.current_state["avoidance_direction"] = None
+            
+            self.current_state["vision_target"]["active"] = is_active
             if is_active:
-                self.vision_target.update(payload)
+                self.current_state["vision_target"].update(payload)
+            # --- [AKHIR REFAKTOR] ---
 
     def _handle_manual_control(self, payload):
         with self.state_lock:

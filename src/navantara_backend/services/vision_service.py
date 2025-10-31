@@ -9,6 +9,7 @@ import threading
 import eventlet  # Pastikan eventlet diimpor
 import os
 import eventlet.tpool # <-- Diimpor
+import logging # <-- [DEBUG] Dipertahankan
 
 # Impor dari modul lain di backend Anda
 from navantara_backend.vision.inference_engine import InferenceEngine
@@ -55,7 +56,9 @@ class VisionService:
         # Pengaturan awal
         self.gui_is_listening = False
         self.is_inverted = False
-        self.mode_auto = False  # Status mode AUTO (dapat diupdate dari GUI/backend)
+        # --- [FIX] HAPUS STATE LOKAL YANG SUDAH USANG ---
+        # self.mode_auto = False 
+        # ----------------------------------------------
         self.surface_image_count = 1
         self.underwater_image_count = 1
 
@@ -262,9 +265,17 @@ class VisionService:
                     eventlet.sleep(1)
                     continue
 
+                # --- [PERBAIKAN ARSITEKTURAL UTAMA] ---
+                # Baca state GUI dari 'settings_lock'
                 with self.settings_lock:
                     should_emit_to_gui = self.gui_is_listening
-                    is_auto = self.mode_auto
+                
+                # Baca state KONTROL dari 'asv_handler.state_lock'
+                # Ini adalah SUMBER KEBENARAN TUNGGAL (Single Source of Truth)
+                with self.asv_handler.state_lock:
+                    is_auto = self.asv_handler.current_state.get("control_mode") == "AUTO"
+                # --- [AKHIR PERBAIKAN] ---
+
 
                 if apply_detection:
                     
@@ -272,7 +283,7 @@ class VisionService:
                     # Hapus tpool.execute() dari sini. Buat panggilan langsung.
                     # tpool akan dipanggil DI DALAM process_and_control
                     try:
-                        processed_frame_ai = self.process_and_control(frame, is_auto)
+                        processed_frame_ai = self.process_and_control(frame, is_auto) # <-- 'is_auto' sekarang sudah benar
                     except Exception as e:
                         print(f"[{cam_id_log}] Error dalam process_and_control: {e}")
                         traceback.print_exc()
@@ -490,12 +501,16 @@ class VisionService:
     def process_and_control(self, frame, is_mode_auto):  # Tambah is_mode_auto
         """Memproses frame dengan AI dan memicu logika kontrol jika mode AUTO."""
         
-        # --- [FIX] PINDAHKAN TPOOL KE SINI ---
-        # Hanya jalankan 'infer' (fungsi blocking) di thread pool.
+        detections = [] # Inisialisasi
         try:
             detections, _ = eventlet.tpool.execute(
                 self.inference_engine.infer, frame
             )
+            # --- [DEBUG] TAMBAHKAN LOG INI ---
+            # Kita ingin melihat ini meskipun kosong, jadi gunakan level INFO atau WARNING
+            logging.warning(f"[Vision DEBUG] Output INFERENSI MENTAH: {detections}")
+            # --- [AKHIR DEBUG] ---
+            
         except Exception as e:
             print(f"[VisionService] Error saat inferensi tpool: {e}")
             traceback.print_exc()
@@ -506,6 +521,12 @@ class VisionService:
         validated_detections = []
         green_boxes_detected = []  # List untuk menyimpan deteksi kotak hijau
         blue_boxes_detected = []  # List untuk menyimpan deteksi kotak biru
+        
+        # --- [DEBUG] TAMBAHKAN Logika Pengecekan ---
+        if not detections:
+             logging.warning("[Vision DEBUG] Daftar deteksi mentah KOSONG. Melompati validasi.")
+        # --- [AKHIR DEBUG] ---
+        
         for det in detections:
             original_class = det.get("class")
             if "buoy" in original_class:
@@ -525,6 +546,11 @@ class VisionService:
             annotated_frame, validated_detections
         )
 
+        # --- [DEBUG] Log ini sekarang seharusnya tidak muncul jika mode AUTO ---
+        if not is_mode_auto:
+            logging.info("[Vision DEBUG] process_and_control: is_mode_auto = FALSE. AI dinonaktifkan.")
+        # --- [AKHIR DEBUG] ---
+            
         if is_mode_auto:
             with self.asv_handler.state_lock:
                 current_state_nav = self.asv_handler.current_state.copy()
@@ -557,8 +583,17 @@ class VisionService:
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
         # Implementasi logika navigasi otonom Anda (dipertahankan)
         # Panggilan self.asv_handler.process_command() dari sini SEKARANG aman
+        
+        # --- [DEBUG] MODIFIKASI LOG INI ---
+        # Ubah ini agar *selalu* mencetak, meskipun kosong
+        detected_classes = [d.get("class", "unknown") for d in detections]
+        logging.warning(f"[Vision DEBUG] Deteksi SETELAH validasi warna: {detected_classes}")
+        # --- [AKHIR DEBUG] ---
+
         red_buoys = [d for d in detections if d.get("class") == "red_buoy"]
         green_buoys = [d for d in detections if d.get("class") == "green_buoy"]
+        
+        gate_distance = None # <-- [DEBUG] Inisialisasi di luar scope
 
         if red_buoys and green_buoys:
             red = min(red_buoys, key=lambda d: d.get("distance_cm", float("inf")))
@@ -573,15 +608,21 @@ class VisionService:
             ):
                 self.last_buoy_seen_time = time.time()
                 gate_center_x = (red["center"][0] + green["center"][0]) / 2.0
+                
+                # --- [DEBUG] DITAMBAHKAN ---
+                payload = {
+                    "active": True,
+                    "gate_center_x": gate_center_x,
+                    "red_buoy_x": red["center"][0],
+                    "green_buoy_x": green["center"][0],
+                    "frame_width": frame_width,
+                }
+                logging.critical(f"[Vision DEBUG] KONDISI GERBANG TERPENUHI. HENDAK MEMANGGIL process_command. Payload: {payload}")
+                # --- [AKHIR DEBUG] ---
+                
                 self.asv_handler.process_command(
                     "GATE_TRAVERSAL_COMMAND",
-                    {
-                        "active": True,
-                        "gate_center_x": gate_center_x,
-                        "red_buoy_x": red["center"][0],
-                        "green_buoy_x": green["center"][0],
-                        "frame_width": frame_width,
-                    },
+                    payload, # <-- [DEBUG] Menggunakan var payload
                 )
                 return
 
@@ -593,16 +634,27 @@ class VisionService:
             distance_to_closest = closest_buoy.get("distance_cm", float("inf"))
             if distance_to_closest < self.obstacle_activation_distance:
                 self.last_buoy_seen_time = time.time()
+                
+                # --- [DEBUG] DITAMBAHKAN ---
+                payload_obs = {
+                    "active": True,
+                    "obstacle_class": closest_buoy.get("class", "unknown"),
+                    "object_center_x": closest_buoy["center"][0],
+                    "frame_width": frame_width,
+                }
+                logging.critical(f"[Vision DEBUG] KONDISI OBSTACLE TERPENUHI. HENDAK MEMANGGIL process_command. Payload: {payload_obs}")
+                # --- [AKHIR DEBUG] ---
+                
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE",
-                    {
-                        "active": True,
-                        "obstacle_class": closest_buoy.get("class", "unknown"),
-                        "object_center_x": closest_buoy["center"][0],
-                        "frame_width": frame_width,
-                    },
+                    payload_obs, # <-- [DEBUG] Menggunakan var payload
                 )
                 return
+
+        # --- [DEBUG] DITAMBAHKAN ---
+        # Log ini akan tereksekusi jika 'return' di atas tidak terpanggil
+        logging.info(f"[Vision DEBUG] Nav handler selesai. Tidak ada perintah AI dikirim. Jarak Gerbang: {gate_distance} | Cooldown: {(time.time() - self.last_buoy_seen_time)}")
+        # --- [AKHIR DEBUG] ---
 
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
@@ -698,13 +750,15 @@ class VisionService:
                 print(f"[VisionService] GUI Listening: {status}")
                 self.gui_is_listening = status
 
-    def set_mode(self, payload: dict):  # Hapus @Slot
-        mode = payload.get("mode", "MANUAL")
-        with self.settings_lock:
-            new_mode_auto = mode == "AUTO"
-            if self.mode_auto != new_mode_auto:
-                print(f"[VisionService] Mode set to: {mode}")
-                self.mode_auto = new_mode_auto
+    # --- [FIX] HAPUS FUNGSI INI KARENA SUDAH TIDAK RELEVAN ---
+    # def set_mode(self, payload: dict):  # Hapus @Slot
+    #     mode = payload.get("mode", "MANUAL")
+    #     with self.settings_lock:
+    #         new_mode_auto = mode == "AUTO"
+    #         if self.mode_auto != new_mode_auto:
+    #             print(f"[VisionService] Mode set to: {mode}")
+    #             self.mode_auto = new_mode_auto
+    # ---------------------------------------------------------
 
     def set_inversion(self, payload: dict):  # Hapus @Slot
         is_inverted = payload.get("inverted", False)
@@ -712,4 +766,3 @@ class VisionService:
             if self.is_inverted != is_inverted:
                 print(f"[VisionService] Inversion set to: {is_inverted}")
                 self.is_inverted = is_inverted
-
