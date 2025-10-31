@@ -2,12 +2,19 @@
 import eventlet
 import os
 import sys
+import logging  # <-- [TAMBAHAN 1] Impor modul logging
 
 # --- PERUBAHAN KRUSIAL: Monkey patch harus dieksekusi sebelum impor lainnya ---
-# Baris ini secara dinamis mengganti pustaka standar Python dengan implementasi
-# yang kooperatif dari eventlet. Ini adalah kunci untuk memungkinkan ribuan
-# green threads berjalan secara efisien dalam satu proses.
 eventlet.monkey_patch()
+
+# --- [TAMBAHAN 2] KONFIGURASI LOGGING ---
+# Ini adalah perbaikan untuk masalah "tidak ada output" di video Anda.
+# Ini harus dijalankan SEBELUM create_app() dipanggil.
+logging.basicConfig(
+    level=logging.INFO,  # Set level ke INFO agar log .info() muncul
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+# -----------------------------------------
 
 # Menambahkan path src ke sys.path agar impor dari backend berhasil
 try:
@@ -25,10 +32,8 @@ from navantara_backend.extensions import socketio
 app = create_app()
 
 if __name__ == "__main__":
-    print("🚀 Menjalankan Backend Server ASV dalam Mode Otonom/Headless...")
+    # --- [TAMBAHAN 3] Ganti print() ke logging.info() ---
+    logging.info("🚀 Menjalankan Backend Server ASV dalam Mode Otonom/Headless...")
 
     # --- PERUBAHAN: Menjalankan server menggunakan eventlet ---
-    # Flask-SocketIO akan secara otomatis menggunakan server eventlet karena
-    # monkey_patch() telah dipanggil. Ini adalah cara yang direkomendasikan
-    # untuk production. Argumen 'allow_unsafe_werkzeug' tidak lagi diperlukan.
     socketio.run(app, host="0.0.0.0", port=5000, debug=False)
