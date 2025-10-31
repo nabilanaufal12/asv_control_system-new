@@ -193,7 +193,7 @@ class AsvHandler:
 
             # === MODIFIKASI: PERCEPAT DELAY ===
             # Selalu beri jeda singkat di setiap loop
-            self.socketio.sleep(0) # Kecepatan maksimum (dari 0.02)
+            self.socketio.sleep(0.01) # Kecepatan maksimum (dari 0.02)
             # === AKHIR MODIFIKASI ===
 
     def _parse_telemetry(self, line):
@@ -520,7 +520,7 @@ class AsvHandler:
             # --- AKHIR MODIFIKASI ---
             
             # === MODIFIKASI: PERCEPAT DELAY ===
-            self.socketio.sleep(0.1) # Dipercepat 5x (dari 0.1 ke 0.02)
+            self.socketio.sleep(0.02) # Dipercepat 5x (dari 0.1 ke 0.02)
             # === AKHIR MODIFIKASI ===
 
     def process_command(self, command, payload):
