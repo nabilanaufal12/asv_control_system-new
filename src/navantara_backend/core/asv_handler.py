@@ -242,6 +242,8 @@ class AsvHandler:
                     state_for_logic = self.current_state.copy()
                 # --- [AKHIR REFAKTOR] ---
 
+                logging.info(f"[Loop DEBUG] Status inversi dibaca: {state_for_logic.get('is_inverted', 'KUNCI TIDAK DITEMUKAN')}")
+
                 rc_mode_switch = state_for_logic.get("rc_channels", [1500] * 6)[4]
                 command_to_send = None
 

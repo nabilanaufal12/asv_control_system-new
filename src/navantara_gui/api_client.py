@@ -61,19 +61,45 @@ class ApiClient(QObject):
 
         @self.sio.on("frame_cam1")
         def on_frame_cam1(data):
-            # Ubah data byte JPEG kembali menjadi gambar OpenCV
-            nparr = np.frombuffer(data, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if frame is not None:
-                # Kirim frame sebagai sinyal Qt untuk ditampilkan oleh UI
-                self.frame_cam1_updated.emit(frame)
+            try:
+                # --- [PERBAIKAN DI SINI] ---
+                # Cek jika data yang diterima adalah bytes, jika tidak, abaikan
+                if not isinstance(data, bytes):
+                    print(f"[API-CAM1] Menerima data frame, tapi bukan bytes (tipe: {type(data)}). Melompati.")
+                    return 
+                # --- [AKHIR PERBAIKAN] ---
+            
+                # Ubah data byte JPEG kembali menjadi gambar OpenCV
+                nparr = np.frombuffer(data, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if frame is not None:
+                    # Kirim frame sebagai sinyal Qt untuk ditampilkan oleh UI
+                    self.frame_cam1_updated.emit(frame)
+                else:
+                    print("[API-CAM1] Gagal decode frame (frame is None).")
+            except Exception as e:
+                print(f"[API-CAM1] Error processing frame: {e}")
+
 
         @self.sio.on("frame_cam2")
         def on_frame_cam2(data):
-            nparr = np.frombuffer(data, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if frame is not None:
-                self.frame_cam2_updated.emit(frame)
+            try:
+                # --- [PERBAIKAN DI SINI] ---
+                # Cek jika data yang diterima adalah bytes, jika tidak, abaikan
+                if not isinstance(data, bytes):
+                    print(f"[API-CAM2] Menerima data frame, tapi bukan bytes (tipe: {type(data)}). Melompati.")
+                    return 
+                # --- [AKHIR PERBAIKAN] ---
+
+                nparr = np.frombuffer(data, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if frame is not None:
+                    self.frame_cam2_updated.emit(frame)
+                else:
+                    print("[API-CAM2] Gagal decode frame (frame is None).")
+            except Exception as e:
+                print(f"[API-CAM2] Error processing frame: {e}")
+
 
     def initial_stream_request(self):
         """Fungsi yang dijalankan di latar belakang untuk meminta stream awal."""
