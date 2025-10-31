@@ -8,6 +8,7 @@ import traceback
 import threading
 import eventlet  # Pastikan eventlet diimpor
 import os
+import eventlet.tpool # <-- Diimpor
 
 # Impor dari modul lain di backend Anda
 from navantara_backend.vision.inference_engine import InferenceEngine
@@ -266,7 +267,19 @@ class VisionService:
                     is_auto = self.mode_auto
 
                 if apply_detection:
-                    processed_frame_ai = self.process_and_control(frame, is_auto)
+                    
+                    # --- [FIX] UBAH BAGIAN INI ---
+                    # Hapus tpool.execute() dari sini. Buat panggilan langsung.
+                    # tpool akan dipanggil DI DALAM process_and_control
+                    try:
+                        processed_frame_ai = self.process_and_control(frame, is_auto)
+                    except Exception as e:
+                        print(f"[{cam_id_log}] Error dalam process_and_control: {e}")
+                        traceback.print_exc()
+                        eventlet.sleep(1) 
+                        continue
+                    # --- [AKHIR FIX] ---
+
                     with frame_lock:  # _frame_lock_cam1
                         VisionService._latest_processed_frame_cam1 = (
                             processed_frame_ai.copy()
@@ -291,23 +304,15 @@ class VisionService:
                     ret_encode, buffer = cv2.imencode(
                         ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 60] # Kualitas 60
                     )
-
-                    ret_encode, buffer = cv2.imencode(
-                        ".jpg", frame_to_emit, [cv2.IMWRITE_JPEG_QUALITY, 30]
-                    )
+                    
+                    # CATATAN: Anda memiliki dua 'imencode' berturut-turut. Ini mungkin tidak disengaja.
+                    # Saya akan menghapus yang kedua yang berkualitas lebih rendah.
+                    # ret_encode, buffer = cv2.imencode(
+                    #     ".jpg", frame_to_emit, [cv2.IMWRITE_JPEG_QUALITY, 30]
+                    # )
+                    
                     if ret_encode:
                         self.socketio.emit(event_name, buffer.tobytes())
-
-                # if self.show_local_feed and apply_detection:
-                #    cv2.destroyWindow(f'Local Feed {cam_id_log}')
-                #    try:
-                # Ubah ukuran frame *sebelum* ditampilkan
-                #        display_frame = cv2.resize(frame_to_emit, (LOCAL_FEED_WIDTH, LOCAL_FEED_HEIGHT))
-                #        cv2.imshow(f'Local Feed {cam_id_log}', display_frame) # Tampilkan frame yang sudah diresize
-                #        if cv2.waitKey(1) & 0xFF == ord('q'):
-                #            self.stop(); break
-                #    except Exception as e:
-                #        print(f"[{cam_id_log}] Error resizing/showing local feed: {e}")
 
                 if self.show_local_feed:
                     if apply_detection:  # HANYA thread CAM1 (AI) yang akan menampilkan
@@ -484,8 +489,20 @@ class VisionService:
     # --- KODE LAMA ANDA UNTUK PROSES AI, NAVIGASI, FOTOGRAFI (DIPERTAHANKAN) ---
     def process_and_control(self, frame, is_mode_auto):  # Tambah is_mode_auto
         """Memproses frame dengan AI dan memicu logika kontrol jika mode AUTO."""
-        detections, _ = self.inference_engine.infer(frame)
+        
+        # --- [FIX] PINDAHKAN TPOOL KE SINI ---
+        # Hanya jalankan 'infer' (fungsi blocking) di thread pool.
+        try:
+            detections, _ = eventlet.tpool.execute(
+                self.inference_engine.infer, frame
+            )
+        except Exception as e:
+            print(f"[VisionService] Error saat inferensi tpool: {e}")
+            traceback.print_exc()
+            return frame # Kembalikan frame asli jika inferensi gagal
+        # --- [AKHIR FIX] ---
 
+        # Sisa kode ini sekarang berjalan di greenlet utama (thread-safe)
         validated_detections = []
         green_boxes_detected = []  # List untuk menyimpan deteksi kotak hijau
         blue_boxes_detected = []  # List untuk menyimpan deteksi kotak biru
@@ -511,6 +528,7 @@ class VisionService:
         if is_mode_auto:
             with self.asv_handler.state_lock:
                 current_state_nav = self.asv_handler.current_state.copy()
+            # Panggilan ini SEKARANG aman
             self.handle_autonomous_navigation(
                 validated_detections, frame.shape[1], current_state_nav
             )
@@ -529,6 +547,7 @@ class VisionService:
             with self.asv_handler.state_lock:
                 current_state_photo = self.asv_handler.current_state.copy()
             # Panggil fungsi fotografi dengan frame DARI KAMERA INI (CAM 1, sebelum anotasi)
+            # Panggilan ini SEKARANG aman
             self.handle_photography_mission(
                 frame, green_boxes_detected, blue_boxes_detected, current_state_photo
             )
@@ -537,6 +556,7 @@ class VisionService:
 
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
         # Implementasi logika navigasi otonom Anda (dipertahankan)
+        # Panggilan self.asv_handler.process_command() dari sini SEKARANG aman
         red_buoys = [d for d in detections if d.get("class") == "red_buoy"]
         green_buoys = [d for d in detections if d.get("class") == "green_buoy"]
 
@@ -692,3 +712,4 @@ class VisionService:
             if self.is_inverted != is_inverted:
                 print(f"[VisionService] Inversion set to: {is_inverted}")
                 self.is_inverted = is_inverted
+
