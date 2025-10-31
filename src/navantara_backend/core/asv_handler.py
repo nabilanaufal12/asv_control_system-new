@@ -235,63 +235,49 @@ class AsvHandler:
                     # --- [REFAKTOR ARSITEKTURAL] ---
                     # Baca dari snapshot 'state_for_logic', bukan 'self.attribut'
                     
-                    # === PRIORITAS 3.1: MELEWATI GERBANG (GATE TRAVERSAL) ===
-                    if state_for_logic["gate_target"].get("active", False):
-                        # Tulis perubahan state turunan ke dalam lock
-                        with self.state_lock:
-                            self.current_state["recovering_from_avoidance"] = False
-                            self.current_state["is_avoiding"] = False
-                            self.current_state["avoidance_direction"] = None
-                        
-                        frame_width = state_for_logic["gate_target"].get("frame_width", 640)
-                        gate_center_x = state_for_logic["gate_target"].get("gate_center_x")
-                        red_buoy_x = state_for_logic["gate_target"].get("red_buoy_x")
-                        green_buoy_x = state_for_logic["gate_target"].get("green_buoy_x")
-                        
-                        if red_buoy_x is not None and green_buoy_x is not None:
-                            # Tulis ke gate_context di dalam lock
-                            with self.state_lock:
-                                if red_buoy_x < green_buoy_x: self.current_state["gate_context"]["last_gate_config"] = ("red_left_green_right")
-                                else: self.current_state["gate_context"]["last_gate_config"] = ("green_left_red_right")
-
-                        if gate_center_x is not None:
-                            pixel_error = gate_center_x - (frame_width / 2)
-                            correction = map_value(pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0)
-                            servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction)))
-                            pwm_cmd = motor_base - 75
-                            command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
-                            # --- [FORMAT LOG LAMA] ---
-                            logging.info(f"[AsvHandler] AI CONTROL [Gate] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
+                    # (Gate traversal removed) — gate configuration will be set by
+                    # the vision update handler when it receives both buoy X positions.
+                    # This keeps contextual avoidance working while removing active
+                    # gate traversal behavior from the main loop.
 
                     # === PRIORITAS 3.2: PENGHINDARAN TUNGGAL BERKONTEKS ===
-                    elif (state_for_logic["vision_target"].get("active", False) and state_for_logic["gate_context"]["last_gate_config"]):
+                    # Memeriksa jika ada objek yang terdeteksi (vision_target aktif) dan ada informasi konfigurasi gerbang sebelumnya
+                    if (state_for_logic["vision_target"].get("active", False) and state_for_logic["gate_context"]["last_gate_config"]):
+                        # Update status ASV: tidak dalam mode recovery dan sedang dalam proses menghindari
                         with self.state_lock:
                             self.current_state["recovering_from_avoidance"] = False
                             self.current_state["is_avoiding"] = True
                         
-                        frame_width = state_for_logic["vision_target"].get("frame_width", 640)
-                        obj_center_x = state_for_logic["vision_target"].get("object_center_x")
-                        obj_class = state_for_logic["vision_target"].get("obstacle_class")
-                        last_config = state_for_logic["gate_context"]["last_gate_config"]
-                        target_side = None
+                        # Mengambil informasi dari deteksi objek
+                        frame_width = state_for_logic["vision_target"].get("frame_width", 640)  # Lebar frame kamera (default 640px)
+                        obj_center_x = state_for_logic["vision_target"].get("object_center_x")  # Posisi X tengah objek
+                        obj_class = state_for_logic["vision_target"].get("obstacle_class")      # Jenis objek (red_buoy/green_buoy)
+                        last_config = state_for_logic["gate_context"]["last_gate_config"]       # Konfigurasi gerbang terakhir
+                        target_side = None  # Sisi target untuk penghindaran (left/right)
                         
-                        if last_config == "red_left_green_right":
-                            if obj_class == "red_buoy": target_side = "left"
-                            elif obj_class == "green_buoy": target_side = "right"
-                        elif last_config == "green_left_red_right":
-                            if obj_class == "green_buoy": target_side = "left"
-                            elif obj_class == "red_buoy": target_side = "right"
+                        # Menentukan sisi target berdasarkan konfigurasi gerbang sebelumnya
+                        if last_config == "red_left_green_right":  # Jika sebelumnya pelampung merah di kiri
+                            if obj_class == "red_buoy": target_side = "left"      # Hindari pelampung merah ke kiri
+                            elif obj_class == "green_buoy": target_side = "right" # Hindari pelampung hijau ke kanan
+                        elif last_config == "green_left_red_right":  # Jika sebelumnya pelampung hijau di kiri
+                            if obj_class == "green_buoy": target_side = "left"    # Hindari pelampung hijau ke kiri
+                            elif obj_class == "red_buoy": target_side = "right"   # Hindari pelampung merah ke kanan
                         
+                        # Jika berhasil menentukan sisi target
                         if target_side:
+                            # Hitung target posisi X (20% frame untuk kiri, 80% frame untuk kanan)
                             target_x = (frame_width * 0.2 if target_side == "left" else frame_width * 0.8)
-                            pixel_error = obj_center_x - target_x
-                            correction_deg = (pixel_error / (frame_width / 2)) * 45.0
+                            pixel_error = obj_center_x - target_x  # Hitung error dalam pixel
+                            correction_deg = (pixel_error / (frame_width / 2)) * 45.0  # Konversi ke derajat koreksi
+                            # Terapkan koreksi ke servo dengan batasan min/max
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
+                            # Kurangi kecepatan motor saat berbelok tajam
                             pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
+                            # Kirim perintah ke ASV
                             command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
                             logging.info(f"[AsvHandler] AI CONTROL [Avoid Ctx] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
                         else:
-                            # Konteks tidak cocok, reset
+                            # Reset konteks jika konfigurasi tidak cocok dengan objek yang terdeteksi
                             with self.state_lock:
                                 self.current_state["gate_context"]["last_gate_config"] = None
 
@@ -446,6 +432,17 @@ class AsvHandler:
             self.current_state["vision_target"]["active"] = is_active
             if is_active:
                 self.current_state["vision_target"].update(payload)
+                # Jika payload berisi posisi pelampung merah dan hijau, simpan
+                # konfigurasi gerbang ke gate_context agar logika penghindaran
+                # berkonteks dapat menggunakan informasi ini.
+                red_x = payload.get("red_buoy_x")
+                green_x = payload.get("green_buoy_x")
+                if red_x is not None and green_x is not None:
+                    if red_x < green_x:
+                        self.current_state["gate_context"]["last_gate_config"] = "red_left_green_right"
+                    else:
+                        self.current_state["gate_context"]["last_gate_config"] = "green_left_red_right"
+                    logging.info(f"[AsvHandler] Gate context set: {self.current_state['gate_context']['last_gate_config']}")
             # --- [AKHIR REFAKTOR] ---
 
     def _handle_manual_control(self, payload):
