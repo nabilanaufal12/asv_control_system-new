@@ -19,34 +19,30 @@ api_blueprint = Blueprint("api", __name__)
 # --- Generator untuk CAM 1 (Hasil AI, Kualitas Disesuaikan) ---
 def generate_video_frames_cam1(
     vision_service: VisionService,
-):  # Tambahkan type hint (opsional)
-    """Generator untuk streaming video frame CAM 1 (hasil AI)."""
+):
+    """Generator untuk streaming video frame CAM 1 (hasil AI) - OPTIMASI JPEG."""
     if not vision_service:
         print("ERROR CAM1: Vision service tidak diteruskan!")
         return
 
-    # --- PENGATURAN KUALITAS CAM 1 (SESUAIKAN) ---
     TARGET_WIDTH = 480
     TARGET_HEIGHT = 320
-    WEBP_QUALITY = 30
-    FRAME_DELAY = 0.08
+    # --- OPTIMASI: Ganti WebP ke JPEG (Kualitas 40) ---
+    JPEG_QUALITY = 40
+    FRAME_DELAY = 0.1  # 10 FPS (Rate limit yang sehat)
     # ---------------------------------------------
 
     while True:
         original_frame = None
         frame_to_encode = None
         try:
-            # 1. Ambil frame CAM 1 (hasil AI)
-            # --- PERBAIKAN: Gunakan instance 'vision_service' ---
             with vision_service._frame_lock_cam1:
                 if vision_service._latest_processed_frame_cam1 is not None:
                     original_frame = vision_service._latest_processed_frame_cam1.copy()
-                # --- AKHIR PERBAIKAN ---
                 else:
                     eventlet.sleep(FRAME_DELAY)
                     continue
 
-            # 2. Resize frame
             if original_frame is not None:
                 resized_frame = cv2.resize(
                     original_frame, (TARGET_WIDTH, TARGET_HEIGHT)
@@ -56,64 +52,59 @@ def generate_video_frames_cam1(
                 eventlet.sleep(FRAME_DELAY)
                 continue
 
-            # 3. Encode ke WebP
             if frame_to_encode is not None:
+                # --- OPTIMASI: Encode ke .jpg ---
                 (flag, encodedImage) = cv2.imencode(
-                    ".webp", frame_to_encode, [cv2.IMWRITE_WEBP_QUALITY, WEBP_QUALITY]
+                    ".jpg", frame_to_encode, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
                 )
                 if not flag:
-                    print("[Stream CAM1] Gagal encode frame.")
+                    print("[Stream CAM1] Gagal encode frame ke JPEG.")
                     eventlet.sleep(FRAME_DELAY)
                     continue
 
-                # 4. Yield frame
+                # --- OPTIMASI: Ubah Content-Type ---
                 yield (
                     b"--frame\r\n"
-                    b"Content-Type: image/webp\r\n\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
                     + bytearray(encodedImage)
                     + b"\r\n"
                 )
 
-            # 5. Jeda
             eventlet.sleep(FRAME_DELAY)
 
         except Exception as e:
             print(f"[Stream CAM1] Error dalam generator: {e}")
             traceback.print_exc()
-            eventlet.sleep(1)  # Jeda lebih lama jika error
+            eventlet.sleep(1)
 
 
 # --- Generator untuk CAM 2 (Mentah, Kualitas Disesuaikan) ---
 def generate_video_frames_cam2(
     vision_service: VisionService,
-):  # Tambahkan type hint (opsional)
-    """Generator untuk streaming video frame CAM 2 (mentah)."""
+):
+    """Generator untuk streaming video frame CAM 2 (mentah) - OPTIMASI JPEG."""
     if not vision_service:
         print("ERROR CAM2: Vision service tidak diteruskan!")
         return
 
-    # --- PENGATURAN KUALITAS CAM 2 (BISA BERBEDA) ---
     TARGET_WIDTH_CAM2 = 320
     TARGET_HEIGHT_CAM2 = 240
-    WEBP_QUALITY_CAM2 = 25
-    FRAME_DELAY_CAM2 = 0.05
+    # --- OPTIMASI: Ganti WebP ke JPEG (Kualitas 30) ---
+    JPEG_QUALITY_CAM2 = 30
+    FRAME_DELAY_CAM2 = 0.1 # 10 FPS
     # ------------------------------------------------
 
     while True:
         original_frame = None
         frame_to_encode = None
         try:
-            # 1. Ambil frame CAM 2 (mentah)
-            # --- PERBAIKAN: Gunakan instance 'vision_service' ---
             with vision_service._frame_lock_cam2:
                 if vision_service._latest_raw_frame_cam2 is not None:
                     original_frame = vision_service._latest_raw_frame_cam2.copy()
-                # --- AKHIR PERBAIKAN ---
                 else:
                     eventlet.sleep(FRAME_DELAY_CAM2)
                     continue
 
-            # 2. Resize frame
             if original_frame is not None:
                 resized_frame = cv2.resize(
                     original_frame, (TARGET_WIDTH_CAM2, TARGET_HEIGHT_CAM2)
@@ -123,27 +114,26 @@ def generate_video_frames_cam2(
                 eventlet.sleep(FRAME_DELAY_CAM2)
                 continue
 
-            # 3. Encode ke WebP
             if frame_to_encode is not None:
+                 # --- OPTIMASI: Encode ke .jpg ---
                 (flag, encodedImage) = cv2.imencode(
-                    ".webp",
+                    ".jpg",
                     frame_to_encode,
-                    [cv2.IMWRITE_WEBP_QUALITY, WEBP_QUALITY_CAM2],
+                    [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY_CAM2],
                 )
                 if not flag:
-                    print("[Stream CAM2] Gagal encode frame.")
+                    print("[Stream CAM2] Gagal encode frame ke JPEG.")
                     eventlet.sleep(FRAME_DELAY_CAM2)
                     continue
 
-                # 4. Yield frame
+                # --- OPTIMASI: Ubah Content-Type ---
                 yield (
                     b"--frame\r\n"
-                    b"Content-Type: image/webp\r\n\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n"
                     + bytearray(encodedImage)
                     + b"\r\n"
                 )
 
-            # 5. Jeda
             eventlet.sleep(FRAME_DELAY_CAM2)
 
         except Exception as e:
