@@ -367,6 +367,11 @@ void loop() {
     Serial.print(lat, 6);           // Part 7
     Serial.print(",");
     Serial.println(lon, 6);         // Part 8 (println di akhir)
+
+    // Lindungi pengiriman data agar tidak disela
+    portENTER_CRITICAL(&timerMux);
+    Serial.println(dataManual);
+    portEXIT_CRITICAL(&timerMux);
     // --- AKHIR TAMBAHAN ---
     
     // Kontrol waypoint (rekam / simpan) di mode MANUAL

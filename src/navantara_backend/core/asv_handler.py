@@ -13,8 +13,10 @@ from navantara_backend.core.navigation import (
 )
 from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
+
 # --- MODIFIKASI: Import Firebase di-comment ---
 from navantara_backend.vision.cloud_utils import send_telemetry_to_firebase
+
 # --- AKHIR MODIFIKASI ---
 
 
@@ -95,7 +97,9 @@ class AsvHandler:
         self.ekf = SimpleEKF(np.zeros(5), np.eye(5) * 0.1)
         self.last_ekf_update_time = time.time()
 
-        self.use_dummy_serial = self.config.get("serial_connection", {}).get("use_dummy_serial", False)
+        self.use_dummy_serial = self.config.get("serial_connection", {}).get(
+            "use_dummy_serial", False
+        )
 
         self.logger = MissionLogger()
         self.logger.log_event("AsvHandler diinisialisasi.")
@@ -104,11 +108,12 @@ class AsvHandler:
         self.initiate_auto_connection()
 
     def initiate_auto_connection(self):
-        
         if self.use_dummy_serial:
-            print("[AsvHandler] Mode DUMMY SERIAL aktif. Koneksi serial fisik dilewati.")
-        return
-    
+            print(
+                "[AsvHandler] Mode DUMMY SERIAL aktif. Koneksi serial fisik dilewati."
+            )
+            return
+
         print("[AsvHandler] Memulai upaya koneksi serial otomatis...")
         baud_rate = self.config.get("serial_connection", {}).get(
             "default_baud_rate", 115200
@@ -118,8 +123,8 @@ class AsvHandler:
     def _update_and_emit_state(self):
         # === MODIFIKASI: Hapus cek 'self.is_streaming_to_gui' ===
         # if self.running and self.is_streaming_to_gui: #(LAMA)
-        if self.running: # (BARU)
-        # === AKHIR MODIFIKASI ===
+        if self.running:  # (BARU)
+            # === AKHIR MODIFIKASI ===
             with self.state_lock:
                 state_copy = self.current_state.copy()
                 state_copy["is_connected_to_serial"] = self.serial_handler.is_connected
@@ -186,9 +191,10 @@ class AsvHandler:
                     if line.strip():
                         print(f"[Serial] Menerima data TIDAK DIKENAL: {line}")
 
+            # === MODIFIKASI: PERCEPAT DELAY ===
             # Selalu beri jeda singkat di setiap loop
-            self.socketio.sleep(0.02)
-            # --- AKHIR MODIFIKASI ---
+            self.socketio.sleep(0) # Kecepatan maksimum (dari 0.02)
+            # === AKHIR MODIFIKASI ===
 
     def _parse_telemetry(self, line):
         try:
@@ -229,6 +235,15 @@ class AsvHandler:
                     f"[AsvHandler] Peringatan: Format data waypoint tidak dikenal. {line}"
                 )
                 return
+            
+            # === MODIFIKASI: VALIDASI DATA GPS ===
+            lat = float(parts[11])
+            lon = float(parts[12])
+
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                print(f"  [Parse AUTO] Data GPS tidak valid (di luar rentang), dibuang: Lat {lat}, Lng {lon}")
+                return # Buang data ini
+            # === AKHIR MODIFIKASI ===
 
             with self.state_lock:
                 self.current_state["nav_target_wp_index"] = int(parts[2])
@@ -241,13 +256,18 @@ class AsvHandler:
                 # Konversi speed dari kmph ke m/s
                 self.current_state["speed"] = float(parts[9]) / 3.6
                 self.current_state["nav_gps_sats"] = int(parts[10])
-                self.current_state["latitude"] = float(parts[11])
-                self.current_state["longitude"] = float(parts[12])
+                self.current_state["latitude"] = lat
+                self.current_state["longitude"] = lon
+
+            # === MODIFIKASI: AKTIFKAN PESAN PARSING ===
+            print(
+                f"  [Parse AUTO] Sukses: HDG={parts[5]}, Lat={lat}, Lng={lon}, Dist={parts[3]}"
+            )
+            # === AKHIR MODIFIKASI ===
 
         except (ValueError, IndexError, TypeError) as e:
             print(f"[AsvHandler] Gagal mem-parsing data waypoint: {e}. Data: {line}")
 
-    # --- TAMBAHAN: Fungsi Parser Baru ---
     # --- TAMBAHAN: Fungsi Parser Baru ---
     def _parse_manual_data(self, line):
         """
@@ -263,15 +283,15 @@ class AsvHandler:
                     f"[AsvHandler] Peringatan: Format data manual tidak dikenal (diharapkan 8, didapat {len(parts)}). {line}"
                 )
                 return
+            
+            # === MODIFIKASI: VALIDASI DATA GPS ===
+            lat = float(parts[6])
+            lon = float(parts[7])
 
-            # parts[0] = "DATA:MANUAL"
-            # parts[1] = heading
-            # parts[2] = speed (kmph)
-            # parts[3] = sats
-            # parts[4] = servoPos
-            # parts[5] = motorMicros
-            # parts[6] = latitude (dari log)
-            # parts[7] = longitude (dari log)
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                print(f"  [Parse MANUAL] Data GPS tidak valid (di luar rentang), dibuang: Lat {lat}, Lng {lon}")
+                return # Buang data ini
+            # === AKHIR MODIFIKASI ===
 
             with self.state_lock:
                 self.current_state["heading"] = float(parts[1])
@@ -280,16 +300,20 @@ class AsvHandler:
                 self.current_state["nav_gps_sats"] = int(parts[3])
                 self.current_state["manual_servo_cmd"] = int(parts[4])
                 self.current_state["manual_motor_cmd"] = int(parts[5])
+                self.current_state["latitude"] = lat
+                self.current_state["longitude"] = lon
 
-                # --- TAMBAHAN: Parse data lat/lon yang baru ---
-                self.current_state["latitude"] = float(parts[6])
-                self.current_state["longitude"] = float(parts[7])
-                # --- AKHIR TAMBAHAN ---
+            # === MODIFIKASI: AKTIFKAN PESAN PARSING ===
+            print(
+                f"  [Parse MANUAL] Sukses: HDG={parts[1]}, Lat={lat}, Lng={lon}"
+            )
+            # === AKHIR MODIFIKASI ===
 
         except (ValueError, IndexError, TypeError) as e:
             print(f"[AsvHandler] Gagal mem-parsing data manual: {e}. Data: {line}")
-        # --- AKHIR TAMBAHAN ---
-        pass
+
+    # --- AKHIR TAMBAHAN ---
+    pass
 
     def main_logic_loop(self):
         self.socketio.start_background_task(self._read_from_serial_loop)
@@ -370,14 +394,20 @@ class AsvHandler:
                     if gate_center_x is not None:
                         pixel_error = gate_center_x - (frame_width / 2)
                         correction = map_value(
-                            pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0
+                            pixel_error,
+                            -frame_width / 2,
+                            frame_width / 2,
+                            -35.0,
+                            35.0,
                         )
                         servo_cmd = int(
                             max(servo_min, min(servo_max, servo_default - correction))
                         )
                         pwm_cmd = motor_base - 75
 
-                        print(f"[Gate Traversal] Sending -> Servo: {servo_cmd}, PWM: {int(pwm_cmd)}")
+                        print(
+                            f"[Gate Traversal] Sending -> Servo: {servo_cmd}, PWM: {int(pwm_cmd)}"
+                        )
 
                         command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
 
@@ -423,7 +453,9 @@ class AsvHandler:
                         )
                         pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
 
-                        print(f"[Obstacle Avoid] Sending -> Servo: {servo_cmd}, PWM: {pwm_cmd}")
+                        print(
+                            f"[Obstacle Avoid] Sending -> Servo: {servo_cmd}, PWM: {pwm_cmd}"
+                        )
 
                         command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
                     else:
@@ -482,12 +514,14 @@ class AsvHandler:
 
             self.logger.log_telemetry(state_for_logic)
             self._update_and_emit_state()
-            
+
             # --- MODIFIKASI: Panggilan Firebase di-comment ---
             send_telemetry_to_firebase(state_for_logic, self.config)
             # --- AKHIR MODIFIKASI ---
             
-            self.socketio.sleep(0.1)
+            # === MODIFIKASI: PERCEPAT DELAY ===
+            self.socketio.sleep(0.1) # Dipercepat 5x (dari 0.1 ke 0.02)
+            # === AKHIR MODIFIKASI ===
 
     def process_command(self, command, payload):
         # --- MODIFIKASI: Tambahkan penanganan arena ---
@@ -518,7 +552,9 @@ class AsvHandler:
             is_active = payload.get("active", False)
 
             if was_active and not is_active:
-                print("[AsvHandler] Gate traversal complete. Initiating recovery...")
+                print(
+                    "[AsvHandler] Gate traversal complete. Initiating recovery..."
+                )
                 self.recovering_from_avoidance = True
                 self.last_avoidance_time = time.time()
 
@@ -546,7 +582,8 @@ class AsvHandler:
             # Kita batasi 9, karena data waypoint di monitor ada 9 titik
             max_points_in_monitor = 9
             self.current_state["debug_waypoint_counter"] = min(
-                self.current_state["debug_waypoint_counter"], max_points_in_monitor
+                self.current_state["debug_waypoint_counter"],
+                max_points_in_monitor,
             )
 
             print(
