@@ -2,7 +2,7 @@
 
 // === MODIFIKASI: Definisikan IP Server di satu tempat ===
 // IP 192.168.1.18 diambil dari config.json Anda.
-const SERVER_IP = "http://192.168.2.174:5000";
+const SERVER_IP = "http://192.168.1.18:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
