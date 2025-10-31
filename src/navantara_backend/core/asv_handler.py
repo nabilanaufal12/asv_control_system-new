@@ -60,6 +60,7 @@ class AsvHandler:
             "last_avoidance_time": 0,
             "last_pixel_error": 0, # Meskipun hanya dipakai di logic loop, dipindah agar konsisten
             "resume_waypoint_on_clear": False,
+            "is_inverted": False,
         }
         # --- [AKHIR REFAKTOR] ---
 
@@ -295,6 +296,9 @@ class AsvHandler:
                         if gate_center_x is not None:
                             pixel_error = gate_center_x - (frame_width / 2)
                             correction = map_value(pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0)
+                            is_inverted = state_for_logic.get("is_inverted", False)
+                            if is_inverted:
+                                correction = -correction
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction)))
                             pwm_cmd = motor_base - 75
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
@@ -324,6 +328,9 @@ class AsvHandler:
                             target_x = (frame_width * 0.2 if target_side == "left" else frame_width * 0.8)
                             pixel_error = obj_center_x - target_x
                             correction_deg = (pixel_error / (frame_width / 2)) * 45.0
+                            is_inverted = state_for_logic.get("is_inverted", False)
+                            if is_inverted:
+                                correction_deg = -correction_deg
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
                             pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
                             # Jika ESP32 melaporkan WP_COMPLETE (target dianggap tidak valid),
@@ -348,10 +355,29 @@ class AsvHandler:
                         # Langsung ambil class dan set servo tanpa pengecekan tambahan
                         obj_class = state_for_logic["vision_target"].get("obstacle_class", "")
                         
-                        # Set servo langsung berdasarkan warna (optimized)
-                        servo_cmd = (50 if obj_class == "green_buoy" else  # 50 derajat untuk hijau
-                                   130 if obj_class == "red_buoy" else     # 130 derajat untuk merah
-                                   servo_default)                          # Default jika tidak dikenal
+                        # Ambil status inversi dari snapshot
+                        is_inverted = state_for_logic.get("is_inverted", False)
+
+                        # Tentukan sudut dasar (sesuai kode Anda)
+                        angle_green_buoy = 50  # Sudut untuk pelampung hijau
+                        angle_red_buoy = 130   # Sudut untuk pelampung merah
+
+                        if is_inverted:
+                            # LOGIKA TERBALIK
+                            if obj_class == "green_buoy":
+                                servo_cmd = angle_red_buoy   # Hijau -> 130
+                            elif obj_class == "red_buoy":
+                                servo_cmd = angle_green_buoy   # Merah -> 50
+                            else:
+                                servo_cmd = servo_default
+                        else:
+                            # LOGIKA NORMAL
+                            if obj_class == "green_buoy":
+                                servo_cmd = angle_green_buoy   # Hijau -> 50
+                            elif obj_class == "red_buoy":
+                                servo_cmd = angle_red_buoy   # Merah -> 130
+                            else:
+                                servo_cmd = servo_default
                         
                         # Gunakan kecepatan yang lebih tinggi untuk respons lebih cepat
                         pwm_cmd = motor_base + 50  # Tambah sedikit kecepatan
@@ -439,6 +465,7 @@ class AsvHandler:
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
             "GATE_TRAVERSAL_COMMAND": self._handle_gate_traversal_command,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
+            "SET_INVERSION": self._handle_set_inversion,
         }
         handler = command_handlers.get(command)
         if handler:
@@ -486,6 +513,15 @@ class AsvHandler:
             self.current_state["debug_waypoint_counter"] = min(self.current_state["debug_waypoint_counter"], max_points_in_monitor)
             logging.info(f"[AsvHandler] Debug counter diatur ke: {self.current_state['debug_waypoint_counter']}")
 
+    def _handle_set_inversion(self, payload):
+        """Menangani toggling mode inversi dari GUI."""
+        with self.state_lock:
+            # Ambil nilai 'inverted' dari payload, default-nya False
+            new_state = payload.get("inverted", False) 
+            if self.current_state["is_inverted"] != new_state:
+                self.current_state["is_inverted"] = new_state
+                logging.info(f"[AsvHandler] Kontrol Inversi diatur ke: {new_state}")
+    
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
             # Skip jika dalam mode gate
@@ -517,6 +553,7 @@ class AsvHandler:
                 return
             if self.current_state.get("control_mode") != "MANUAL":
                 return
+            is_inverted = self.current_state.get("is_inverted", False)
         keys, actuator_config = set(payload), self.config.get("actuators", {})
         pwm_stop, pwr = actuator_config.get(
             "motor_pwm_stop", 1500
@@ -528,6 +565,8 @@ class AsvHandler:
         )
         fwd = 1 if "W" in keys else -1 if "S" in keys else 0
         turn = 1 if "D" in keys else -1 if "A" in keys else 0
+        if is_inverted:
+            turn = -turn
         pwm = pwm_stop + fwd * pwr
         servo = servo_def - turn * (servo_def - servo_min)
         servo = max(servo_min, min(servo_max, servo))

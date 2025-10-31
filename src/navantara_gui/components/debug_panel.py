@@ -38,6 +38,7 @@ class DebugPanel(QWidget):
         self.counter_plus_btn = QPushButton("Counter Plus")
         self.counter_min_btn = QPushButton("Counter Min")
         self.inverse_btn = QPushButton("Inverse")
+        self.inverse_btn.setCheckable(True)
         ai_buttons_layout.addWidget(self.counter_plus_btn)
         ai_buttons_layout.addWidget(self.counter_min_btn)
         ai_buttons_layout.addWidget(self.inverse_btn)
@@ -88,8 +89,10 @@ class DebugPanel(QWidget):
         )
 
         # Tombol lain (jika masih diperlukan, bisa dihubungkan nanti)
-        self.inverse_btn.clicked.connect(
-            lambda: print("Tombol Inverse ditekan (belum terhubung)")
+        self.inverse_btn.toggled.connect(
+            lambda is_checked: self.debug_command_sent.emit(
+                "SET_INVERSION", {"inverted": is_checked}
+            )
         )
         self.motor_set_btn.clicked.connect(
             lambda: print("Tombol Motor Set ditekan (belum terhubung)")
