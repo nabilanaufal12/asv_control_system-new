@@ -16,6 +16,12 @@ class SerialHandler:
         self.is_connected = False
         self.read_buffer = b""  # <-- [PERBAIKAN] Buffer internal untuk data
 
+        # If True, when no real serial is connected we'll still simulate
+        # handling of outgoing commands for development/debugging.
+        self.simulate_if_disconnected = self.config.get("serial_connection", {}).get(
+            "simulate_if_disconnected", True
+        )
+
         self.use_dummy_serial = self.config.get("serial_connection", {}).get("use_dummy_serial", False)
         if self.use_dummy_serial:
             self.is_connected = True
@@ -57,6 +63,19 @@ class SerialHandler:
             return False
 
     def find_and_connect_esp32(self, baudrate):
+        # List semua port yang tersedia untuk diagnostik
+        ports = serial.tools.list_ports.comports()
+        print("[Serial] Port yang tersedia:")
+        for port in ports:
+            print(f"  - {port.device}: {port.description} ({port.hwid})")
+            
+        # If config provides a forced port, try it first
+        forced = self.config.get("serial_connection", {}).get("force_serial_port")
+        if forced:
+            print(f"[Serial] Mencoba port paksa dari config: {forced}")
+            if self.connect(forced, baudrate):
+                return True
+
         ports = serial.tools.list_ports.comports()
         descriptors = self.config.get("serial_connection", {}).get(
             "auto_connect_descriptors", []
@@ -68,16 +87,34 @@ class SerialHandler:
                     print(f"[Serial] Menemukan ESP32 (cocok: '{desc}') di {port.device}")
                     if self.connect(port.device, baudrate):
                         return True
-        
-        print("[Serial] Tidak ada ESP32 yang cocok. Mencoba /dev/ttyUSB0...")
+
+        # If no descriptor matched, try common fallbacks depending on OS
+        # First try Linux default
+        print("[Serial] Tidak ada ESP32 yang cocok dari descriptor. Mencoba /dev/ttyUSB0 sebagai fallback...")
         default_port_to_try = "/dev/ttyUSB0"
         port_exists = any(p.device == default_port_to_try for p in ports)
-        
+
         if port_exists:
             if self.connect(default_port_to_try, baudrate):
                 return True
         else:
             print(f"[Serial] Port default {default_port_to_try} tidak ditemukan.")
+
+        # If running on Windows, try common COM ports (COM3..COM20)
+        try:
+            import sys
+            if sys.platform.startswith("win"):
+                print("[Serial] Mencoba fallback COM ports (Windows)...")
+                for i in range(3, 21):
+                    com_name = f"COM{i}"
+                    try:
+                        if self.connect(com_name, baudrate):
+                            return True
+                    except Exception:
+                        # connect() already logs errors; continue trying
+                        continue
+        except Exception:
+            pass
 
         print("[Serial] Gagal terhubung ke ESP32 secara otomatis.")
         return False
@@ -91,9 +128,57 @@ class SerialHandler:
         self.read_buffer = b"" # <-- [PERBAIKAN] Bersihkan buffer saat disconnect
 
     def send_command(self, command_string):
-        if not self.is_connected or self.use_dummy_serial:
-            return 
-            
+        # Always log outgoing commands for visibility/debugging
+        try:
+            print(f"[Serial SEND] {command_string.strip()}")
+        except Exception:
+            # If printing fails for any reason, ignore but continue
+            pass
+
+        # If we're using dummy serial, simulate that the command was applied
+        if self.use_dummy_serial:
+            # Try to parse common actuator command format 'A,servo,motor' to update dummy state
+            try:
+                parts = command_string.strip().split(',')
+                if parts and parts[0] == 'A' and len(parts) >= 3:
+                    servo_val = int(float(parts[1]))
+                    motor_val = int(float(parts[2]))
+                    with self.serial_lock:
+                        self.dummy_servo = servo_val
+                        self.dummy_motor = motor_val
+            except Exception:
+                pass
+            return
+
+        # If not connected, optionally simulate the command (useful for testing AI without hardware)
+        if not self.is_connected:
+            if self.simulate_if_disconnected:
+                try:
+                    print(f"[Serial SIMULATE] (no connection) {command_string.strip()}")
+                except Exception:
+                    pass
+                # Try to apply actuator updates to in-memory dummy state so AI logic can reflect them
+                try:
+                    parts = command_string.strip().split(',')
+                    if parts and parts[0] == 'A' and len(parts) >= 3:
+                        servo_val = int(float(parts[1]))
+                        motor_val = int(float(parts[2]))
+                        # create dummy attrs if they don't exist
+                        if not hasattr(self, 'dummy_servo'):
+                            self.dummy_servo = servo_val
+                        else:
+                            self.dummy_servo = servo_val
+                        if not hasattr(self, 'dummy_motor'):
+                            self.dummy_motor = motor_val
+                        else:
+                            self.dummy_motor = motor_val
+                except Exception:
+                    pass
+                return
+            else:
+                print("[Serial] Tidak terhubung, perintah tidak dikirim.")
+                return
+
         with self.serial_lock:
             if self.serial_port:
                 try:

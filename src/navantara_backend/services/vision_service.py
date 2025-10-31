@@ -58,10 +58,7 @@ class VisionService:
         self.is_inverted = False
         # --- [FIX] HAPUS STATE LOKAL YANG SUDAH USANG ---
         # self.mode_auto = False 
-        # ----------------------------------------------
-        self.surface_image_count = 1
-        self.underwater_image_count = 1
-
+        # self.mode_auto = False 
         # Pengaturan dari config.json
         vision_cfg = self.config.get("vision", {})
         self.camera_index_1 = int(vision_cfg.get("camera_index_1", 0))
@@ -146,7 +143,7 @@ class VisionService:
         return frame
 
     def _validate_buoy_color(self, frame, detection):
-        # Implementasi validasi warna Anda (dipertahankan)
+        """Validates and determines the color of detected buoys with improved thresholds and logging."""
         if "buoy" not in detection.get("class", ""):
             return detection.get("class")
         try:
@@ -155,30 +152,47 @@ class VisionService:
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(w, x2), min(h, y2)
             if x1 >= x2 or y1 >= y2:
+                logging.warning("[Vision] Invalid bounding box dimensions")
                 return detection.get("class")
 
             roi = frame[y1:y2, x1:x2]
             hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-            lower_red1 = np.array([0, 120, 70])
+            
+            # Adjusted HSV thresholds for more reliable color detection
+            lower_red1 = np.array([0, 100, 60])     # Slightly relaxed saturation & value
             upper_red1 = np.array([10, 255, 255])
-            lower_red2 = np.array([170, 120, 70])
+            lower_red2 = np.array([170, 100, 60])   # For the wrap-around hue of red
             upper_red2 = np.array([180, 255, 255])
-            lower_green = np.array([30, 80, 40])
-            upper_green = np.array([90, 255, 255])
+            lower_green = np.array([35, 70, 35])    # Wider green range
+            upper_green = np.array([85, 255, 255])
+            
             mask_r = cv2.bitwise_or(
                 cv2.inRange(hsv_roi, lower_red1, upper_red1),
                 cv2.inRange(hsv_roi, lower_red2, upper_red2),
             )
             mask_g = cv2.inRange(hsv_roi, lower_green, upper_green)
+            
             red_px = cv2.countNonZero(mask_r)
             green_px = cv2.countNonZero(mask_g)
-
-            if green_px > red_px * 1.5:
-                return "green_buoy"
-            elif red_px > green_px * 1.5:
-                return "red_buoy"
+            total_px = roi.shape[0] * roi.shape[1]
+            
+            # Calculate percentages for better decision making
+            red_percentage = (red_px / total_px) * 100
+            green_percentage = (green_px / total_px) * 100
+            
+            # Debug color detection
+            logging.info(f"[Vision] Color Analysis - Red: {red_percentage:.1f}%, Green: {green_percentage:.1f}%")
+            
+            # More robust color classification with minimum thresholds
+            if green_percentage > 15 and green_px > red_px * 1.2:  # Lowered ratio requirement
+                result = "green_buoy"
+            elif red_percentage > 15 and red_px > green_px * 1.2:  # Lowered ratio requirement
+                result = "red_buoy"
             else:
-                return detection.get("class")
+                result = detection.get("class")
+                
+            logging.info(f"[Vision] Buoy classified as: {result}")
+            return result
         except Exception as e:
             print(f"[ColorValidation] Error: {e}")
             return detection.get("class")
@@ -498,23 +512,73 @@ class VisionService:
             return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
 
     # --- KODE LAMA ANDA UNTUK PROSES AI, NAVIGASI, FOTOGRAFI (DIPERTAHANKAN) ---
-    def process_and_control(self, frame, is_mode_auto):  # Tambah is_mode_auto
-        """Memproses frame dengan AI dan memicu logika kontrol jika mode AUTO."""
+    def process_and_control(self, frame, is_mode_auto):
+        """Processes frame with AI and triggers control logic if AUTO mode is active."""
         
-        detections = [] # Inisialisasi
+        if not is_mode_auto:
+            logging.info("[Vision] Skipping AI processing - Not in AUTO mode")
+            return frame
+            
+        if frame is None:
+            logging.error("[Vision] Cannot process None frame")
+            return frame
+            
+        detections = []
         try:
-            detections, _ = eventlet.tpool.execute(
+            logging.info("[Vision] Starting inference on frame...")
+            infer_result = eventlet.tpool.execute(
                 self.inference_engine.infer, frame
             )
-            # --- [DEBUG] TAMBAHKAN LOG INI ---
-            # Kita ingin melihat ini meskipun kosong, jadi gunakan level INFO atau WARNING
-            logging.warning(f"[Vision DEBUG] Output INFERENSI MENTAH: {detections}")
-            # --- [AKHIR DEBUG] ---
             
+            # Handle different return formats from inference engine
+            if isinstance(infer_result, tuple) and len(infer_result) == 2:
+                detections, scores = infer_result
+            else:
+                detections = infer_result
+                scores = None
+                
+            if not detections:
+                detections = []
+            
+            logging.info(f"[Vision] Raw detections: {len(detections)} objects found")
+            
+            # More detailed logging for debugging
+            if len(detections) > 0:
+                for i, det in enumerate(detections):
+                    # Resolve confidence robustly: prefer scores array, fall back to per-detection field
+                    conf = 0.0
+                    try:
+                        if scores is not None:
+                            raw = scores[i]
+                            # numpy arrays or length-1 lists -> extract scalar
+                            try:
+                                import numpy as _np
+                                if isinstance(raw, _np.ndarray):
+                                    conf = float(_np.squeeze(raw))
+                                else:
+                                    # handle python lists/tuples
+                                    if hasattr(raw, '__len__') and len(raw) == 1:
+                                        conf = float(raw[0])
+                                    else:
+                                        conf = float(raw)
+                            except Exception:
+                                # last-resort conversion
+                                conf = float(raw)
+                        else:
+                            conf = float(det.get('confidence', 0.0))
+                    except Exception:
+                        conf = 0.0
+
+                    logging.info(f"[Vision] Detected {det.get('class', 'unknown')} with confidence {conf:.2f}")
+                    logging.debug(f"[Vision] Detection {i+1} details: {det}")
+            else:
+                logging.debug("[Vision] No objects detected in this frame")
+                    
         except Exception as e:
-            print(f"[VisionService] Error saat inferensi tpool: {e}")
-            traceback.print_exc()
-            return frame # Kembalikan frame asli jika inferensi gagal
+            logging.error(f"[Vision] Inference error: {str(e)}")
+            logging.error(traceback.format_exc())
+            # Keep running even with inference errors, just skip this frame
+            return frame
         # --- [AKHIR FIX] ---
 
         # Sisa kode ini sekarang berjalan di greenlet utama (thread-safe)
@@ -581,49 +645,89 @@ class VisionService:
         return annotated_frame
 
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
-        # Implementasi logika navigasi otonom Anda (dipertahankan)
-        # Panggilan self.asv_handler.process_command() dari sini SEKARANG aman
+        """Handles autonomous navigation based on object detections."""
         
-        # --- [DEBUG] MODIFIKASI LOG INI ---
-        # Ubah ini agar *selalu* mencetak, meskipun kosong
+        if not detections:
+            logging.info("[Vision] No objects detected for navigation")
+            return
+            
         detected_classes = [d.get("class", "unknown") for d in detections]
-        logging.warning(f"[Vision DEBUG] Deteksi SETELAH validasi warna: {detected_classes}")
-        # --- [AKHIR DEBUG] ---
-
-        red_buoys = [d for d in detections if d.get("class") == "red_buoy"]
-        green_buoys = [d for d in detections if d.get("class") == "green_buoy"]
+        logging.info(f"[Vision] Processing navigation for objects: {detected_classes}")
         
-        gate_distance = None # <-- [DEBUG] Inisialisasi di luar scope
+        # Log control mode and ASV state
+        logging.info(f"[Vision] Current control mode: {current_state.get('control_mode')}")
+        if current_state.get('control_mode') != 'AUTO':
+            logging.warning("[Vision] Not in AUTO mode, skipping navigation")
+            return
+
+        # Filter and validate buoy detections
+        red_buoys = []
+        green_buoys = []
+        gate_distance = None
+        
+        for det in detections:
+            cls = det.get("class", "")
+            conf = det.get("confidence", 0.0)
+            dist = det.get("distance_cm", float("inf"))
+            
+            if conf < self.poi_confidence_threshold:
+                logging.debug(f"[Vision] Skipping low confidence detection: {cls} ({conf:.2f})")
+                continue
+                
+            if cls == "red_buoy":
+                red_buoys.append(det)
+                logging.info(f"[Vision] Red buoy detected: conf={conf:.2f}, dist={dist:.1f}cm")
+            elif cls == "green_buoy":
+                green_buoys.append(det)
+                logging.info(f"[Vision] Green buoy detected: conf={conf:.2f}, dist={dist:.1f}cm")
 
         if red_buoys and green_buoys:
             red = min(red_buoys, key=lambda d: d.get("distance_cm", float("inf")))
-            green = min(green_buoys, key=lambda d: d.get("distance_cm", float("inf")))
-            gate_pixel_width = max(red["xyxy"][2], green["xyxy"][2]) - min(
-                red["xyxy"][0], green["xyxy"][0]
-            )
-            gate_distance = self._estimate_distance(gate_pixel_width, "buoy_gate")
-            if (
-                gate_distance is not None
-                and gate_distance < self.gate_activation_distance
-            ):
-                self.last_buoy_seen_time = time.time()
-                gate_center_x = (red["center"][0] + green["center"][0]) / 2.0
-                
-                # --- [DEBUG] DITAMBAHKAN ---
-                payload = {
-                    "active": True,
-                    "gate_center_x": gate_center_x,
-                    "red_buoy_x": red["center"][0],
-                    "green_buoy_x": green["center"][0],
-                    "frame_width": frame_width,
-                }
-                logging.critical(f"[Vision DEBUG] KONDISI GERBANG TERPENUHI. HENDAK MEMANGGIL process_command. Payload: {payload}")
-                # --- [AKHIR DEBUG] ---
-                
-                self.asv_handler.process_command(
-                    "GATE_TRAVERSAL_COMMAND",
-                    payload, # <-- [DEBUG] Menggunakan var payload
+            try:
+                green = min(green_buoys, key=lambda d: d.get("distance_cm", float("inf")))
+                gate_pixel_width = max(red["xyxy"][2], green["xyxy"][2]) - min(
+                    red["xyxy"][0], green["xyxy"][0]
                 )
+                
+                # Validate detection quality
+                if gate_pixel_width <= 0:
+                    logging.warning("[Vision] Invalid gate width detected")
+                    return
+                    
+                gate_distance = self._estimate_distance(gate_pixel_width, "buoy_gate")
+                if gate_distance is None:
+                    logging.warning("[Vision] Could not estimate gate distance")
+                    return
+                    
+                logging.info(f"[Vision] Gate distance: {gate_distance:.1f}cm (activation: {self.gate_activation_distance}cm)")
+                
+                if gate_distance < self.gate_activation_distance:
+                    self.last_buoy_seen_time = time.time()
+                    gate_center_x = (red["center"][0] + green["center"][0]) / 2.0
+                    
+                    # Build and validate payload
+                    payload = {
+                        "active": True,
+                        "gate_center_x": gate_center_x,
+                        "red_buoy_x": red["center"][0],
+                        "green_buoy_x": green["center"][0],
+                        "frame_width": frame_width,
+                        "gate_distance": gate_distance,  # Added for debugging
+                        "timestamp": time.time(),
+                    }
+                    
+                    logging.info(f"[Vision] Gate conditions met - Sending command")
+                    logging.debug(f"[Vision] Gate payload: {payload}")
+                    
+                    self.asv_handler.process_command(
+                        "GATE_TRAVERSAL_COMMAND",
+                        payload
+                    )
+                    return
+                    
+            except Exception as e:
+                logging.error(f"[Vision] Error processing gate detection: {str(e)}")
+                logging.error(traceback.format_exc())
                 return
 
         all_buoys = red_buoys + green_buoys
