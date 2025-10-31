@@ -17,7 +17,6 @@ from navantara_backend.core.mission_logger import MissionLogger
 
 from navantara_backend.vision.cloud_utils import send_telemetry_to_firebase
 
-# ... (map_value dan __init__ tidak berubah) ...
 
 def map_value(x, in_min, in_max, out_min, out_max):
     if in_max == in_min:
@@ -137,7 +136,6 @@ class AsvHandler:
     def _parse_json_telemetry(self, data):
         try:
             with self.state_lock:
-                # ... (Logika parsing tidak berubah) ...
                 self.current_state["heading"] = data.get("heading", self.current_state["heading"])
                 self.current_state["speed"] = data.get("speed_kmh", 0.0) / 3.6
                 self.current_state["nav_gps_sats"] = data.get("sats", self.current_state["nav_gps_sats"])
@@ -169,11 +167,8 @@ class AsvHandler:
         logging.info("[AsvHandler] Loop pembaca serial dimulai.")
         while self.running:
             
-            # --- [PERUBAHAN ARSITEKTUR: TAMBAHKAN BLOK TRY...EXCEPT] ---
-            # Ini akan menangkap *crash* APAPUN di dalam loop
-            # tanpa mematikan seluruh server.
+            # --- [BLOK TRY...EXCEPT ANTI-CRASH] ---
             try:
-                # ... (Logika EKF tetap sama) ...
                 current_time = time.time()
                 dt = current_time - self.last_ekf_update_time
                 if dt > 0:
@@ -200,14 +195,15 @@ class AsvHandler:
                 # PRIORITAS 1: RC OVERRIDE
                 if rc_mode_switch < 1500:
                     command_to_send = None
-                    logging.info("[LOG | RC] RC Manual Override Aktif. Perintah Jetson ditahan.")
+                    logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
                 
                 # PRIORITAS 2: MANUAL GUI (WASD)
                 elif state_for_logic.get("control_mode") == "MANUAL":
                     servo_cmd = state_for_logic.get("manual_servo_cmd", 90)
                     motor_cmd = state_for_logic.get("manual_motor_cmd", 1500)
                     command_to_send = f"A,{int(servo_cmd)},{int(motor_cmd)}\n"
-                    logging.info(f"[LOG | MANUAL] Mengirim: {command_to_send.strip()}")
+                    # --- [FORMAT LOG LAMA] ---
+                    logging.info(f"[AsvHandler] MANUAL CONTROL -> Servo: {int(servo_cmd)} deg, Motor: {int(motor_cmd)} us")
                 
                 # PRIORITAS 3: AUTO (AI & WAYPOINT)
                 elif state_for_logic.get("control_mode") == "AUTO":
@@ -240,7 +236,8 @@ class AsvHandler:
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction)))
                             pwm_cmd = motor_base - 75
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
-                            logging.info(f"[LOG | AUTO AI] Mengirim [Gate]: {command_to_send.strip()}")
+                            # --- [FORMAT LOG LAMA] ---
+                            logging.info(f"[AsvHandler] AI CONTROL [Gate] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
 
                     # === PRIORITAS 3.2: PENGHINDARAN TUNGGAL BERKONTEKS ===
                     elif (self.vision_target.get("active", False) and self.gate_context["last_gate_config"]):
@@ -264,7 +261,8 @@ class AsvHandler:
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
                             pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
                             command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                            logging.info(f"[LOG | AUTO AI] Mengirim [Avoid Ctx]: {command_to_send.strip()}")
+                            # --- [FORMAT LOG LAMA] ---
+                            logging.info(f"[AsvHandler] AI CONTROL [Avoid Ctx] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
                         else:
                             self.gate_context["last_gate_config"] = None
 
@@ -283,7 +281,8 @@ class AsvHandler:
                         servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
                         pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 3))
                         command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                        logging.info(f"[LOG | AUTO AI] Mengirim [Avoid]: {command_to_send.strip()}")
+                        # --- [FORMAT LOG LAMA] ---
+                        logging.info(f"[AsvHandler] AI CONTROL [Avoid] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
 
                     # === PRIORITAS 3.4: FASE RECOVERY/PELURUSAN SETELAH MENGHINDAR ===
                     elif self.recovering_from_avoidance:
@@ -291,7 +290,8 @@ class AsvHandler:
                         self.avoidance_direction = None
                         servo_cmd, pwm_cmd = servo_default, 1300
                         command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                        logging.info(f"[LOG | AUTO AI] Mengirim [Recovery]: {command_to_send.strip()}")
+                        # --- [FORMAT LOG LAMA] ---
+                        logging.info(f"[AsvHandler] AI CONTROL [Recovery] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
                         if time.time() - self.last_avoidance_time > 0.2:
                             self.recovering_from_avoidance = False
 
@@ -299,7 +299,7 @@ class AsvHandler:
                     else:
                         self.last_pixel_error = 0
                         command_to_send = "W\n"
-                        logging.info("[LOG | AUTO WP] Mengirim [Waypoint]: W")
+                        logging.info("[AsvHandler] WAYPOINT CONTROL -> Mengirim: W")
 
                 # Kirim perintah (jika ada)
                 if command_to_send:
@@ -311,16 +311,12 @@ class AsvHandler:
             
             except Exception as e:
                 # --- INI ADALAH PENANGKAP ERROR BARU ---
-                # Jika ada error baru, ini akan dicetak ke terminal
-                # tapi loop akan terus berjalan.
                 logging.error(f"[FATAL] Error di main_logic_loop: {e}", exc_info=True)
-                # exc_info=True akan mencetak traceback lengkap
             
             # Pastikan sleep SELALU dieksekusi, di luar blok try
             self.socketio.sleep(0.02) 
 
     # ... (Sisa file: process_command, _handle_... functions) ...
-    # ... (Pastikan semua print() di fungsi lain juga diganti logging.info/warning/error) ...
 
     def process_command(self, command, payload):
         command_handlers = {
