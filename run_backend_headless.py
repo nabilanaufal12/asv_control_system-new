@@ -11,7 +11,7 @@ eventlet.monkey_patch()
 # Ini adalah perbaikan untuk masalah "tidak ada output" di video Anda.
 # Ini harus dijalankan SEBELUM create_app() dipanggil.
 logging.basicConfig(
-    level=logging.INFO,  # Set level ke INFO agar log .info() muncul
+    level=logging.WARNING,  # Set level ke INFO agar log .info() muncul
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 # -----------------------------------------

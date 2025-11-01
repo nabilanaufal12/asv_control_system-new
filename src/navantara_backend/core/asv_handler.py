@@ -60,7 +60,7 @@ class AsvHandler:
             "last_avoidance_time": 0,
             "last_pixel_error": 0, # Meskipun hanya dipakai di logic loop, dipindah agar konsisten
             "resume_waypoint_on_clear": False,
-            "is_inverted": False,
+            "inverse_servo": False,  # State untuk toggle arah servo
         }
         # --- [AKHIR REFAKTOR] ---
 
@@ -242,8 +242,6 @@ class AsvHandler:
                     state_for_logic = self.current_state.copy()
                 # --- [AKHIR REFAKTOR] ---
 
-                logging.info(f"[Loop DEBUG] Status inversi dibaca: {state_for_logic.get('is_inverted', 'KUNCI TIDAK DITEMUKAN')}")
-
                 rc_mode_switch = state_for_logic.get("rc_channels", [1500] * 6)[4]
                 command_to_send = None
 
@@ -298,9 +296,6 @@ class AsvHandler:
                         if gate_center_x is not None:
                             pixel_error = gate_center_x - (frame_width / 2)
                             correction = map_value(pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0)
-                            is_inverted = state_for_logic.get("is_inverted", False)
-                            if is_inverted:
-                                correction = -correction
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction)))
                             pwm_cmd = motor_base - 75
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
@@ -330,9 +325,6 @@ class AsvHandler:
                             target_x = (frame_width * 0.2 if target_side == "left" else frame_width * 0.8)
                             pixel_error = obj_center_x - target_x
                             correction_deg = (pixel_error / (frame_width / 2)) * 45.0
-                            is_inverted = state_for_logic.get("is_inverted", False)
-                            if is_inverted:
-                                correction_deg = -correction_deg
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction_deg)))
                             pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
                             # Jika ESP32 melaporkan WP_COMPLETE (target dianggap tidak valid),
@@ -354,42 +346,24 @@ class AsvHandler:
                             self.current_state["recovering_from_avoidance"] = False
                             self.current_state["is_avoiding"] = True
                         
-                        # Langsung ambil class dan set servo tanpa pengecekan tambahan
+                        # Langsung ambil class dan set servo (sudut dibalik dari sebelumnya)
                         obj_class = state_for_logic["vision_target"].get("obstacle_class", "")
-                        
-                        # Ambil status inversi dari snapshot
-                        is_inverted = state_for_logic.get("is_inverted", False)
-
-                        # Tentukan sudut dasar (sesuai kode Anda)
-                        angle_green_buoy = 50  # Sudut untuk pelampung hijau
-                        angle_red_buoy = 130   # Sudut untuk pelampung merah
-
-                        if is_inverted:
-                            # LOGIKA TERBALIK
-                            if obj_class == "green_buoy":
-                                servo_cmd = angle_red_buoy   # Hijau -> 130
-                            elif obj_class == "red_buoy":
-                                servo_cmd = angle_green_buoy   # Merah -> 50
-                            else:
-                                servo_cmd = servo_default
+                        if obj_class == "green_buoy":
+                            servo_cmd = 50   # Pelampung hijau belok ke kanan (dibalik dari 130°)
+                        elif obj_class == "red_buoy":
+                            servo_cmd = 130  # Pelampung merah belok ke kiri (dibalik dari 50°)
                         else:
-                            # LOGIKA NORMAL
-                            if obj_class == "green_buoy":
-                                servo_cmd = angle_green_buoy   # Hijau -> 50
-                            elif obj_class == "red_buoy":
-                                servo_cmd = angle_red_buoy   # Merah -> 130
-                            else:
-                                servo_cmd = servo_default
+                            servo_cmd = servo_default
                         
                         # Gunakan kecepatan yang lebih tinggi untuk respons lebih cepat
                         pwm_cmd = motor_base + 50  # Tambah sedikit kecepatan
-                        # Jika ESP32 laporkan WP_COMPLETE (key 'status' atau 'esp_status'), kirim W untuk lanjut waypoint
+                        # Log dan kirim command
                         if state_for_logic.get("esp_status") == "WP_COMPLETE" or state_for_logic.get("status") == "WP_COMPLETE":
                             command_to_send = "W\n"
                             logging.info("[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W untuk melanjutkan waypoint")
                         else:
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
-                            logging.info(f"[AsvHandler] AI CONTROL [Avoid] -> Servo: {servo_cmd}° ({obj_class})")                    # === PRIORITAS 3.4: TRANSISI INSTAN KE WAYPOINT ===
+                            logging.info(f"[AsvHandler] AI CONTROL [Avoid] -> Servo diputar ke: {servo_cmd}° untuk {obj_class}")                    # === PRIORITAS 3.4: TRANSISI INSTAN KE WAYPOINT ===
                     elif state_for_logic.get("resume_waypoint_on_clear"):
                         # Langsung kirim W dan reset semua flag
                         with self.state_lock:
@@ -451,11 +425,6 @@ class AsvHandler:
     # ... (Sisa file: process_command, _handle_... functions) ...
 
     def process_command(self, command, payload):
-        # --- [DEBUG] DITAMBAHKAN ---
-        # Log ini akan menangkap *SETIAP* perintah yang masuk ke handler
-        logging.critical(f"[Handler DEBUG] MENERIMA process_command: {command}")
-        # --- [AKHIR DEBUG] ---
-
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
             "CHANGE_MODE": self._handle_mode_change,
@@ -467,19 +436,25 @@ class AsvHandler:
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
             "GATE_TRAVERSAL_COMMAND": self._handle_gate_traversal_command,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
-            "SET_INVERSION": self._handle_set_inversion,
+            "INVERSE_SERVO": self._handle_inverse_servo,  # Handler untuk toggle servo
         }
         handler = command_handlers.get(command)
         if handler:
             handler(payload)
         else:
             logging.warning(f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'")
+            
+    def _handle_inverse_servo(self, payload):
+        """Handler untuk mengubah arah servo (toggle antara normal dan terbalik)"""
+        with self.state_lock:
+            # Toggle atau set value sesuai payload
+            if payload.get("toggle"):
+                self.current_state["inverse_servo"] = not self.current_state.get("inverse_servo", False)
+            elif "value" in payload:
+                self.current_state["inverse_servo"] = bool(payload["value"])
+            logging.info(f"[AsvHandler] inverse_servo diubah ke: {self.current_state['inverse_servo']}")
 
     def _handle_gate_traversal_command(self, payload):
-        # --- [DEBUG] DITAMBAHKAN ---
-        logging.critical(f"[Handler DEBUG] MENJALANKAN _handle_gate_traversal. Payload active: {payload.get('active')}")
-        # --- [AKHIR DEBUG] ---
-
         with self.state_lock:
             # --- [REFAKTOR ARSITEKTURAL] ---
             # Tulis ke self.current_state, bukan self.attribut
@@ -496,11 +471,6 @@ class AsvHandler:
                 self.current_state["vision_target"]["active"] = False
             # --- [AKHIR REFAKTOR] ---
 
-            # --- [DEBUG] DITAMBAHKAN ---
-            logging.critical(f"[Handler DEBUG] State self.current_state['gate_target']['active'] SEKARANG: {self.current_state['gate_target']['active']}")
-            # --- [AKHIR DEBUG] ---
-
-
     def _handle_debug_counter(self, payload):
         action = payload.get("action")
         with self.state_lock:
@@ -515,15 +485,6 @@ class AsvHandler:
             self.current_state["debug_waypoint_counter"] = min(self.current_state["debug_waypoint_counter"], max_points_in_monitor)
             logging.info(f"[AsvHandler] Debug counter diatur ke: {self.current_state['debug_waypoint_counter']}")
 
-    def _handle_set_inversion(self, payload):
-        """Menangani toggling mode inversi dari GUI."""
-        with self.state_lock:
-            # Ambil nilai 'inverted' dari payload, default-nya False
-            new_state = payload.get("inverted", False) 
-            if self.current_state["is_inverted"] != new_state:
-                self.current_state["is_inverted"] = new_state
-                logging.info(f"[AsvHandler] Kontrol Inversi diatur ke: {new_state}")
-    
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
             # Skip jika dalam mode gate
@@ -555,7 +516,6 @@ class AsvHandler:
                 return
             if self.current_state.get("control_mode") != "MANUAL":
                 return
-            is_inverted = self.current_state.get("is_inverted", False)
         keys, actuator_config = set(payload), self.config.get("actuators", {})
         pwm_stop, pwr = actuator_config.get(
             "motor_pwm_stop", 1500
@@ -567,8 +527,6 @@ class AsvHandler:
         )
         fwd = 1 if "W" in keys else -1 if "S" in keys else 0
         turn = 1 if "D" in keys else -1 if "A" in keys else 0
-        if is_inverted:
-            turn = -turn
         pwm = pwm_stop + fwd * pwr
         servo = servo_def - turn * (servo_def - servo_min)
         servo = max(servo_min, min(servo_max, servo))
