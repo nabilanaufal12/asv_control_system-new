@@ -12,7 +12,7 @@ eventlet.monkey_patch()
 # Ini harus dijalankan SEBELUM create_app() dipanggil.
 logging.basicConfig(
     level=logging.WARNING,  # Set level ke INFO agar log .info() muncul
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 # -----------------------------------------
 
@@ -37,4 +37,3 @@ if __name__ == "__main__":
 
     # --- PERUBAHAN: Menjalankan server menggunakan eventlet ---
     socketio.run(app, host="0.0.0.0", port=5000, debug=False)
-

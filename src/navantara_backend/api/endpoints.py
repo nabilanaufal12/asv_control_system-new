@@ -91,7 +91,7 @@ def generate_video_frames_cam2(
     TARGET_HEIGHT_CAM2 = 240
     # --- OPTIMASI: Ganti WebP ke JPEG (Kualitas 30) ---
     JPEG_QUALITY_CAM2 = 30
-    FRAME_DELAY_CAM2 = 0.1 # 10 FPS
+    FRAME_DELAY_CAM2 = 0.1  # 10 FPS
     # ------------------------------------------------
 
     while True:
@@ -115,7 +115,7 @@ def generate_video_frames_cam2(
                 continue
 
             if frame_to_encode is not None:
-                 # --- OPTIMASI: Encode ke .jpg ---
+                # --- OPTIMASI: Encode ke .jpg ---
                 (flag, encodedImage) = cv2.imencode(
                     ".jpg",
                     frame_to_encode,
@@ -204,7 +204,9 @@ def handle_socket_command(json_data):
             if hasattr(current_app.vision_service, method_name):
                 getattr(current_app.vision_service, method_name)(payload)
             else:
-                print(f"[APyield (b'--frame\r\nI] Perintah vision tidak dikenal: {command}")
+                print(
+                    f"[APyield (b'--frame\r\nI] Perintah vision tidak dikenal: {command}"
+                )
         else:
             current_app.asv_handler.process_command(command, payload)
     except Exception as e:

@@ -23,11 +23,16 @@ class ApiClient(QObject):
         backend_config = config.get("backend_connection", {})
         self.base_url = f"http://{backend_config.get('ip_address', '127.0.0.1')}:{backend_config.get('port', 5000)}"
 
+        # --- [MODIFIKASI OPTIMASI 1] ---
+        # Kamus ini akan menyimpan state lengkap dan persisten di sisi GUI
+        self.full_gui_state = {}
+        # --- [AKHIR MODIFIKASI] ---
+
         # Inisialisasi klien Socket.IO
         self.sio = socketio.Client()
         self.setup_event_handlers()
 
-    def connect_to_server(self):  # <-- NAMA DIGANTI
+    def connect_to_server(self):
         """
         Memulai koneksi ke server. Pustaka menangani koneksi non-blocking
         secara internal, sehingga tidak perlu thread manual.
@@ -42,33 +47,47 @@ class ApiClient(QObject):
     def setup_event_handlers(self):
         """Mendefinisikan callback untuk event yang diterima dari server."""
 
-        @self.sio.on("connect")  # <-- PASTIKAN MENGGUNAKAN .on('connect')
-        def on_sio_connect():  # <-- PASTIKAN NAMA FUNGSI SUDAH DIGANTI
+        @self.sio.on("connect")
+        def on_sio_connect():
             self.connection_status_changed.emit(True, "Terhubung ke Backend")
             print("Berhasil terhubung! Meminta stream data dari server...")
             # --- PERBAIKAN: Gunakan background task untuk menghindari race condition ---
-            # Ini memastikan permintaan dikirim setelah event 'connect' selesai sepenuhnya.
             self.sio.start_background_task(self.initial_stream_request)
 
         @self.sio.event
         def disconnect():
+            # --- [MODIFIKASI OPTIMASI 1] ---
+            # Reset state lengkap saat koneksi terputus
+            self.full_gui_state = {}
+            # --- [AKHIR MODIFIKASI] ---
             self.connection_status_changed.emit(False, "Koneksi terputus")
             print("Koneksi ke server terputus.")
 
         @self.sio.on("telemetry_update")
         def on_telemetry_update(data):
-            self.data_updated.emit(data)
+            # --- [MODIFIKASI UTAMA OPTIMASI 1] ---
+            # 'data' sekarang adalah 'delta_payload' (hanya perubahan)
+            
+            # 1. Gabungkan (merge) data delta ke dalam state lengkap
+            try:
+                self.full_gui_state.update(data)
+                
+                # 2. Emit state yang SUDAH LENGKAP ke seluruh GUI
+                #    Buat salinan (.copy()) agar aman antar thread
+                self.data_updated.emit(self.full_gui_state.copy())
+            except Exception as e:
+                print(f"[ApiClient] Gagal memproses telemetry_update: {e}")
+            # --- [AKHIR MODIFIKASI] ---
 
         @self.sio.on("frame_cam1")
         def on_frame_cam1(data):
+            # (Fungsi ini menyertakan perbaikan dari error log Anda sebelumnya)
             try:
-                # --- [PERBAIKAN DI SINI] ---
                 # Cek jika data yang diterima adalah bytes, jika tidak, abaikan
                 if not isinstance(data, bytes):
                     print(f"[API-CAM1] Menerima data frame, tapi bukan bytes (tipe: {type(data)}). Melompati.")
                     return 
-                # --- [AKHIR PERBAIKAN] ---
-            
+                
                 # Ubah data byte JPEG kembali menjadi gambar OpenCV
                 nparr = np.frombuffer(data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -83,13 +102,12 @@ class ApiClient(QObject):
 
         @self.sio.on("frame_cam2")
         def on_frame_cam2(data):
+            # (Fungsi ini menyertakan perbaikan dari error log Anda sebelumnya)
             try:
-                # --- [PERBAIKAN DI SINI] ---
                 # Cek jika data yang diterima adalah bytes, jika tidak, abaikan
                 if not isinstance(data, bytes):
                     print(f"[API-CAM2] Menerima data frame, tapi bukan bytes (tipe: {type(data)}). Melompati.")
                     return 
-                # --- [AKHIR PERBAIKAN] ---
 
                 nparr = np.frombuffer(data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -99,7 +117,6 @@ class ApiClient(QObject):
                     print("[API-CAM2] Gagal decode frame (frame is None).")
             except Exception as e:
                 print(f"[API-CAM2] Error processing frame: {e}")
-
 
     def initial_stream_request(self):
         """Fungsi yang dijalankan di latar belakang untuk meminta stream awal."""

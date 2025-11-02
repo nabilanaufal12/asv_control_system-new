@@ -45,7 +45,9 @@ def create_app():
     web_folder_path = os.path.join(src_dir, "navantara_web")
 
     # Gunakan path yang benar dan absolut untuk template_folder dan static_folder
-    app = Flask(__name__, template_folder=web_folder_path, static_folder=web_folder_path)
+    app = Flask(
+        __name__, template_folder=web_folder_path, static_folder=web_folder_path
+    )
 
     CORS(app)  # <--- 3. INISIALISASI CORS DI SINI
 
@@ -153,7 +155,7 @@ def create_app():
     # --- AKHIR DARI ENDPOINT BARU ---
 
     # --- MODIFIKASI: ENDPOINT BARU UNTUK MANUAL CAPTURE ---
-    @app.route("/api/capture/manual", methods=['POST'])
+    @app.route("/api/capture/manual", methods=["POST"])
     def manual_capture():
         """
         Endpoint API untuk memicu pengambilan gambar manual.
@@ -161,23 +163,27 @@ def create_app():
         """
         try:
             data = request.json
-            capture_type = data.get('type') # 'surface' or 'underwater'
+            capture_type = data.get("type")  # 'surface' or 'underwater'
 
-            if capture_type not in ['surface', 'underwater']:
-                return jsonify({"status": "error", "message": "Tipe capture tidak valid"}), 400
-            
+            if capture_type not in ["surface", "underwater"]:
+                return (
+                    jsonify({"status": "error", "message": "Tipe capture tidak valid"}),
+                    400,
+                )
+
             # Panggil fungsi baru di vision_service
             # Ini akan mengambil foto, menambah overlay, dan menyimpannya
             result = current_app.vision_service.trigger_manual_capture(capture_type)
-            
+
             if result.get("status") == "success":
                 return jsonify(result), 200
             else:
-                return jsonify(result), 500 # Server error jika gagal
+                return jsonify(result), 500  # Server error jika gagal
 
         except Exception as e:
             print(f"[API Capture] Error: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
+
     # --- AKHIR MODIFIKASI ---
 
     # --- MODIFIKASI: RUTE BARU UNTUK API GALERI ---

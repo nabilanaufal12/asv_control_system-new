@@ -9,7 +9,7 @@ def send_telemetry_to_firebase(telemetry_data, config):
     # print("[Firebase] Pengiriman dinonaktifkan (mode lokal).")
     pass
     # --- AKHIR MODIFIKASI ---
-    
+
     # try:
     #     FIREBASE_URL = config.get("api_urls", {}).get("firebase_url")
     #     if not FIREBASE_URL:
