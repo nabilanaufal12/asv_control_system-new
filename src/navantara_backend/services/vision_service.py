@@ -83,6 +83,9 @@ class VisionService:
         # self.show_local_feed = vision_cfg.get("show_local_video_feed", False)
         self.show_local_feed = False
 
+        self.surface_image_count = 0
+        self.underwater_image_count = 0
+
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get("camera_detection", {})
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
