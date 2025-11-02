@@ -1,46 +1,36 @@
 # src/navantara_backend/services/vision_service.py
-# --- VERSI FINAL DENGAN DUA KAMERA, PAYLOAD GERBANG, DAN PERBAIKAN IMPORT ---
+# --- VERSI FINAL DENGAN PEMUAT MODEL BARU (YOLOv5 LANGSUNG) ---
 import cv2
 import numpy as np
 import collections
 import time
 import traceback
 import threading
-import eventlet  # Pastikan eventlet diimpor
+import eventlet
 import os
 import eventlet.tpool # <-- Diimpor
-import logging # <-- [DEBUG] Dipertahankan
+import logging
+import torch
+import sys
+from pathlib import Path
 
-# Impor dari modul lain di backend Anda
-from navantara_backend.vision.inference_engine import InferenceEngine
+# --- HAPUS IMPORT LAMA ---
+# from navantara_backend.vision.inference_engine import InferenceEngine 
 
-# Hapus import path_planner jika tidak digunakan di sini
-# from navantara_backend.vision.path_planner import dwa_path_planning
-
-# --- MODIFIKASI: Seluruh blok import cloud_utils di-comment ---
-# from navantara_backend.vision.cloud_utils import (
-#     # send_telemetry_to_firebase, # Firebase dipanggil dari asv_handler
-#     # upload_image_to_supabase,
-# )
-# --- AKHIR MODIFIKASI ---
+# --- HAPUS IMPORT CLOUD UTILS ---
+# ... (impor cloud utils dihapus) ...
 
 from navantara_backend.vision.overlay_utils import (
     create_overlay_from_html,
     apply_overlay,
 )
 
-# --- HAPUS IMPORT Slot ---
-# from PySide6.QtCore import Slot # Hapus import ini
-# --- AKHIR HAPUSAN ---
-
-
 class VisionService:
     # --- Variabel Class untuk menyimpan frame terbaru & locks ---
-    _latest_processed_frame_cam1 = None  # Frame CAM 1 (Hasil AI)
-    _frame_lock_cam1 = threading.Lock()  # Lock untuk CAM 1
-    _latest_raw_frame_cam2 = None  # Frame CAM 2 (Mentah)
-    _frame_lock_cam2 = threading.Lock()  # Lock untuk CAM 2
-    # Ganti nama variabel lama agar konsisten (opsional, bisa tetap _latest_processed_frame dll)
+    _latest_processed_frame_cam1 = None
+    _frame_lock_cam1 = threading.Lock()
+    _latest_raw_frame_cam2 = None
+    _frame_lock_cam2 = threading.Lock()
     _latest_processed_frame = _latest_processed_frame_cam1
     _frame_lock = _frame_lock_cam1
     # -----------------------------------------------------------
@@ -50,15 +40,17 @@ class VisionService:
         self.asv_handler = asv_handler
         self.socketio = socketio
         self.running = False
-        self.inference_engine = InferenceEngine(config)
-        self.settings_lock = threading.Lock()  # Lock untuk pengaturan dari GUI
+        
+        # --- [PERUBAHAN BESAR] Panggil pemuat model baru ---
+        self.model = self._load_yolo_model(config)
+        # --- [AKHIR PERUBAHAN] ---
+        
+        self.settings_lock = threading.Lock()
 
         # Pengaturan awal
         self.gui_is_listening = False
-        self.is_inverted = False
-        # --- [FIX] HAPUS STATE LOKAL YANG SUDAH USANG ---
-        # self.mode_auto = False 
-        # self.mode_auto = False 
+        self.is_inverted = False # State ini sudah tidak dipakai di sini
+        
         # Pengaturan dari config.json
         vision_cfg = self.config.get("vision", {})
         self.camera_index_1 = int(vision_cfg.get("camera_index_1", 0))
@@ -79,8 +71,7 @@ class VisionService:
         self.last_buoy_seen_time = 0
         self.obstacle_cooldown_period = vision_cfg.get(
             "obstacle_cooldown_period_sec", 2.0
-        )  # Ambil dari config
-        # self.show_local_feed = vision_cfg.get("show_local_video_feed", False)
+        )
         self.show_local_feed = False
 
         self.surface_image_count = 0
@@ -93,7 +84,61 @@ class VisionService:
 
         print("[VisionService] Layanan Visi diinisialisasi.")
 
-    # --- KODE LAMA ANDA UNTUK ESTIMASI JARAK, DLL (DIPERTAHANKAN) ---
+    # --- [FUNGSI BARU] Pemuat Model ---
+    def _load_yolo_model(self, config):
+        """Memuat model YOLOv5 (TensorRT atau PyTorch) secara langsung."""
+        try:
+            # Tentukan path ke folder yolov5 BARU
+            yolo_dir = Path(__file__).parent.parent / 'yolov5'
+            
+            # Tentukan path HANYA ke file .pt
+            pt_path = yolo_dir / 'besto.pt'
+
+            # Tambahkan path yolov5 ke sys.path agar torch.hub bisa bekerja
+            if str(yolo_dir) not in sys.path:
+                sys.path.insert(0, str(yolo_dir))
+            
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+
+            # Kita HARUS memeriksa file .pt terlebih dahulu.
+            if not pt_path.exists():
+                print(f"[VisionService] KRITIS: File 'besto.pt' tidak ditemukan di {yolo_dir}")
+                print(f"[VisionService] Pastikan Anda sudah menyalin 'besto.pt' ke dalam folder 'yolov5' yang baru.")
+                return None
+
+            print(f"[VisionService] Memuat model dari {pt_path}.")
+            print(f"[VisionService] (Akan otomatis mencari 'besto.engine' untuk optimasi)")
+            
+            # Muat model menggunakan torch.hub.
+            # KITA HANYA MEMBERIKAN .pt. 
+            # Logika internal yolov5 akan menemukan dan menggunakan .engine jika ada.
+            model = torch.hub.load(
+                str(yolo_dir),
+                'custom',
+                path=str(pt_path), # <-- SELALU ARAHKAN KE .pt
+                source='local',
+                force_reload=True, 
+                trust_repo=True
+            )
+            
+            model.to(device)
+            
+            # Ambil conf/iou dari config
+            vision_cfg = config.get("vision", {})
+            model.conf = float(vision_cfg.get("conf_threshold", 0.25))
+            model.iou = float(vision_cfg.get("iou_threshold", 0.45))
+            
+            print(f"[VisionService] Model YOLOv5 berhasil dimuat di device {device}.")
+            return model
+            
+        except Exception as e:
+            print(f"[VisionService] KRITIS: Gagal total memuat model YOLOv5: {e}")
+            traceback.print_exc()
+            return None
+    # --- [AKHIR FUNGSI BARU] ---
+
+
+    # --- (Fungsi _estimate_distance, _draw_distance_info, _validate_buoy_color tidak berubah) ---
     def _estimate_distance(self, pixel_width, object_class):
         real_width_cm = self.OBJECT_REAL_WIDTHS_CM.get(object_class)
         # Fallback ke 'buoy' jika kelas spesifik tidak ada
@@ -200,9 +245,7 @@ class VisionService:
             print(f"[ColorValidation] Error: {e}")
             return detection.get("class")
 
-    # --- AKHIR KODE LAMA ANDA ---
-
-    # --- MODIFIKASI: Memulai DUA greenlet capture ---
+    # --- (Fungsi run_capture_loops, stop, _capture_loop tidak berubah) ---
     def run_capture_loops(self):
         """Memulai greenlet terpisah untuk menangkap frame dari kedua kamera."""
         if not self.running:
@@ -237,7 +280,6 @@ class VisionService:
         if self.show_local_feed:
             cv2.destroyAllWindows()
 
-    # --- MODIFIKASI: Fungsi _capture_loop generik untuk kedua kamera ---
     def _capture_loop(
         self, cam_index, frame_lock, cam_id_log, event_name, apply_detection
     ):
@@ -282,31 +324,22 @@ class VisionService:
                     eventlet.sleep(1)
                     continue
 
-                # --- [PERBAIKAN ARSITEKTURAL UTAMA] ---
-                # Baca state GUI dari 'settings_lock'
                 with self.settings_lock:
                     should_emit_to_gui = self.gui_is_listening
                 
-                # Baca state KONTROL dari 'asv_handler.state_lock'
-                # Ini adalah SUMBER KEBENARAN TUNGGAL (Single Source of Truth)
                 with self.asv_handler.state_lock:
                     is_auto = self.asv_handler.current_state.get("control_mode") == "AUTO"
-                # --- [AKHIR PERBAIKAN] ---
 
 
                 if apply_detection:
                     
-                    # --- [FIX] UBAH BAGIAN INI ---
-                    # Hapus tpool.execute() dari sini. Buat panggilan langsung.
-                    # tpool akan dipanggil DI DALAM process_and_control
                     try:
-                        processed_frame_ai = self.process_and_control(frame, is_auto) # <-- 'is_auto' sekarang sudah benar
+                        processed_frame_ai = self.process_and_control(frame, is_auto)
                     except Exception as e:
                         print(f"[{cam_id_log}] Error dalam process_and_control: {e}")
                         traceback.print_exc()
                         eventlet.sleep(1) 
                         continue
-                    # --- [AKHIR FIX] ---
 
                     with frame_lock:  # _frame_lock_cam1
                         VisionService._latest_processed_frame_cam1 = (
@@ -314,7 +347,7 @@ class VisionService:
                         )
                         VisionService._latest_processed_frame = (
                             VisionService._latest_processed_frame_cam1
-                        )  # Update var lama juga
+                        )
                     frame_to_emit = processed_frame_ai
                 else:
                     with frame_lock:  # _frame_lock_cam2
@@ -322,37 +355,27 @@ class VisionService:
                     frame_to_emit = frame
 
                 if should_emit_to_gui:
-                    # --- OPTIMASI DI SINI ---
-                    # Kecilkan frame sebelum dikirim ke GUI
                     try:
-                        gui_frame = cv2.resize(frame_to_emit, (640, 480)) # atau (480, 320)
+                        gui_frame = cv2.resize(frame_to_emit, (640, 480))
                     except:
-                        gui_frame = frame_to_emit # Fallback
+                        gui_frame = frame_to_emit 
 
                     ret_encode, buffer = cv2.imencode(
-                        ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 60] # Kualitas 60
+                        ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 60]
                     )
-                    
-                    # CATATAN: Anda memiliki dua 'imencode' berturut-turut. Ini mungkin tidak disengaja.
-                    # Saya akan menghapus yang kedua yang berkualitas lebih rendah.
-                    # ret_encode, buffer = cv2.imencode(
-                    #     ".jpg", frame_to_emit, [cv2.IMWRITE_JPEG_QUALITY, 30]
-                    # )
                     
                     if ret_encode:
                         self.socketio.emit(event_name, buffer.tobytes())
 
                 if self.show_local_feed:
-                    if apply_detection:  # HANYA thread CAM1 (AI) yang akan menampilkan
+                    if apply_detection:
                         try:
-                            # 1. Siapkan frame CAM1 (AI) - KIRI
                             frame_cam1_resized = cv2.resize(
                                 frame_to_emit, (LOCAL_FEED_WIDTH, LOCAL_FEED_HEIGHT)
                             )
 
-                            # 2. Ambil dan siapkan frame CAM2 (Raw) - KANAN
                             frame_cam2 = None
-                            with VisionService._frame_lock_cam2:  # Kunci thread CAM2
+                            with VisionService._frame_lock_cam2:
                                 if VisionService._latest_raw_frame_cam2 is not None:
                                     frame_cam2 = (
                                         VisionService._latest_raw_frame_cam2.copy()
@@ -363,7 +386,6 @@ class VisionService:
                                     frame_cam2, (LOCAL_FEED_WIDTH, LOCAL_FEED_HEIGHT)
                                 )
                             else:
-                                # Buat frame hitam jika CAM2 belum siap
                                 frame_cam2_resized = np.zeros(
                                     (LOCAL_FEED_HEIGHT, LOCAL_FEED_WIDTH, 3),
                                     dtype=np.uint8,
@@ -381,13 +403,10 @@ class VisionService:
                                     1,
                                 )
 
-                            # 4. Gabungkan (stack) kedua frame secara horizontal
-                            # (CAM1 di kiri, CAM2 di kanan)
                             combined_frame = np.hstack(
                                 (frame_cam1_resized, frame_cam2_resized)
                             )
 
-                            # 5. Tampilkan frame gabungan dalam SATU jendela
                             cv2.imshow(
                                 "NAVANTARA - Local Monitor (AI | Raw)", combined_frame
                             )
@@ -400,9 +419,6 @@ class VisionService:
                             print(
                                 f"[{cam_id_log}] Error resizing/showing combined feed: {e}"
                             )
-
-                    # Thread CAM2 (apply_detection == False) tidak melakukan apa-apa
-                    # Ini penting agar hanya ada SATU thread yang mengontrol imshow
 
                 eventlet.sleep(0.02)  # Target ~50 FPS
 
@@ -424,6 +440,8 @@ class VisionService:
             cap.release()
         print(f"[{cam_id_log}] Loop dihentikan.")
 
+
+    # --- (Fungsi trigger_manual_capture tidak berubah) ---
     def trigger_manual_capture(self, capture_type: str):
         """
         Memicu pengambilan gambar manual (Surface/Underwater)
@@ -447,10 +465,8 @@ class VisionService:
 
         # 2. Dapatkan frame kamera yang relevan
         if capture_type == 'surface':
-            # Ambil frame CAM 1 (Surface)
             with VisionService._frame_lock_cam1:
                 if VisionService._latest_processed_frame_cam1 is not None:
-                    # Kita gunakan frame yang sudah diproses AI (dengan anotasi)
                     frame_to_use = VisionService._latest_processed_frame_cam1.copy()
                 else:
                     print("[Capture] Gagal: Frame CAM 1 (Surface) tidak tersedia.")
@@ -462,10 +478,8 @@ class VisionService:
             self.surface_image_count += 1
 
         elif capture_type == 'underwater':
-            # Ambil frame CAM 2 (Underwater)
             with VisionService._frame_lock_cam2:
                 if VisionService._latest_raw_frame_cam2 is not None:
-                    # Kita gunakan frame mentah CAM 2
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
                 else:
                     print("[Capture] Gagal: Frame CAM 2 (Underwater) tidak tersedia.")
@@ -479,8 +493,6 @@ class VisionService:
         else:
             return {"status": "error", "message": "Tipe capture tidak valid."}
 
-
-        # 3. Buat Overlay (seperti permintaan "ada tulisan nya e")
         try:
             overlay_data = create_overlay_from_html(
                 current_state, mission_type=mission_name
@@ -490,14 +502,12 @@ class VisionService:
             print(f"[Capture] Gagal membuat overlay: {e}")
             snapshot = frame_to_use  # Fallback ke frame tanpa overlay
 
-        # 4. Simpan file ke folder logs/captures/
         filename = f"{filename_prefix}_{image_count}.jpg"
         save_dir = os.path.join(os.getcwd(), 'logs', 'captures')
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 
         try:
-            # Gunakan kualitas 90 agar tulisan jelas
             ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 90])
             if ret:
                 with open(save_path, 'wb') as f:
@@ -509,17 +519,21 @@ class VisionService:
                 
         except Exception as e:
             print(f"[Capture] Gagal menyimpan file {filename}: {e}")
-            # Rollback counter jika gagal
             if filename_prefix == "surface": self.surface_image_count -= 1
             else: self.underwater_image_count -= 1
             return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
 
-    # --- KODE LAMA ANDA UNTUK PROSES AI, NAVIGASI, FOTOGRAFI (DIPERTAHANKAN) ---
+
+    # --- [FUNGSI DIPERBARUI TOTAL] ---
     def process_and_control(self, frame, is_mode_auto):
         """Processes frame with AI and triggers control logic if AUTO mode is active."""
         
         if not is_mode_auto:
-            logging.info("[Vision] Skipping AI processing - Not in AUTO mode")
+            # logging.info("[Vision] Skipping AI processing - Not in AUTO mode")
+            return frame
+            
+        if self.model is None:
+            logging.error("[Vision] Model tidak dimuat, inferensi dilompati.")
             return frame
             
         if frame is None:
@@ -527,72 +541,60 @@ class VisionService:
             return frame
             
         detections = []
+        annotated_frame = frame.copy() # Mulai dengan frame asli
+
         try:
             logging.info("[Vision] Starting inference on frame...")
-            infer_result = eventlet.tpool.execute(
-                self.inference_engine.infer, frame
-            )
             
-            # Handle different return formats from inference engine
-            if isinstance(infer_result, tuple) and len(infer_result) == 2:
-                detections, scores = infer_result
-            else:
-                detections = infer_result
-                scores = None
+            # --- [PERBAIKAI 1: RESIZE] ---
+            # Ubah ukuran frame agar sesuai dengan input model (640x640)
+            model_input_frame = cv2.resize(frame, (640, 640))
+            
+            # 1. Panggil inferensi (dijalankan di tpool oleh eventlet)
+            results = eventlet.tpool.execute(self.model, model_input_frame)
+
+            # 2. Konversi hasil pandas ke format dict standar kita
+            df = results.pandas().xyxy[0]
+            for _, row in df.iterrows():
+                # --- [PERBAIKAN 2: KONVERSI KOORDINAT] ---
+                # Kita harus mengkonversi koordinat dari 640x640 kembali ke ukuran frame asli (misal 480x640)
+                orig_h, orig_w = frame.shape[:2]
                 
-            if not detections:
-                detections = []
+                detections.append({
+                    "xyxy": [
+                        row["xmin"] * (orig_w / 640.0), # xmin
+                        row["ymin"] * (orig_h / 640.0), # ymin
+                        row["xmax"] * (orig_w / 640.0), # xmax
+                        row["ymax"] * (orig_h / 640.0)  # ymax
+                    ],
+                    "center": (
+                        int((row["xmin"] + row["xmax"]) / 2 * (orig_w / 640.0)),
+                        int((row["ymin"] + row["ymax"]) / 2 * (orig_h / 640.0)),
+                    ),
+                    "class": row["name"],
+                    "confidence": row["confidence"],
+                })
             
             logging.info(f"[Vision] Raw detections: {len(detections)} objects found")
             
-            # More detailed logging for debugging
-            if len(detections) > 0:
-                for i, det in enumerate(detections):
-                    # Resolve confidence robustly: prefer scores array, fall back to per-detection field
-                    conf = 0.0
-                    try:
-                        if scores is not None:
-                            raw = scores[i]
-                            # numpy arrays or length-1 lists -> extract scalar
-                            try:
-                                import numpy as _np
-                                if isinstance(raw, _np.ndarray):
-                                    conf = float(_np.squeeze(raw))
-                                else:
-                                    # handle python lists/tuples
-                                    if hasattr(raw, '__len__') and len(raw) == 1:
-                                        conf = float(raw[0])
-                                    else:
-                                        conf = float(raw)
-                            except Exception:
-                                # last-resort conversion
-                                conf = float(raw)
-                        else:
-                            conf = float(det.get('confidence', 0.0))
-                    except Exception:
-                        conf = 0.0
+            # 3. Buat frame anotasi (Renderer bawaan yolov5)
+            # Kita render hasil di frame yang di-resize, lalu resize kembali
+            annotated_resized = results.render()[0]
+            annotated_frame = cv2.resize(annotated_resized, (frame.shape[1], frame.shape[0]))
 
-                    logging.info(f"[Vision] Detected {det.get('class', 'unknown')} with confidence {conf:.2f}")
-                    logging.debug(f"[Vision] Detection {i+1} details: {det}")
-            else:
-                logging.debug("[Vision] No objects detected in this frame")
-                    
         except Exception as e:
             logging.error(f"[Vision] Inference error: {str(e)}")
             logging.error(traceback.format_exc())
-            # Keep running even with inference errors, just skip this frame
-            return frame
-        # --- [AKHIR FIX] ---
+            return frame # Kembalikan frame asli jika error
+        # --- [AKHIR BLOK PENGGANTI] ---
 
         # Sisa kode ini sekarang berjalan di greenlet utama (thread-safe)
         validated_detections = []
         green_boxes_detected = []  # List untuk menyimpan deteksi kotak hijau
         blue_boxes_detected = []  # List untuk menyimpan deteksi kotak biru
         
-        # --- [DEBUG] TAMBAHKAN Logika Pengecekan ---
         if not detections:
              logging.warning("[Vision DEBUG] Daftar deteksi mentah KOSONG. Melompati validasi.")
-        # --- [AKHIR DEBUG] ---
         
         for det in detections:
             original_class = det.get("class")
@@ -606,22 +608,19 @@ class VisionService:
                 )
             validated_detections.append(det)
 
-        annotated_frame = self.inference_engine._annotate_frame(
-            frame.copy(), validated_detections
-        )
+        # HAPUS PANGGILAN LAMA KE _annotate_frame
+        
+        # Kita masih perlu _draw_distance_info
         annotated_frame = self._draw_distance_info(
             annotated_frame, validated_detections
         )
 
-        # --- [DEBUG] Log ini sekarang seharusnya tidak muncul jika mode AUTO ---
         if not is_mode_auto:
             logging.info("[Vision DEBUG] process_and_control: is_mode_auto = FALSE. AI dinonaktifkan.")
-        # --- [AKHIR DEBUG] ---
             
         if is_mode_auto:
             with self.asv_handler.state_lock:
                 current_state_nav = self.asv_handler.current_state.copy()
-            # Panggilan ini SEKARANG aman
             self.handle_autonomous_navigation(
                 validated_detections, frame.shape[1], current_state_nav
             )
@@ -634,19 +633,18 @@ class VisionService:
             d for d in validated_detections if d.get("class") == "blue_box"
         ]
 
-        # Cek apakah ada kotak hijau atau biru terdeteksi
         if green_boxes_detected or blue_boxes_detected:
-            # Ambil state ASV terbaru
             with self.asv_handler.state_lock:
                 current_state_photo = self.asv_handler.current_state.copy()
-            # Panggil fungsi fotografi dengan frame DARI KAMERA INI (CAM 1, sebelum anotasi)
-            # Panggilan ini SEKARANG aman
             self.handle_photography_mission(
                 frame, green_boxes_detected, blue_boxes_detected, current_state_photo
             )
 
         return annotated_frame
+    # --- [AKHIR FUNGSI DIPERBARUI] ---
 
+
+    # --- (Sisa file: handle_autonomous_navigation, handle_photography_mission, dll tidak berubah) ---
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
         """Handles autonomous navigation based on object detections."""
         
@@ -657,13 +655,11 @@ class VisionService:
         detected_classes = [d.get("class", "unknown") for d in detections]
         logging.info(f"[Vision] Processing navigation for objects: {detected_classes}")
         
-        # Log control mode and ASV state
         logging.info(f"[Vision] Current control mode: {current_state.get('control_mode')}")
         if current_state.get('control_mode') != 'AUTO':
             logging.warning("[Vision] Not in AUTO mode, skipping navigation")
             return
 
-        # Filter and validate buoy detections
         red_buoys = []
         green_buoys = []
         gate_distance = None
@@ -692,7 +688,6 @@ class VisionService:
                     red["xyxy"][0], green["xyxy"][0]
                 )
                 
-                # Validate detection quality
                 if gate_pixel_width <= 0:
                     logging.warning("[Vision] Invalid gate width detected")
                     return
@@ -708,14 +703,13 @@ class VisionService:
                     self.last_buoy_seen_time = time.time()
                     gate_center_x = (red["center"][0] + green["center"][0]) / 2.0
                     
-                    # Build and validate payload
                     payload = {
                         "active": True,
                         "gate_center_x": gate_center_x,
                         "red_buoy_x": red["center"][0],
                         "green_buoy_x": green["center"][0],
                         "frame_width": frame_width,
-                        "gate_distance": gate_distance,  # Added for debugging
+                        "gate_distance": gate_distance,
                         "timestamp": time.time(),
                     }
                     
@@ -742,7 +736,6 @@ class VisionService:
             if distance_to_closest < self.obstacle_activation_distance:
                 self.last_buoy_seen_time = time.time()
                 
-                # --- [DEBUG] DITAMBAHKAN ---
                 payload_obs = {
                     "active": True,
                     "obstacle_class": closest_buoy.get("class", "unknown"),
@@ -750,18 +743,14 @@ class VisionService:
                     "frame_width": frame_width,
                 }
                 logging.critical(f"[Vision DEBUG] KONDISI OBSTACLE TERPENUHI. HENDAK MEMANGGIL process_command. Payload: {payload_obs}")
-                # --- [AKHIR DEBUG] ---
                 
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE",
-                    payload_obs, # <-- [DEBUG] Menggunakan var payload
+                    payload_obs,
                 )
                 return
 
-        # --- [DEBUG] DITAMBAHKAN ---
-        # Log ini akan tereksekusi jika 'return' di atas tidak terpanggil
         logging.info(f"[Vision DEBUG] Nav handler selesai. Tidak ada perintah AI dikirim. Jarak Gerbang: {gate_distance} | Cooldown: {(time.time() - self.last_buoy_seen_time)}")
-        # --- [AKHIR DEBUG] ---
 
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
@@ -769,7 +758,6 @@ class VisionService:
                 "GATE_TRAVERSAL_COMMAND", {"active": False}
             )
 
-    # Di dalam class VisionService:
     def handle_photography_mission(
         self, frame_cam1, green_boxes, blue_boxes, current_state
     ):
@@ -780,65 +768,50 @@ class VisionService:
         filename_prefix = None
         image_count = 0
 
-        if green_boxes:  # Jika terdeteksi kotak hijau (surface)
-            frame_to_use = frame_cam1  # Gunakan frame dari kamera 1 (yang diproses AI)
+        if green_boxes:
+            frame_to_use = frame_cam1
             mission_name = "Surface Imaging"
             filename_prefix = "surface"
             image_count = self.surface_image_count
             self.surface_image_count += 1
-            # print(f"? [CAPTURE] Deteksi Green Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 1.")
-
-        elif blue_boxes:  # Jika terdeteksi kotak biru (underwater)
-            # --- MODIFIKASI: Ambil frame CAM 2 ---
-            # Ambil frame terbaru dari kamera 2 (mentah) menggunakan lock yang sesuai
+        elif blue_boxes:
             with VisionService._frame_lock_cam2:
                 if VisionService._latest_raw_frame_cam2 is not None:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
                 else:
-                    # print("?? [CAPTURE] Deteksi Blue Box, tapi frame CAM 2 tidak tersedia.")
-                    return  # Jangan lakukan apa-apa jika frame cam 2 tidak ada
-            # --- AKHIR MODIFIKASI ---
+                    return
             mission_name = "Underwater Imaging"
             filename_prefix = "underwater"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
-            # print(f"? [CAPTURE] Deteksi Blue Box. Mengambil gambar {filename_prefix}_{image_count} dari CAM 2.")
 
-        # Jika tidak ada frame yang dipilih
         if frame_to_use is None or mission_name is None:
             return
 
-        # Buat overlay dan snapshot
         try:
             overlay_data = create_overlay_from_html(
                 current_state, mission_type=mission_name
             )
-            snapshot = apply_overlay(frame_to_use, overlay_data)  # Gunakan frame_to_use
+            snapshot = apply_overlay(frame_to_use, overlay_data)
         except Exception as e:
             print(f"[Photography] Gagal membuat overlay: {e}")
-            snapshot = frame_to_use  # Fallback ke frame tanpa overlay
+            snapshot = frame_to_use
 
-        # Encode dan unggah
         filename = f"{filename_prefix}_{image_count}.jpg"
         ret, buffer = cv2.imencode(
             ".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 30]
-        )  # Kualitas JPEG 90
+        )
         if ret and buffer is not None:
-            # Jalankan upload di background task
-            # --- MODIFIKASI: Panggilan Supabase di-comment ---
-            # self.socketio.start_background_task(upload_image_to_supabase, buffer, filename, self.config)
-            # --- AKHIR MODIFIKASI ---
+            # Panggilan Supabase di-comment
             pass
         else:
             print(f"[Photography] Gagal encode gambar {filename}")
-            # Reset counter jika gagal encode?
             if filename_prefix == "surface":
                 self.surface_image_count -= 1
             else:
                 self.underwater_image_count -= 1
 
     def validate_and_trigger_investigation(self, poi_data, frame, current_state):
-        # Implementasi validasi POI Anda (dipertahankan)
         self.recent_detections.append(poi_data["class"])
         if len(self.recent_detections) < self.poi_validation_frames:
             return
@@ -846,28 +819,15 @@ class VisionService:
         if len(set(self.recent_detections)) == 1:
             cls_name = self.recent_detections[0]
             print(f"[Vision] Validasi POI '{cls_name}' berhasil.")
-            # ... (Logika trigger investigasi) ...
             self.recent_detections.clear()
 
-    # --- Slot dari GUI (HAPUS DECORATOR @Slot) ---
-    def set_gui_listening(self, status: bool):  # <-- Ubah argumen menjadi status: bool
-        # Hapus baris 'payload.get()'
+    def set_gui_listening(self, status: bool):
         with self.settings_lock:
             if self.gui_is_listening != status:
                 print(f"[VisionService] GUI Listening: {status}")
                 self.gui_is_listening = status
 
-    # --- [FIX] HAPUS FUNGSI INI KARENA SUDAH TIDAK RELEVAN ---
-    # def set_mode(self, payload: dict):  # Hapus @Slot
-    #     mode = payload.get("mode", "MANUAL")
-    #     with self.settings_lock:
-    #         new_mode_auto = mode == "AUTO"
-    #         if self.mode_auto != new_mode_auto:
-    #             print(f"[VisionService] Mode set to: {mode}")
-    #             self.mode_auto = new_mode_auto
-    # ---------------------------------------------------------
-
-    def set_inversion(self, payload: dict):  # Hapus @Slot
+    def set_inversion(self, payload: dict):
         is_inverted = payload.get("inverted", False)
         with self.settings_lock:
             if self.is_inverted != is_inverted:

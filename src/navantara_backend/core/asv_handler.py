@@ -77,7 +77,7 @@ class AsvHandler:
         )
         self.logger = MissionLogger()
         self.logger.log_event("AsvHandler diinisialisasi.")
-        logging.info("[AsvHandler] Handler diinisialisasi untuk operasi backend.")
+        # logging.info("[AsvHandler] Handler diinisialisasi untuk operasi backend.")
         self.initiate_auto_connection()
 
     def initiate_auto_connection(self):
@@ -91,16 +91,16 @@ class AsvHandler:
             # Ensure we don't remain in dummy mode when user asked for a real port
             self.use_dummy_serial = False
             self.serial_handler.use_dummy_serial = False
-            logging.info(f"[AsvHandler] Memaksa koneksi serial ke: {force_port} @ {baud_rate}")
+            # logging.info(f"[AsvHandler] Memaksa koneksi serial ke: {force_port} @ {baud_rate}")
             connected = self.serial_handler.connect(force_port, baud_rate)
             if not connected:
                 logging.warning(f"[AsvHandler] Gagal terhubung ke port paksa {force_port}. Melanjutkan auto-scan...")
 
         if self.use_dummy_serial:
-            logging.info("[AsvHandler] Mode DUMMY SERIAL aktif.")
+            # logging.info("[AsvHandler] Mode DUMMY SERIAL aktif.")
             return
 
-        logging.info("[AsvHandler] Memulai upaya koneksi serial otomatis...")
+        # logging.info("[AsvHandler] Memulai upaya koneksi serial otomatis...")
         self.serial_handler.find_and_connect_esp32(baud_rate)
 
     def _update_and_emit_state(self):
@@ -152,7 +152,7 @@ class AsvHandler:
             line = self.serial_handler.read_line()
             if line:
                 # Log raw incoming line for debugging (visible in console)
-                logging.info(f"[Serial RAW] {line}")
+                # logging.info(f"[Serial RAW] {line}")
                 try:
                     data = json.loads(line)
                     # Log a concise parsed summary so we can track status/mode quickly
@@ -201,7 +201,7 @@ class AsvHandler:
 
     def main_logic_loop(self):
         self.socketio.start_background_task(self._read_from_serial_loop)
-        logging.info("[AsvHandler] Loop pembaca serial dimulai.")
+        # logging.info("[AsvHandler] Loop pembaca serial dimulai.")
         while self.running:
             
             # --- [BLOK TRY...EXCEPT ANTI-CRASH] ---
@@ -213,7 +213,7 @@ class AsvHandler:
                 if (is_auto and not self.serial_handler.is_connected and 
                     current_time - self.last_reconnect_attempt > self.reconnect_interval):
                     self.last_reconnect_attempt = current_time
-                    logging.info("[AsvHandler] Mode AUTO aktif, mencoba koneksi ulang ke ESP32...")
+                    # logging.info("[AsvHandler] Mode AUTO aktif, mencoba koneksi ulang ke ESP32...")
                     # Coba koneksi ulang dengan konfigurasi yang sama
                     baud_rate = self.config.get("serial_connection", {}).get("default_baud_rate", 115200)
                     self.serial_handler.find_and_connect_esp32(baud_rate)
@@ -248,7 +248,7 @@ class AsvHandler:
                 # PRIORITAS 1: RC OVERRIDE
                 if rc_mode_switch < 1500:
                     command_to_send = None
-                    logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
+                    # logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
                 
                 # PRIORITAS 2: MANUAL GUI (WASD)
                 elif state_for_logic.get("control_mode") == "MANUAL":
@@ -256,7 +256,7 @@ class AsvHandler:
                     motor_cmd = state_for_logic.get("manual_motor_cmd", 1500)
                     command_to_send = f"A,{int(servo_cmd)},{int(motor_cmd)}\n"
                     # --- [FORMAT LOG LAMA] ---
-                    logging.info(f"[AsvHandler] MANUAL CONTROL -> Servo: {int(servo_cmd)} deg, Motor: {int(motor_cmd)} us")
+                    # logging.info(f"[AsvHandler] MANUAL CONTROL -> Servo: {int(servo_cmd)} deg, Motor: {int(motor_cmd)} us")
                 
                 # PRIORITAS 3: AUTO (AI & WAYPOINT)
                 elif state_for_logic.get("control_mode") == "AUTO":
@@ -298,9 +298,18 @@ class AsvHandler:
                             correction = map_value(pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0)
                             servo_cmd = int(max(servo_min, min(servo_max, servo_default - correction)))
                             pwm_cmd = motor_base - 75
-                            command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
-                            # --- [FORMAT LOG LAMA] ---
-                            logging.info(f"[AsvHandler] AI CONTROL [Gate] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
+                            dist_to_wp = state_for_logic.get("nav_dist_to_wp", 999.0)
+                            if dist_to_wp < 1.5:  # Radius 1.5 meter sesuai permintaan
+                                command_to_send = "W\n" # Lepas AI, biarkan ESP32 selesaikan waypoint
+                                # logging.info("[AsvHandler] AI GATE: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
+                            else:
+                                dist_to_wp = state_for_logic.get("nav_dist_to_wp", 999.0)
+                                if dist_to_wp < 1.5:  # Radius 1.5 meter sesuai permintaan
+                                    command_to_send = "W\n" # Lepas AI, biarkan ESP32 selesaikan waypoint
+                                    logging.info("[AsvHandler] AI GATE: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
+                                else:
+                                    command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
+                                    logging.info(f"[AsvHandler] AI CONTROL [Gate] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
 
                     # === PRIORITAS 3.2: PENGHINDARAN TUNGGAL BERKONTEKS ===
                     elif (state_for_logic["vision_target"].get("active", False) and state_for_logic["gate_context"]["last_gate_config"]):
@@ -329,18 +338,25 @@ class AsvHandler:
                             pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
                             # Jika ESP32 melaporkan WP_COMPLETE (target dianggap tidak valid),
                             # langsung kirim W untuk melanjutkan navigasi waypoint.
-                            if state_for_logic.get("esp_status") == "WP_COMPLETE" or state_for_logic.get("status") == "WP_COMPLETE":
+                            dist_to_wp = state_for_logic.get("nav_dist_to_wp", 999.0)
+                            if dist_to_wp < 1.5: # Radius 1.5 meter
+                                command_to_send = "W\n" # Lepas AI, biarkan ESP32 selesaikan waypoint
+                                logging.info("[AsvHandler] AI CTX: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
+                            
+                            # Cek juga jika ESP32 sudah selesai (logika lama)
+                            elif state_for_logic.get("esp_status") == "WP_COMPLETE" or state_for_logic.get("status") == "WP_COMPLETE":
                                 command_to_send = "W\n"
                                 logging.info("[AsvHandler] WP_COMPLETE dilaporkan oleh ESP32 -> mengirim W untuk melanjutkan waypoint")
                             else:
                                 command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
                                 logging.info(f"[AsvHandler] AI CONTROL [Avoid Ctx] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
+                            # --- [AKHIR PERBAIKAN] ---
                         else:
                             # Konteks tidak cocok, reset
                             with self.state_lock:
                                 self.current_state["gate_context"]["last_gate_config"] = None
 
-                        # === PRIORITAS 3.3: PENGHINDARAN TUNGGAL SEDERHANA (TANPA KONTEKS) ===
+                    # === PRIORITAS 3.3: PENGHINDARAN TUNGGAL SEDERHANA (TANPA KONTEKS) ===
                     elif state_for_logic["vision_target"].get("active", False):
                         with self.state_lock:
                             self.current_state["recovering_from_avoidance"] = False
@@ -358,12 +374,20 @@ class AsvHandler:
                         # Gunakan kecepatan yang lebih tinggi untuk respons lebih cepat
                         pwm_cmd = motor_base + 50  # Tambah sedikit kecepatan
                         # Log dan kirim command
-                        if state_for_logic.get("esp_status") == "WP_COMPLETE" or state_for_logic.get("status") == "WP_COMPLETE":
+                        dist_to_wp = state_for_logic.get("nav_dist_to_wp", 999.0)
+                        if dist_to_wp < 1.5: # Radius 1.5 meter
+                            command_to_send = "W\n" # Lepas AI, biarkan ESP32 selesaikan waypoint
+                            logging.info("[AsvHandler] AI SIMPLE: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
+                        
+                        # Cek juga jika ESP32 sudah selesai (logika lama)
+                        elif state_for_logic.get("esp_status") == "WP_COMPLETE" or state_for_logic.get("status") == "WP_COMPLETE":
                             command_to_send = "W\n"
                             logging.info("[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W untuk melanjutkan waypoint")
                         else:
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
-                            logging.info(f"[AsvHandler] AI CONTROL [Avoid] -> Servo diputar ke: {servo_cmd}° untuk {obj_class}")                    # === PRIORITAS 3.4: TRANSISI INSTAN KE WAYPOINT ===
+                            logging.info(f"[AsvHandler] AI CONTROL [Avoid] -> Servo diputar ke: {servo_cmd}° untuk {obj_class}")
+                    
+                    # === PRIORITAS 3.4: TRANSISI INSTAN KE WAYPOINT ===
                     elif state_for_logic.get("resume_waypoint_on_clear"):
                         # Langsung kirim W dan reset semua flag
                         with self.state_lock:
@@ -374,7 +398,7 @@ class AsvHandler:
                                 "resume_waypoint_on_clear": False  # Reset flag
                             })
                         command_to_send = "W\n"
-                        logging.info("[AsvHandler] Transisi cepat -> waypoint mode")
+                        # logging.info("[AsvHandler] Transisi cepat -> waypoint mode")
 
                     # === PRIORITAS 3.5 (DEFAULT): NAVIGASI WAYPOINT ===
                     else:
@@ -383,10 +407,10 @@ class AsvHandler:
                         # Kirim W hanya jika benar-benar terhubung ke serial
                         if self.serial_handler.is_connected:
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] WAYPOINT CONTROL -> Mengirim: W")
+                            # logging.info("[AsvHandler] WAYPOINT CONTROL -> Mengirim: W")
                         else:
                             command_to_send = None
-                            logging.info("[AsvHandler] WAYPOINT CONTROL -> Menunggu koneksi serial...")
+                            # logging.info("[AsvHandler] WAYPOINT CONTROL -> Menunggu koneksi serial...")
                     # --- [AKHIR REFAKTOR] ---
 
                 # Kirim perintah (jika ada)
@@ -397,13 +421,13 @@ class AsvHandler:
                         # Force a single W if not already planned
                         if command_to_send is None or (isinstance(command_to_send, str) and not command_to_send.strip().startswith("W")):
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] Mission complete detected -> forcing W and suppressing actuator commands")
+                            # logging.info("[AsvHandler] Mission complete detected -> forcing W and suppressing actuator commands")
 
                 # If vision recently cleared and no higher-priority command, send a single W to resume waypoint nav
                 if command_to_send is None and state_for_logic.get("resume_waypoint_on_clear"):
                     if self.serial_handler.is_connected and state_for_logic.get("control_mode") == "AUTO":
                         command_to_send = "W\n"
-                        logging.info("[AsvHandler] Vision cleared -> sending resume W to ESP32")
+                        # logging.info("[AsvHandler] Vision cleared -> sending resume W to ESP32")
                         # clear the flag in the main state under lock
                         with self.state_lock:
                             self.current_state["resume_waypoint_on_clear"] = False
@@ -452,7 +476,7 @@ class AsvHandler:
                 self.current_state["inverse_servo"] = not self.current_state.get("inverse_servo", False)
             elif "value" in payload:
                 self.current_state["inverse_servo"] = bool(payload["value"])
-            logging.info(f"[AsvHandler] inverse_servo diubah ke: {self.current_state['inverse_servo']}")
+            # logging.info(f"[AsvHandler] inverse_servo diubah ke: {self.current_state['inverse_servo']}")
 
     def _handle_gate_traversal_command(self, payload):
         with self.state_lock:
@@ -461,7 +485,7 @@ class AsvHandler:
             was_active = self.current_state["gate_target"].get("active", False)
             is_active = payload.get("active", False)
             if was_active and not is_active:
-                logging.info("[AsvHandler] Gate traversal complete. Initiating recovery...")
+                # logging.info("[AsvHandler] Gate traversal complete. Initiating recovery...")
                 self.current_state["recovering_from_avoidance"] = True
                 self.current_state["last_avoidance_time"] = time.time()
             
@@ -483,7 +507,7 @@ class AsvHandler:
                 self.current_state["debug_waypoint_counter"] = 0
             max_points_in_monitor = 9
             self.current_state["debug_waypoint_counter"] = min(self.current_state["debug_waypoint_counter"], max_points_in_monitor)
-            logging.info(f"[AsvHandler] Debug counter diatur ke: {self.current_state['debug_waypoint_counter']}")
+            # logging.info(f"[AsvHandler] Debug counter diatur ke: {self.current_state['debug_waypoint_counter']}")
 
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
@@ -496,7 +520,7 @@ class AsvHandler:
             
             # Optimasi: Update state secara efisien saat deteksi berakhir
             if was_active and not is_active:
-                logging.info("[AsvHandler] Deteksi selesai -> langsung ke waypoint")
+                # logging.info("[AsvHandler] Deteksi selesai -> langsung ke waypoint")
                 # Update semua state sekaligus
                 self.current_state.update({
                     "recovering_from_avoidance": False,  # Skip recovery
@@ -536,7 +560,7 @@ class AsvHandler:
 
     def set_streaming_status(self, status: bool):
         if self.is_streaming_to_gui != status:
-            logging.info(f"[AsvHandler] Status streaming telemetri diatur ke: {status}")
+            # logging.info(f"[AsvHandler] Status streaming telemetri diatur ke: {status}")
             self.is_streaming_to_gui = status
 
     def _handle_update_pid(self, payload):
@@ -544,7 +568,7 @@ class AsvHandler:
         if all(isinstance(val, (int, float)) for val in [kp, ki, kd]):
             self.pid_controller.Kp, self.pid_controller.Ki, self.pid_controller.Kd = (kp, ki, kd)
             self.pid_controller.reset()
-            logging.info(f"[AsvHandler] PID updated: P={kp}, I={ki}, D={kd}")
+            # logging.info(f"[AsvHandler] PID updated: P={kp}, I={ki}, D={kd}")
 
     def _handle_serial_configuration(self, payload):
         port, baud = payload.get("serial_port"), payload.get("baud_rate")
@@ -565,7 +589,7 @@ class AsvHandler:
             servo_def = actuator_config.get("servo_default_angle", 90)
             command_str = f"A,{int(servo_def)},{int(pwm_stop)}\n"
             log_reason = f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
-            logging.info(log_reason) 
+            # logging.info(log_reason) 
             self.serial_handler.send_command(command_str)
 
     def _handle_set_waypoints(self, payload):
@@ -605,4 +629,4 @@ class AsvHandler:
         self.serial_handler.disconnect()
         self.logger.log_event("AsvHandler dihentikan.")
         self.logger.stop()
-        logging.info("[AsvHandler] Dihentikan.")
+        # logging.info("[AsvHandler] Dihentikan.")

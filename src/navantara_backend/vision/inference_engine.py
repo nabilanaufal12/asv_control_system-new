@@ -174,6 +174,7 @@ class InferenceEngine:
             device = "cuda" if torch.cuda.is_available() else "cpu"
             self.model.to(device)
             print(f"[Engine] Model PyTorch berhasil dimuat di device {device}.")
+
         except Exception as e:
             print("[Engine] KRITIS: Gagal memuat model PyTorch.")
             traceback.print_exc()
