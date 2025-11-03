@@ -2,12 +2,14 @@
 
 // === MODIFIKASI: Definisikan IP Server di satu tempat ===
 // IP 192.168.1.18 diambil dari config.json Anda.
-const SERVER_IP = "http://192.168.1.18:5000";
+const SERVER_IP = "http://192.168.1.20:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
 let vehicleMarker;
 let headingLine = null;
+let trailLine = null;
+let trailCoords = [];
 
 // Variabel global untuk state
 let lastKnownArena = null;
@@ -41,6 +43,9 @@ document.addEventListener("DOMContentLoaded", () => {
     modalImg: document.getElementById("modal-img"),
     downloadBtn: document.getElementById("download-btn"),
     closeModalBtn: document.getElementById("close-modal"),
+    // Tombol manual capture
+    manualCaptureSurface: document.getElementById("manual-capture-surface"),
+    manualCaptureUnderwater: document.getElementById("manual-capture-underwater"),
   };
 
   // === INISIALISASI PETA LEAFLET ===
@@ -104,6 +109,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   // --- AKHIR MODIFIKASI ---
+
+  // === MODIFIKASI BARU: Tombol Potret Atas & Bawah ===
+  if (ELEMENTS.manualCaptureSurface) {
+    ELEMENTS.manualCaptureSurface.addEventListener("click", async () => {
+      await handleManualCapture("surface");
+    });
+  }
+  if (ELEMENTS.manualCaptureUnderwater) {
+    ELEMENTS.manualCaptureUnderwater.addEventListener("click", async () => {
+      await handleManualCapture("underwater");
+    });
+  }
+  // === AKHIR MODIFIKASI BARU ===
 });
 
 // --- MODIFIKASI: Hapus fungsi setupTabs ---
@@ -285,6 +303,20 @@ function setupLocalSocketIO(elements) {
           if (map && vehicleMarker) {
             vehicleMarker.setLatLng(currentLatLng);
             map.panTo(currentLatLng);
+            // append current point to trail and update polyline
+            try {
+              const last = trailCoords.length ? trailCoords[trailCoords.length - 1] : null;
+              if (!last || last[0] !== currentLatLng[0] || last[1] !== currentLatLng[1]) {
+                trailCoords.push(currentLatLng);
+              }
+              if (!trailLine) {
+                trailLine = L.polyline(trailCoords, { color: '#00C853', weight: 3, opacity: 0.9 }).addTo(map);
+              } else {
+                trailLine.setLatLngs(trailCoords);
+              }
+            } catch (e) {
+              console.warn('Error updating trail polyline', e);
+            }
           }
         } catch (e) {
           console.error("Data GPS tidak valid:", e);
@@ -452,4 +484,69 @@ function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
   const lat2 = (lat2Rad * 180) / Math.PI;
   const lon2 = (lon2Rad * 180) / Math.PI;
   return { lat: lat2, lng: lon2 };
+}
+
+// === FUNGSI BARU: Handle Manual Capture dari IMG (tanpa backend) ===
+async function handleManualCapture(camType) {
+  // camType: "surface" atau "underwater"
+  let imgEl = null;
+  let btn = null;
+  if (camType === "surface") {
+    imgEl = document.querySelector('#cam1-container img');
+    btn = document.getElementById("manual-capture-surface");
+  } else if (camType === "underwater") {
+    imgEl = document.querySelector('#cam2-container img');
+    btn = document.getElementById("manual-capture-underwater");
+  } else {
+    alert("Jenis kamera tidak valid!");
+    return;
+  }
+  if (!imgEl) {
+    alert("Stream kamera tidak ditemukan!");
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Memotret...";
+  }
+  try {
+    // Buat canvas dan draw image
+    const canvas = document.createElement('canvas');
+    canvas.width = imgEl.naturalWidth || imgEl.width;
+    canvas.height = imgEl.naturalHeight || imgEl.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
+    // Convert ke dataURL
+    const dataURL = canvas.toDataURL('image/jpeg');
+    // Tambahkan ke galeri
+    addImageToGallery(dataURL, camType);
+    // alert("Foto berhasil diambil!"); // DIHAPUS
+  } catch (err) {
+    alert("Gagal mengambil foto: " + err.message);
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = camType === "surface" ? "Potret Atas (S)" : "Potret Bawah (U)";
+  }
+}
+
+// Fungsi untuk menambah gambar ke galeri
+function addImageToGallery(dataURL, camType) {
+  const galleryImagesEl = document.getElementById("gallery-images");
+  if (!galleryImagesEl) return;
+  const img = document.createElement("img");
+  img.src = dataURL;
+  img.alt = camType === "surface" ? "Surface Capture" : "Underwater Capture";
+  img.title = camType === "surface" ? "Surface Capture" : "Underwater Capture";
+  img.addEventListener("click", () => {
+    const modal = document.getElementById("image-modal");
+    const modalImg = document.getElementById("modal-img");
+    const downloadBtn = document.getElementById("download-btn");
+    if (modal && modalImg && downloadBtn) {
+      modalImg.src = dataURL;
+      downloadBtn.href = dataURL;
+      modal.style.display = "block";
+    }
+  });
+  galleryImagesEl.prepend(img); // Tambahkan di atas
 }

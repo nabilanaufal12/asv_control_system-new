@@ -2,28 +2,24 @@
 import eventlet
 import os
 import sys
-import logging  # <-- [TAMBAHAN 1] Impor modul logging
+import logging
 
-# --- PERUBAHAN KRUSIAL: Monkey patch harus dieksekusi sebelum impor lainnya ---
+# Monkey patch harus dieksekusi sebelum impor lainnya
 eventlet.monkey_patch()
 
-# --- [TAMBAHAN 2] KONFIGURASI LOGGING ---
-# Ini adalah perbaikan untuk masalah "tidak ada output" di video Anda.
-# Ini harus dijalankan SEBELUM create_app() dipanggil.
+# Konfigurasi logging (Level WARNING agar tidak terlalu berisik)
 logging.basicConfig(
-    level=logging.WARNING,  # Set level ke INFO agar log .info() muncul
+    level=logging.WARNING, 
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-# -----------------------------------------
 
-# Menambahkan path src ke sys.path agar impor dari backend berhasil
+# Menambahkan path src ke sys.path
 try:
     project_root = os.path.dirname(os.path.abspath(__file__))
     src_path = os.path.join(project_root, "src")
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
 except NameError:
-    # Fallback jika dijalankan di lingkungan yang tidak memiliki __file__
     sys.path.insert(0, "./src")
 
 from navantara_backend.main import create_app
@@ -32,8 +28,18 @@ from navantara_backend.extensions import socketio
 app = create_app()
 
 if __name__ == "__main__":
-    # --- [TAMBAHAN 3] Ganti print() ke logging.info() ---
     logging.info("🚀 Menjalankan Backend Server ASV dalam Mode Otonom/Headless...")
 
-    # --- PERUBAHAN: Menjalankan server menggunakan eventlet ---
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+    # --- [PERBAIKAN: AMBIL DARI CONFIG.JSON] ---
+    # Ambil konfigurasi yang sudah dimuat oleh create_app()
+    config = app.config.get("ASV_CONFIG", {})
+    backend_config = config.get("backend_connection", {})
+    
+    # Gunakan 0.0.0.0 sebagai default host
+    host = backend_config.get("ip_address", "0.0.0.0") 
+    # Gunakan 5000 sebagai default port
+    port = int(backend_config.get("port", 5000)) 
+    # --- [AKHIR PERBAIKAN] ---
+
+    print(f"Server akan berjalan di http://{host}:{port}")
+    socketio.run(app, host=host, port=port, debug=False)
