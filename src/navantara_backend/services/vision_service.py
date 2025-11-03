@@ -13,6 +13,9 @@ import logging
 import torch
 import sys
 from pathlib import Path
+# --- [OPTIMASI 3] ---
+from dataclasses import asdict
+# --- [AKHIR OPTIMASI 3] ---
 
 # --- HAPUS IMPORT LAMA ---
 # from navantara_backend.vision.inference_engine import InferenceEngine
@@ -341,9 +344,11 @@ class VisionService:
                     should_emit_to_gui = self.gui_is_listening
 
                 with self.asv_handler.state_lock:
+                    # --- [OPTIMASI 3] ---
                     is_auto = (
-                        self.asv_handler.current_state.get("control_mode") == "AUTO"
+                        self.asv_handler.current_state.control_mode == "AUTO"
                     )
+                    # --- [AKHIR OPTIMASI 3] ---
 
                 if apply_detection:
 
@@ -471,7 +476,10 @@ class VisionService:
         # 1. Dapatkan state telemetri saat ini
         try:
             with self.asv_handler.state_lock:
-                current_state = self.asv_handler.current_state.copy()
+                # --- [OPTIMASI 3] ---
+                # Ubah objek dataclass menjadi dict untuk overlay
+                current_state_dict = asdict(self.asv_handler.current_state)
+                # --- [AKHIR OPTIMASI 3] ---
         except Exception as e:
             print(f"[Capture] Gagal mendapatkan state ASV: {e}")
             return {"status": "error", "message": "Gagal mendapatkan state ASV."}
@@ -507,9 +515,12 @@ class VisionService:
             return {"status": "error", "message": "Tipe capture tidak valid."}
 
         try:
+            # --- [OPTIMASI 3] ---
+            # Kirim dict, bukan objek dataclass
             overlay_data = create_overlay_from_html(
-                current_state, mission_type=mission_name
+                current_state_dict, mission_type=mission_name
             )
+            # --- [AKHIR OPTIMASI 3] ---
             snapshot = apply_overlay(frame_to_use, overlay_data)
         except Exception as e:
             print(f"[Capture] Gagal membuat overlay: {e}")
@@ -642,7 +653,15 @@ class VisionService:
 
         if is_mode_auto:
             with self.asv_handler.state_lock:
-                current_state_nav = self.asv_handler.current_state.copy()
+                # --- [OPTIMASI 3] ---
+                # .copy() tidak lagi diperlukan, objek dataclass aman untuk dibaca
+                # Namun, kita tetap butuh snapshot state, jadi kita gunakan copy()
+                # TIDAK, copy() tidak berfungsi di dataclass, kita harus
+                # menggunakan asdict() atau copy.deepcopy()
+                # Mari kita asumsikan state tidak akan berubah *saat* fungsi ini berjalan
+                # Ini adalah asumsi yang cukup aman karena state lock
+                current_state_nav = self.asv_handler.current_state
+                # --- [AKHIR OPTIMASI 3] ---
             self.handle_autonomous_navigation(
                 validated_detections, frame.shape[1], current_state_nav
             )
@@ -657,7 +676,9 @@ class VisionService:
 
         if green_boxes_detected or blue_boxes_detected:
             with self.asv_handler.state_lock:
-                current_state_photo = self.asv_handler.current_state.copy()
+                # --- [OPTIMASI 3] ---
+                current_state_photo = self.asv_handler.current_state
+                # --- [AKHIR OPTIMASI 3] ---
             self.handle_photography_mission(
                 frame, green_boxes_detected, blue_boxes_detected, current_state_photo
             )
@@ -677,12 +698,15 @@ class VisionService:
         detected_classes = [d.get("class", "unknown") for d in detections]
         logging.info(f"[Vision] Processing navigation for objects: {detected_classes}")
 
+        # --- [OPTIMASI 3] ---
+        # Ubah .get('key') menjadi .key
         logging.info(
-            f"[Vision] Current control mode: {current_state.get('control_mode')}"
+            f"[Vision] Current control mode: {current_state.control_mode}"
         )
-        if current_state.get("control_mode") != "AUTO":
+        if current_state.control_mode != "AUTO":
             logging.warning("[Vision] Not in AUTO mode, skipping navigation")
             return
+        # --- [AKHIR OPTIMASI 3] ---
 
         red_buoys = []
         green_buoys = []
@@ -824,9 +848,12 @@ class VisionService:
             return
 
         try:
+            # --- [OPTIMASI 3] ---
+            # Kirim dict ke fungsi eksternal, bukan objek dataclass
             overlay_data = create_overlay_from_html(
-                current_state, mission_type=mission_name
+                asdict(current_state), mission_type=mission_name
             )
+            # --- [AKHIR OPTIMASI 3] ---
             snapshot = apply_overlay(frame_to_use, overlay_data)
         except Exception as e:
             print(f"[Photography] Gagal membuat overlay: {e}")

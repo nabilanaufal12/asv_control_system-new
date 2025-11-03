@@ -3,7 +3,10 @@ import json
 import os
 import eventlet
 import time
-import glob  # <-- MODIFIKASI: Impor glob untuk pencarian file
+import glob
+# --- [OPTIMASI 3] ---
+from dataclasses import asdict
+# --- [AKHIR OPTIMASI 3] ---
 
 # --- TAMBAHAN IMPORT ---
 from flask import (
@@ -132,7 +135,10 @@ def create_app():
             state_data = current_app.asv_handler.current_state
 
             with current_app.asv_handler.state_lock:
-                data_copy = state_data.copy()
+                # --- [OPTIMASI 3] ---
+                # Ubah objek dataclass menjadi dict untuk JSON
+                data_copy = asdict(state_data)
+                # --- [AKHIR OPTIMASI 3] ---
 
             # Buat respons JSON
             response = jsonify(data_copy)
@@ -232,7 +238,10 @@ def create_app():
                     # Ambil data telemetri terbaru dari asv_handler
                     # Ini adalah cara thread-safe (greenlet-safe)
                     with current_app.asv_handler.state_lock:
-                        data = current_app.asv_handler.current_state.copy()
+                        # --- [OPTIMASI 3] ---
+                        # Ubah objek dataclass menjadi dict untuk JSON
+                        data = asdict(current_app.asv_handler.current_state)
+                        # --- [AKHIR OPTIMASI 3] ---
 
                     # Format data sebagai JSON
                     json_data = json.dumps(data)
