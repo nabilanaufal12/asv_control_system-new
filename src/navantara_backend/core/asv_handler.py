@@ -68,6 +68,11 @@ class AsvState:
     last_pixel_error: float = 0.0
     resume_waypoint_on_clear: bool = False
     inverse_servo: bool = False
+    # --- [MODIFIKASI 1.1: Atribut Misi Foto] ---
+    photo_mission_target_wp: int = -1
+    photo_mission_qty_requested: int = 0
+    photo_mission_qty_taken: int = 0
+    # --- [AKHIR MODIFIKASI 1.1] ---
 # --- [AKHIR OPTIMASI 3] ---
 
 
@@ -593,6 +598,9 @@ class AsvHandler:
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "INVERSE_SERVO": self._handle_inverse_servo,
             "SET_INVERSION": self._handle_set_inversion,  # (Handler inversi baru)
+            # --- [MODIFIKASI 1.2: Handler Misi Foto] ---
+            "SET_PHOTO_MISSION": self._handle_set_photo_mission,
+            # --- [AKHIR MODIFIKASI 1.2] ---
         }
         handler = command_handlers.get(command)
         if handler:
@@ -784,6 +792,26 @@ class AsvHandler:
             self.current_state.current_waypoint_index = 0
             self.current_state.control_mode = "AUTO"
         self.logger.log_event("Memulai Return to Home.")
+    
+    # --- [MODIFIKASI 1.3: Fungsi Handler Misi Foto] ---
+    def _handle_set_photo_mission(self, payload):
+        """Mengatur parameter untuk misi fotografi otomatis."""
+        try:
+            target_wp = int(payload.get("wp_index", -1))
+            count = int(payload.get("count", 0))
+
+            with self.state_lock:
+                self.current_state.photo_mission_target_wp = target_wp
+                self.current_state.photo_mission_qty_requested = count
+                self.current_state.photo_mission_qty_taken = 0
+            
+            logging.info(f"[AsvHandler] Misi Foto diatur: Target WP={target_wp}, Jumlah={count}")
+            self.logger.log_event(f"Misi Foto diatur: WP {target_wp}, {count} foto.")
+        
+        except Exception as e:
+            logging.warning(f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}")
+    # --- [AKHIR MODIFIKASI 1.3] ---
+
     # --- [AKHIR OPTIMASI 3] ---
 
     def stop(self):

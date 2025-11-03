@@ -81,6 +81,11 @@ class VisionService:
         self.surface_image_count = 0
         self.underwater_image_count = 0
 
+        # --- [MODIFIKASI 2.1: Atribut Cooldown Misi Foto] ---
+        self.photo_mission_cooldown_sec = 2.0
+        self.last_auto_photo_time = 0
+        # --- [AKHIR MODIFIKASI 2.1] ---
+
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get("camera_detection", {})
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
@@ -674,14 +679,37 @@ class VisionService:
             d for d in validated_detections if d.get("class") == "blue_box"
         ]
 
+        # --- [MODIFIKASI 2.2: Logika Misi Foto Otomatis] ---
         if green_boxes_detected or blue_boxes_detected:
+            current_time = time.time()
+            # Ambil state misi DARI HANDLER (Otak)
             with self.asv_handler.state_lock:
-                # --- [OPTIMASI 3] ---
-                current_state_photo = self.asv_handler.current_state
-                # --- [AKHIR OPTIMASI 3] ---
-            self.handle_photography_mission(
-                frame, green_boxes_detected, blue_boxes_detected, current_state_photo
-            )
+                current_wp = self.asv_handler.current_state.nav_target_wp_index
+                mission_target_wp = self.asv_handler.current_state.photo_mission_target_wp
+                qty_taken = self.asv_handler.current_state.photo_mission_qty_taken
+                qty_requested = self.asv_handler.current_state.photo_mission_qty_requested
+
+                # Cek kondisi misi
+                mission_active = (current_wp == mission_target_wp)
+                photos_needed = (qty_taken < qty_requested)
+                cooldown_ready = (current_time - self.last_auto_photo_time > self.photo_mission_cooldown_sec)
+
+                if mission_active and photos_needed and cooldown_ready:
+                    # KONDISI TERPENUHI: Ambil foto & update counter
+                    print(f"[Vision] Misi Foto Otomatis: Mengambil foto {qty_taken + 1} / {qty_requested}")
+
+                    # Ambil snapshot state untuk foto (di dalam lock)
+                    current_state_photo = self.asv_handler.current_state 
+
+                    # Panggil fungsi yang ada
+                    self.handle_photography_mission(
+                        frame, green_boxes_detected, blue_boxes_detected, current_state_photo
+                    )
+
+                    # Update counter & cooldown
+                    self.asv_handler.current_state.photo_mission_qty_taken += 1
+                    self.last_auto_photo_time = current_time
+        # --- [AKHIR MODIFIKASI 2.2] ---
 
         return annotated_frame
 
@@ -860,10 +888,30 @@ class VisionService:
             snapshot = frame_to_use
 
         filename = f"{filename_prefix}_{image_count}.jpg"
-        ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 30])
+        
+        # --- [MODIFIKASI: Tambahkan path penyimpanan lokal] ---
+        save_dir = os.path.join(os.getcwd(), "logs", "captures")
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        # --- [AKHIR MODIFIKASI] ---
+
+        # (Kualitas disamakan dengan manual capture, yaitu 90)
+        ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        
         if ret and buffer is not None:
-            # Panggilan Supabase di-comment
-            pass
+            # --- [MODIFIKASI: Ganti 'pass' dengan logika penyimpanan file] ---
+            try:
+                with open(save_path, "wb") as f:
+                    f.write(buffer)
+                print(f"[Photography] Foto Misi Otomatis BERHASIL disimpan: {save_path}")
+            except Exception as e:
+                print(f"[Photography] Gagal menyimpan file {filename}: {e}")
+                # Rollback counter jika gagal simpan
+                if filename_prefix == "surface":
+                    self.surface_image_count -= 1
+                else:
+                    self.underwater_image_count -= 1
+            # --- [AKHIR MODIFIKASI] ---
         else:
             print(f"[Photography] Gagal encode gambar {filename}")
             if filename_prefix == "surface":

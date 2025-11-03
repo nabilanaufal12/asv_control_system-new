@@ -1,5 +1,5 @@
 # gui/components/waypoints_panel.py
-# --- VERSI MODIFIKASI: Mengirim arena ID bersama waypoints ---
+# --- VERSI MODIFIKASI: Mengirim arena ID bersama waypoints AND Tambahan Misi Foto ---
 
 from PySide6.QtWidgets import (
     QGroupBox,
@@ -12,11 +12,13 @@ from PySide6.QtWidgets import (
     QFormLayout,
 )
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtGui import QDoubleValidator
+# --- [MODIFIKASI 1: Tambahkan QIntValidator] ---
+from PySide6.QtGui import QDoubleValidator, QIntValidator
+# --- [AKHIR MODIFIKASI 1] ---
 
 
 class WaypointsPanel(QGroupBox):
-    # --- MODIFIKASI 1: Ubah tipe sinyal ke dict ---
+    # --- MODIFIKASI 1 (dari file asli): Ubah tipe sinyal ke dict ---
     send_waypoints = Signal(
         dict
     )  # Sekarang mengirim {'waypoints': [...], 'arena': 'A'/'B'}
@@ -24,11 +26,14 @@ class WaypointsPanel(QGroupBox):
     add_current_pos_requested = Signal()
     waypoints_updated = Signal(list)
     load_mission_requested = Signal(str)
+    # --- [MODIFIKASI 2: Tambahkan sinyal Misi Foto] ---
+    send_photo_mission = Signal(dict)
+    # --- [AKHIR MODIFIKASI 2] ---
 
     def __init__(self, config, title="Waypoints"):
         super().__init__(title)
         self.config = config
-        # --- MODIFIKASI 2: Tambahkan variabel untuk menyimpan arena aktif ---
+        # --- MODIFIKASI 2 (dari file asli): Tambahkan variabel untuk menyimpan arena aktif ---
         self.current_arena = None  # Awalnya belum ada arena yang dipilih
         # -----------------------------------------------------------------
         main_layout = QVBoxLayout()
@@ -72,23 +77,55 @@ class WaypointsPanel(QGroupBox):
         button_layout.addWidget(self.add_current_pos_button)
         button_layout.addWidget(self.delete_button)
 
+        # --- [MODIFIKASI 3: UI Misi Foto] ---
+        photo_mission_box = QGroupBox("Misi Fotografi Otomatis")
+        photo_mission_layout = QVBoxLayout()
+        
+        photo_form_layout = QFormLayout()
+        self.wp_target_input = QLineEdit()
+        self.photo_count_input = QLineEdit()
+        
+        # Validasi input agar hanya angka integer
+        int_validator = QIntValidator(self)
+        self.wp_target_input.setValidator(int_validator)
+        self.photo_count_input.setValidator(int_validator)
+
+        self.wp_target_input.setPlaceholderText("Indeks WP (misal: 1)")
+        self.photo_count_input.setPlaceholderText("Jumlah foto (misal: 3)")
+        
+        photo_form_layout.addRow("Target WP:", self.wp_target_input)
+        photo_form_layout.addRow("Jumlah Foto:", self.photo_count_input)
+        
+        self.set_photo_mission_button = QPushButton("Set Photo Mission")
+        self.set_photo_mission_button.setStyleSheet(
+            "background-color: #DAA520; color: white; font-weight: bold;" # Warna kuning/emas
+        )
+
+        photo_mission_layout.addLayout(photo_form_layout)
+        photo_mission_layout.addWidget(self.set_photo_mission_button)
+        photo_mission_box.setLayout(photo_mission_layout)
+        # --- [AKHIR MODIFIKASI 3] ---
+
         send_layout = QHBoxLayout()
-        self.send_all_button = QPushButton("Send All")
+        self.send_all_button = QPushButton("Send All Waypoints")
         self.send_all_button.setStyleSheet(
             "background-color: #2a82da; color: white; font-weight: bold;"
         )
         send_layout.addStretch()
         send_layout.addWidget(self.send_all_button)
 
+        # --- [MODIFIKASI 4: Tambahkan widget ke layout utama] ---
         main_layout.addWidget(mission_box)
         main_layout.addLayout(input_form_layout)
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
+        main_layout.addWidget(photo_mission_box) # <-- BARU
         main_layout.addLayout(send_layout)
+        # --- [AKHIR MODIFIKASI 4] ---
         self.setLayout(main_layout)
 
         # Hubungkan sinyal tombol
-        # --- MODIFIKASI 3: Update arena saat tombol load ditekan ---
+        # --- MODIFIKASI 3 (dari file asli): Update arena saat tombol load ditekan ---
         self.load_a_button.clicked.connect(lambda: self._on_load_mission("A"))
         self.load_b_button.clicked.connect(lambda: self._on_load_mission("B"))
         # ---------------------------------------------------------
@@ -96,8 +133,11 @@ class WaypointsPanel(QGroupBox):
         self.add_current_pos_button.clicked.connect(self.add_current_pos_requested.emit)
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
+        # --- [MODIFIKASI 5: Hubungkan sinyal tombol baru] ---
+        self.set_photo_mission_button.clicked.connect(self._on_set_photo_mission)
+        # --- [AKHIR MODIFIKASI 5] ---
 
-    # --- MODIFIKASI 4: Fungsi baru untuk menangani load mission ---
+    # --- MODIFIKASI 4 (dari file asli): Fungsi baru untuk menangani load mission ---
     def _on_load_mission(self, arena_id):
         self.current_arena = arena_id  # Simpan arena yang di-load
         self.load_mission_requested.emit(arena_id)  # Minta MainWindow memuat data
@@ -140,7 +180,7 @@ class WaypointsPanel(QGroupBox):
                 self.lat_input.clear()
                 self.lon_input.clear()
                 self._emit_updated_waypoints()
-                # --- MODIFIKASI 5: Reset arena jika menambah manual? (Opsional) ---
+                # --- MODIFIKASI 5 (dari file asli): Reset arena jika menambah manual? (Opsional) ---
                 # self.current_arena = None # Atau set ke 'MANUAL'?
                 # -----------------------------------------------------------------
             except ValueError:
@@ -167,7 +207,7 @@ class WaypointsPanel(QGroupBox):
                 print(f"[GUI] Gagal mem-parsing item waypoint: {item_text}")
         return all_waypoints
 
-    # --- MODIFIKASI 6: Kirim payload dictionary ---
+    # --- MODIFIKASI 6 (dari file asli): Kirim payload dictionary ---
     def send_all_waypoints(self):
         all_waypoints = self._get_all_waypoints_from_list()
         if not all_waypoints:
@@ -188,3 +228,35 @@ class WaypointsPanel(QGroupBox):
         print(f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {payload}")
 
     # ---------------------------------------------
+
+    # --- [MODIFIKASI 6: Fungsi handler baru untuk Misi Foto] ---
+    @Slot()
+    def _on_set_photo_mission(self):
+        """Mengirim perintah untuk mengatur misi fotografi otomatis."""
+        wp_idx_text = self.wp_target_input.text()
+        count_text = self.photo_count_input.text()
+
+        if not wp_idx_text or not count_text:
+            print("[WaypointsPanel] Error: Input Misi Foto tidak boleh kosong.")
+            return
+
+        try:
+            wp_idx = int(wp_idx_text)
+            count = int(count_text)
+
+            # WP 0 adalah indeks yang valid (misal, RTH)
+            if wp_idx < 0 or count <= 0:
+                print("[WaypointsPanel] Error: WP harus >= 0 dan Jumlah Foto harus > 0.")
+                return
+
+            payload = {"wp_index": wp_idx, "count": count}
+            self.send_photo_mission.emit(payload)
+            print(f"[WaypointsPanel] Sinyal send_photo_mission dipancarkan: {payload}")
+            
+            # Anda bisa memilih untuk mengosongkan input setelah dikirim
+            # self.wp_target_input.clear()
+            # self.photo_count_input.clear()
+
+        except ValueError:
+            print("[WaypointsPanel] Error: Input Misi Foto tidak valid (bukan angka).")
+    # --- [AKHIR MODIFIKASI 6] ---
