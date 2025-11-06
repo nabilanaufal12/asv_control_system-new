@@ -2,7 +2,7 @@
 
 // === MODIFIKASI: Definisikan IP Server di satu tempat ===
 // IP 192.168.1.18 diambil dari config.json Anda.
-const SERVER_IP = "http://192.168.1.20:5000";
+const SERVER_IP = "http://192.168.1.9:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -10,6 +10,7 @@ let vehicleMarker;
 let headingLine = null;
 let trailLine = null;
 let trailCoords = [];
+let waypointLayer = null; // <-- [MODIFIKASI] Tambahkan layer group untuk waypoints
 
 // Variabel global untuk state
 let lastKnownArena = null;
@@ -21,7 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // const CONFIG = { ... };
 
   const ELEMENTS = {
-    // Urutan sesuai HTML baru
+    // ... (Elemen Anda tetap sama) ...
     dayValue: document.getElementById("day-value"),
     dateValue: document.getElementById("date-value"),
     timeValue: document.getElementById("time-value"),
@@ -29,21 +30,12 @@ document.addEventListener("DOMContentLoaded", () => {
     sogValue: document.getElementById("sog-value"),
     cogValue: document.getElementById("cog-value"),
     hdgValue: document.getElementById("hdg-value"),
-
-    // --- MODIFIKASI: Hapus elemen tab, tambahkan galeri ---
-    galleryImages: document.getElementById("gallery-images"), // <-- BARU
-    refreshGalleryBtn: document.getElementById("refresh-gallery-btn"), // Tombol refresh
-    // surfaceCaptures: ... (DIHAPUS)
-    // underwaterCaptures: ... (DIHAPUS)
-    // tabButtons: ... (DIHAPUS)
-    // --- AKHIR MODIFIKASI ---
-
-    // Elemen Modal (Tetap)
+    galleryImages: document.getElementById("gallery-images"),
+    refreshGalleryBtn: document.getElementById("refresh-gallery-btn"),
     modal: document.getElementById("image-modal"),
     modalImg: document.getElementById("modal-img"),
     downloadBtn: document.getElementById("download-btn"),
     closeModalBtn: document.getElementById("close-modal"),
-    // Tombol manual capture
     manualCaptureSurface: document.getElementById("manual-capture-surface"),
     manualCaptureUnderwater: document.getElementById("manual-capture-underwater"),
   };
@@ -69,6 +61,9 @@ document.addEventListener("DOMContentLoaded", () => {
     })
       .addTo(map)
       .bindPopup("NAVANTARA ASV");
+    
+    // <-- [MODIFIKASI] Inisialisasi waypoint layer
+    waypointLayer = L.layerGroup().addTo(map);
 
     console.log("Peta Leaflet (Google Satellite) berhasil dimuat.");
   } catch (e) {
@@ -76,41 +71,27 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   // === AKHIR INISIALISASI PETA ===
 
-  // --- MODIFIKASI: Hapus pemanggilan setupTabs ---
-  // setupTabs(ELEMENTS); (DIHAPUS)
-  // --- AKHIR MODIFIKASI ---
-
-  // === MODIFIKASI: Panggil setupLocalSocketIO (yang sekarang isinya SSE) ===
+  // ... (setupLocalSocketIO, listener galeri, listener modal, listener capture manual tetap sama) ...
   if (typeof setupLocalSocketIO === "function") {
-    // Tidak perlu CONFIG, hanya ELEMENTS
     setupLocalSocketIO(ELEMENTS);
     console.log("Memulai setupLocalSocketIO (mode SSE)...");
   } else {
     console.error("Fungsi setupLocalSocketIO tidak ditemukan.");
   }
-  // === AKHIR MODIFIKASI ===
-
-  // --- MODIFIKASI: Ganti logika 'display:none' dengan event listener ---
+  
   if (ELEMENTS.refreshGalleryBtn && ELEMENTS.galleryImages) {
-    // Pasang listener ke tombol
     ELEMENTS.refreshGalleryBtn.addEventListener("click", refreshGallery);
-
-    // (Opsional) Langsung muat galeri saat halaman pertama kali dibuka
     refreshGallery();
   } else {
     console.warn("Elemen galeri (tombol/div) tidak ditemukan.");
   }
-  // --- AKHIR MODIFIKASI ---
-
-  // --- MODIFIKASI: Tambahkan listener untuk tombol tutup modal ---
+  
   if (ELEMENTS.closeModalBtn && ELEMENTS.modal) {
     ELEMENTS.closeModalBtn.addEventListener("click", () => {
       ELEMENTS.modal.style.display = "none";
     });
   }
-  // --- AKHIR MODIFIKASI ---
-
-  // === MODIFIKASI BARU: Tombol Potret Atas & Bawah ===
+  
   if (ELEMENTS.manualCaptureSurface) {
     ELEMENTS.manualCaptureSurface.addEventListener("click", async () => {
       await handleManualCapture("surface");
@@ -121,20 +102,11 @@ document.addEventListener("DOMContentLoaded", () => {
       await handleManualCapture("underwater");
     });
   }
-  // === AKHIR MODIFIKASI BARU ===
 });
 
-// --- MODIFIKASI: Hapus fungsi setupTabs ---
-// function setupTabs(elements) { ... } (SELURUH FUNGSI DIHAPUS)
-// --- AKHIR MODIFIKASI ---
-
-// === FUNGSI BARU: Implementasi Galeri dari Prototipe ===
-/**
- * Mengambil daftar gambar dari API server dan menampilkannya di galeri.
- * (Berdasarkan prototipe coba.html)
- */
+// ... (Fungsi refreshGallery tetap sama) ...
 async function refreshGallery() {
-  // Ambil elemen dari scope global (didefinisikan di DOMContentLoaded)
+  // ... (implementasi refreshGallery Anda) ...
   const galleryImagesEl = document.getElementById("gallery-images");
   const refreshGalleryBtn = document.getElementById("refresh-gallery-btn");
 
@@ -142,82 +114,53 @@ async function refreshGallery() {
     console.error("refreshGallery dipanggil sebelum elemen siap.");
     return;
   }
-
   refreshGalleryBtn.textContent = "Memuat galeri...";
-  refreshGalleryBtn.disabled = true; // Nonaktifkan tombol saat loading
-
+  refreshGalleryBtn.disabled = true;
   try {
-    // 1. Meminta (fetch) daftar gambar dari server kita
     const response = await fetch(`${SERVER_IP}/api/gallery`);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const daftarGambar = await response.json(); // Dapat array JSON [ "img1.jpg", "img2.jpg" ]
-
-    galleryImagesEl.innerHTML = ""; // Kosongkan galeri
-
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const daftarGambar = await response.json();
+    galleryImagesEl.innerHTML = "";
     if (daftarGambar.length === 0) {
       galleryImagesEl.innerHTML = "<p>Galeri masih kosong.</p>";
     }
-
-    // 2. Looping dan buat tag <img> untuk setiap nama file
     daftarGambar.forEach((namaFile) => {
       const img = document.createElement("img");
-      const imgSrc = `${SERVER_IP}/captures/${namaFile}`; // -> http://.../captures/namafile.jpg
-
+      const imgSrc = `${SERVER_IP}/captures/${namaFile}`;
       img.src = imgSrc;
       img.alt = namaFile;
-
-      // 3. (Bonus) Tambahkan listener untuk membuka modal
       img.addEventListener("click", () => {
         const modal = document.getElementById("image-modal");
         const modalImg = document.getElementById("modal-img");
         const downloadBtn = document.getElementById("download-btn");
-
         if (modal && modalImg && downloadBtn) {
           modalImg.src = imgSrc;
-          downloadBtn.href = imgSrc; // Set link download
-          modal.style.display = "block"; // Tampilkan modal
+          downloadBtn.href = imgSrc;
+          modal.style.display = "block";
         }
       });
-
       galleryImagesEl.appendChild(img);
     });
   } catch (error) {
     console.error("Gagal mengambil galeri:", error);
-    galleryImagesEl.innerHTML =
-      "<p>Gagal memuat galeri. Periksa konsol.</p>";
+    galleryImagesEl.innerHTML = "<p>Gagal memuat galeri. Periksa konsol.</p>";
   }
-
   refreshGalleryBtn.textContent = "Refresh Gallery";
-  refreshGalleryBtn.disabled = false; // Aktifkan kembali tombol
+  refreshGalleryBtn.disabled = false;
 }
-// === AKHIR FUNGSI BARU ===
 
 // === MODIFIKASI TOTAL: Menggunakan Server-Sent Events (SSE) ===
-
-/**
- * Memulai koneksi Server-Sent Events (SSE) lokal dan mengatur listener.
- * (Menggantikan fungsi Socket.IO yang lama)
- */
 function setupLocalSocketIO(elements) {
-  // 1. Tentukan URL endpoint streaming baru kita.
-  const serverURL = `${SERVER_IP}/stream-telemetry`; // Menggunakan konstanta global
-
+  // ... (URL, EventSource, onopen, onerror tetap sama) ...
+  const serverURL = `${SERVER_IP}/stream-telemetry`;
   console.log(`[SSE] Menghubungkan ke ${serverURL}`);
-
-  // 2. Buat koneksi EventSource
   const eventSource = new EventSource(serverURL);
 
-  // 3. Dipanggil saat koneksi berhasil dibuka
   eventSource.onopen = function () {
     console.log("[SSE] Koneksi berhasil dibuka.");
     if (elements.gpsValue) elements.gpsValue.textContent = "Waiting for data...";
   };
 
-  // 4. Dipanggil jika terjadi error koneksi
   eventSource.onerror = function (err) {
     console.error("[SSE] Koneksi EventSource gagal:", err);
     if (elements.gpsValue) elements.gpsValue.textContent = "DISCONNECTED";
@@ -237,10 +180,10 @@ function setupLocalSocketIO(elements) {
       return;
     }
 
-    // --- MULAI LOGIKA UPDATE UI (Logika ini SAMA PERSIS dengan kode Anda sebelumnya) ---
+    // --- MULAI LOGIKA UPDATE UI ---
 
-    // Kontrol Arena
-    const arena = data.active_arena; // <-- Key SUDAH BENAR
+    // Kontrol Arena (Logika event custom Anda yang ada)
+    const arena = data.active_arena; 
     if (arena && arena !== lastKnownArena) {
       lastKnownArena = arena;
       const switchArenaEvent = new CustomEvent("switchArena", {
@@ -248,26 +191,60 @@ function setupLocalSocketIO(elements) {
       });
       window.dispatchEvent(switchArenaEvent);
     }
+    
+    // --- [MODIFIKASI BARU: GANTI GAMBAR PETA BERDASARKAN ARENA] ---
+    if (data.active_arena) {
+        const mapImageDiv = document.getElementById('map-canvas'); // Target div peta
+        if (mapImageDiv && mapImageDiv.dataset.currentArena !== data.active_arena) {
+            console.log(`Mengganti peta ke Arena: ${data.active_arena}`);
+            if (data.active_arena === 'A') {
+                // Path relatif dari folder js ke folder images (jika struktur folder Anda /js, /images)
+                // Jika monitor_local.html ada di root, pathnya adalah 'images/Arena_A.png'
+                // Asumsi monitor_local.html ada di root:
+                mapImageDiv.style.backgroundImage = "url('images/Arena_A.png')";
+            } else if (data.active_arena === 'B') {
+                mapImageDiv.style.backgroundImage = "url('images/Arena_B.png')";
+            } else {
+                mapImageDiv.style.backgroundImage = "none"; // Hapus gambar
+            }
+            mapImageDiv.dataset.currentArena = data.active_arena; // Simpan status
+        }
+    }
+    // --- [AKHIR MODIFIKASI BARU] ---
 
-    // Kontrol Titik (Point)
+
+    // --- [MODIFIKASI BARU: LOGIKA WAYPOINT] ---
+    // Cek jika payload waypoints ada (bahkan jika kosong)
+    if (data.waypoints && Array.isArray(data.waypoints) && waypointLayer) {
+        waypointLayer.clearLayers(); // Hapus waypoint lama
+        
+        // Jika listnya kosong (dari missions.py baru), tidak ada yang akan ditambahkan.
+        // Jika nanti Anda mengirim waypoint (Tahap 3), ini akan otomatis menggambarnya.
+        data.waypoints.forEach(function (wp) {
+            L.marker([wp.lat, wp.lon]) // (Icon default)
+                .addTo(waypointLayer)
+                .bindPopup(`WP: ${wp.lat}, ${wp.lon}`);
+        });
+    }
+    // --- [AKHIR MODIFIKASI BARU] ---
+
+
+    // Kontrol Titik (Point) - (Logika Anda yang ada tetap di sini)
     let point = 0;
     if (data.use_dummy_counter === true) {
-      // <-- Key SUDAH BENAR
-      point = data.debug_waypoint_counter || 0; // <-- Key SUDAH BENAR
+      point = data.debug_waypoint_counter || 0;
     } else {
-      point = data.current_waypoint_index || 0; // <-- Key SUDAH BENAR (index berbasis 0)
-
+      point = data.current_waypoint_index || 0; 
       if (
         data.waypoints &&
         data.waypoints.length > 0 &&
         point < data.waypoints.length
       ) {
-        point = point + 1; // Konversi ke berbasis 1 untuk tampilan
+        point = point + 1;
       } else {
-        point = 0; // Default
+        point = 0;
       }
     }
-
     if (point !== lastKnownPoint) {
       lastKnownPoint = point;
       const setPointEvent = new CustomEvent("setTrajectoryPoint", {
@@ -277,9 +254,8 @@ function setupLocalSocketIO(elements) {
     }
 
     // --- PEMBARUAN PETA GPS & GARIS HDG ---
+    // ... (Logika GPS, HDG, SOG, COG, DateTime, dan Heading Line Anda tetap sama) ...
     let currentLatLng = null;
-
-    // === BACA data.latitude dan data.longitude ===
     const lat = data.latitude;
     const lng = data.longitude;
 
@@ -290,11 +266,9 @@ function setupLocalSocketIO(elements) {
     ) {
       lastKnownGps.lat = lat;
       lastKnownGps.lng = lng;
-
       if (elements.gpsValue) {
         try {
-          if (isNaN(lat) || isNaN(lng))
-            throw new Error("Lat/Lng bukan angka");
+          if (isNaN(lat) || isNaN(lng)) throw new Error("Lat/Lng bukan angka");
           elements.gpsValue.textContent = `${decimalToHemisphere(
             lat,
             false
@@ -303,7 +277,6 @@ function setupLocalSocketIO(elements) {
           if (map && vehicleMarker) {
             vehicleMarker.setLatLng(currentLatLng);
             map.panTo(currentLatLng);
-            // append current point to trail and update polyline
             try {
               const last = trailCoords.length ? trailCoords[trailCoords.length - 1] : null;
               if (!last || last[0] !== currentLatLng[0] || last[1] !== currentLatLng[1]) {
@@ -327,12 +300,9 @@ function setupLocalSocketIO(elements) {
     } else if (map && vehicleMarker && lastKnownGps.lat !== 0) {
       currentLatLng = [lastKnownGps.lat, lastKnownGps.lng];
     }
-    // --- AKHIR BAGIAN POSISI GPS ---
 
-    // --- PEMBARUAN ELEMEN HTML LAINNYA ---
     let currentHdg = null;
     if (elements.hdgValue) {
-      // === BACA data.heading ===
       if (data.heading !== undefined) {
         try {
           const hdgNum = parseFloat(data.heading);
@@ -350,17 +320,13 @@ function setupLocalSocketIO(elements) {
       }
     }
 
-    // === BACA data.speed dan KONVERSI ke km/jam ===
     if (elements.sogValue) {
       if (data.speed !== undefined) {
-        // Baca 'speed' (m/s)
         try {
-          const sog_ms = parseFloat(data.speed); // Ini m/s
+          const sog_ms = parseFloat(data.speed);
           if (isNaN(sog_ms)) throw new Error("SOG bukan angka");
-
-          const sog_kmh = (sog_ms * 3.6).toFixed(1); // Konversi m/s ke km/jam
-          const sog_knots = (sog_ms * 1.94384).toFixed(1); // Konversi m/s ke knots
-
+          const sog_kmh = (sog_ms * 3.6).toFixed(1);
+          const sog_knots = (sog_ms * 1.94384).toFixed(1);
           elements.sogValue.textContent = `${sog_kmh} km/jam (${sog_knots} kn)`;
         } catch (e) {
           console.error("Data SOG tidak valid:", e);
@@ -371,21 +337,17 @@ function setupLocalSocketIO(elements) {
       }
     }
 
-    // Update COG (Kita gunakan nav_heading_error sebagai COG di monitor ini)
     if (elements.cogValue) {
-      // === BACA data.nav_heading_error ===
       elements.cogValue.textContent =
         data.nav_heading_error !== undefined
           ? `${Math.round(parseFloat(data.nav_heading_error)) || 0}°`
           : "N/A";
     }
 
-    // Update HARI, TANGGAL, dan WAKTU (menggunakan waktu LOKAL BROWSER)
     updateDateTime(elements);
 
-    // --- MEMBUAT/MEMPERBARUI GARIS ARAH HDG (ORANGE) ---
     if (map && currentLatLng && currentHdg !== null && !isNaN(currentHdg)) {
-      const distanceKm = 0.05; // 50 meter
+      const distanceKm = 0.05;
       const endPoint = calculateDestinationPoint(
         currentLatLng[0],
         currentLatLng[1],
@@ -393,19 +355,17 @@ function setupLocalSocketIO(elements) {
         distanceKm
       );
       const linePoints = [currentLatLng, [endPoint.lat, endPoint.lng]];
-
       if (!headingLine) {
         headingLine = L.polyline(linePoints, {
-          color: "orange", // Warna garis jadi oranye
+          color: "orange",
           weight: 2,
           dashArray: "5, 10",
         }).addTo(map);
       } else {
         headingLine.setLatLngs(linePoints);
-        headingLine.setStyle({ color: "orange" }); // Pastikan warna tetap
+        headingLine.setStyle({ color: "orange" });
       }
     } else if (headingLine) {
-      // Hapus garis jika GPS atau HDG tidak valid
       map.removeLayer(headingLine);
       headingLine = null;
     }
@@ -417,78 +377,42 @@ function setupLocalSocketIO(elements) {
 }
 
 // === FUNGSI HELPER (TIDAK BERUBAH) ===
-
-/**
- * Memperbarui elemen DAY, DATE, dan TIME menggunakan waktu lokal browser.
- */
 function updateDateTime(elements) {
+  // ... (implementasi Anda) ...
   const now = new Date();
-  const days = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ];
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const dateOptions = { day: "2-digit", month: "2-digit", year: "numeric" };
-  const timeOptions = {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  };
-
-  if (elements.dayValue) {
-    elements.dayValue.textContent = days[now.getDay()];
-  }
-  if (elements.dateValue) {
-    elements.dateValue.textContent = now.toLocaleDateString("en-GB", dateOptions);
-  }
-  if (elements.timeValue) {
-    elements.timeValue.textContent = now.toLocaleTimeString(
-      "en-GB",
-      timeOptions
-    );
-  }
+  const timeOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
+  if (elements.dayValue) elements.dayValue.textContent = days[now.getDay()];
+  if (elements.dateValue) elements.dateValue.textContent = now.toLocaleDateString("en-GB", dateOptions);
+  if (elements.timeValue) elements.timeValue.textContent = now.toLocaleTimeString("en-GB", timeOptions);
 }
 
-/**
- * Konversi GPS desimal ke format N/S/E/W.
- */
 function decimalToHemisphere(dec, isLng) {
+  // ... (implementasi Anda) ...
   let absDec = Math.abs(dec);
   let hem;
-  if (isLng) {
-    hem = dec >= 0 ? "E" : "W";
-  } else {
-    hem = dec >= 0 ? "N" : "S";
-  }
+  if (isLng) hem = dec >= 0 ? "E" : "W";
+  else hem = dec >= 0 ? "N" : "S";
   return `${hem} ${absDec.toFixed(5)}`;
 }
 
-/**
- * Menghitung titik akhir GPS berdasarkan titik awal, arah, dan jarak.
- */
 function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
-  const R = 6371; // Radius bumi dalam km
+  // ... (implementasi Anda) ...
+  const R = 6371;
   const bearingRad = (bearing * Math.PI) / 180;
   const lat1Rad = (lat1 * Math.PI) / 180;
   const lon1Rad = (lon1 * Math.PI) / 180;
   const lat2Rad = lat1Rad + (distanceKm / R) * Math.cos(bearingRad);
-  // Perhitungan Lng yang dikoreksi untuk lintang
-  const lon2Rad =
-    lon1Rad +
-    ((distanceKm / R) * Math.sin(bearingRad)) / Math.cos(lat1Rad);
+  const lon2Rad = lon1Rad + ((distanceKm / R) * Math.sin(bearingRad)) / Math.cos(lat1Rad);
   const lat2 = (lat2Rad * 180) / Math.PI;
   const lon2 = (lon2Rad * 180) / Math.PI;
   return { lat: lat2, lng: lon2 };
 }
 
-// === FUNGSI BARU: Handle Manual Capture dari IMG (tanpa backend) ===
+// === FUNGSI BARU: Handle Manual Capture (Tetap sama) ===
 async function handleManualCapture(camType) {
-  // camType: "surface" atau "underwater"
+  // ... (implementasi Anda) ...
   let imgEl = null;
   let btn = null;
   if (camType === "surface") {
@@ -498,40 +422,34 @@ async function handleManualCapture(camType) {
     imgEl = document.querySelector('#cam2-container img');
     btn = document.getElementById("manual-capture-underwater");
   } else {
-    alert("Jenis kamera tidak valid!");
-    return;
+    alert("Jenis kamera tidak valid!"); return;
   }
   if (!imgEl) {
-    alert("Stream kamera tidak ditemukan!");
-    return;
+    alert("Stream kamera tidak ditemukan!"); return;
   }
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Memotret...";
   }
   try {
-    // Buat canvas dan draw image
     const canvas = document.createElement('canvas');
     canvas.width = imgEl.naturalWidth || imgEl.width;
     canvas.height = imgEl.naturalHeight || imgEl.height;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
-    // Convert ke dataURL
     const dataURL = canvas.toDataURL('image/jpeg');
-    // Tambahkan ke galeri
     addImageToGallery(dataURL, camType);
-    // alert("Foto berhasil diambil!"); // DIHAPUS
   } catch (err) {
     alert("Gagal mengambil foto: " + err.message);
   }
   if (btn) {
     btn.disabled = false;
-    btn.textContent = camType === "surface" ? "Potret Atas (S)" : "Potret Bawah (U)";
+    btn.textContent = camType === "surface" ? "Potret Atas (S)" : "Pottret Bawah (U)";
   }
 }
 
-// Fungsi untuk menambah gambar ke galeri
 function addImageToGallery(dataURL, camType) {
+  // ... (implementasi Anda) ...
   const galleryImagesEl = document.getElementById("gallery-images");
   if (!galleryImagesEl) return;
   const img = document.createElement("img");
@@ -548,5 +466,5 @@ function addImageToGallery(dataURL, camType) {
       modal.style.display = "block";
     }
   });
-  galleryImagesEl.prepend(img); // Tambahkan di atas
+  galleryImagesEl.prepend(img);
 }

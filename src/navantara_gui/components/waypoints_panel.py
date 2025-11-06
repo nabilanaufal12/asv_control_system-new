@@ -150,6 +150,8 @@ class WaypointsPanel(QGroupBox):
         # Arena sudah di-set oleh _on_load_mission
         self.waypoints_list.clear()
         for wp in waypoints:
+            # Fungsi ini sekarang akan menerima list kosong dan tidak melakukan apa-apa,
+            # yang mana sudah benar.
             waypoint_text = f"Lat: {wp['lat']:.6f}, Lon: {wp['lon']:.6f}"
             self.waypoints_list.addItem(waypoint_text)
         self._emit_updated_waypoints()
@@ -181,7 +183,7 @@ class WaypointsPanel(QGroupBox):
                 self.lon_input.clear()
                 self._emit_updated_waypoints()
                 # --- MODIFIKASI 5 (dari file asli): Reset arena jika menambah manual? (Opsional) ---
-                # self.current_arena = None # Atau set ke 'MANUAL'?
+                self.current_arena = None # Atau set ke 'MANUAL'?
                 # -----------------------------------------------------------------
             except ValueError:
                 print("[GUI] Error: Input waypoint manual tidak valid.")
@@ -207,27 +209,34 @@ class WaypointsPanel(QGroupBox):
                 print(f"[GUI] Gagal mem-parsing item waypoint: {item_text}")
         return all_waypoints
 
-    # --- MODIFIKASI 6 (dari file asli): Kirim payload dictionary ---
+    # --- [MODIFIKASI UTAMA DI SINI] ---
     def send_all_waypoints(self):
         all_waypoints = self._get_all_waypoints_from_list()
-        if not all_waypoints:
-            print("[WaypointsPanel] Tidak ada waypoint untuk dikirim.")
-            return
+        
+        # --- [PERBAIKAN] ---
+        # HAPUS 'if not all_waypoints:' check.
+        # Kita SEKARANG mengizinkan pengiriman list kosong, 
+        # karena ini adalah cara kita mengatur arena/peta.
+        # if not all_waypoints:
+        #     print("[WaypointsPanel] Tidak ada waypoint untuk dikirim.")
+        #     return # <-- INI ADALAH BUG-NYA
+        # --- [AKHIR PERBAIKAN] ---
+
         if self.current_arena is None:
             print(
                 "[WaypointsPanel] Peringatan: Tidak ada arena (A/B) yang dipilih/di-load."
             )
             # Anda bisa memutuskan untuk mengirim None, atau default ke 'A', atau tidak mengirim sama sekali
-            # current_arena_to_send = None
             current_arena_to_send = "A"  # Default ke A jika belum diset
         else:
             current_arena_to_send = self.current_arena
 
         payload = {"waypoints": all_waypoints, "arena": current_arena_to_send}
         self.send_waypoints.emit(payload)
-        print(f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {payload}")
-
-    # ---------------------------------------------
+        
+        # Log yang lebih baik
+        print(f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {len(all_waypoints)} waypoints, Arena: {current_arena_to_send}")
+    # --- [AKHIR MODIFIKASI UTAMA] ---
 
     # --- [MODIFIKASI 6: Fungsi handler baru untuk Misi Foto] ---
     @Slot()

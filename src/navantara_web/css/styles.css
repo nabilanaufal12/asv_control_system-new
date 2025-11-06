@@ -440,3 +440,13 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+#map-canvas {
+    height: 100%; /* Memastikan map-canvas mengisi .trajectory-map */
+    width: 100%;
+    
+    /* Properti untuk gambar peta arena (dari JS) */
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center center;
+}

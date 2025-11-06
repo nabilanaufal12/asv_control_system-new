@@ -1,6 +1,7 @@
 # src/navantara_gui/views/main_window.py
 import sys
 import os
+import logging # <- Tambahkan import logging jika belum ada
 
 # Blok ini memperbaiki path agar impor dari folder lain berhasil
 try:
@@ -187,6 +188,12 @@ class MainWindow(QMainWindow):
         self.api_client.frame_cam1_updated.connect(self.video_view.update_frame_1)
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
         self.waypoints_panel.waypoints_updated.connect(self.map_view.update_waypoints)
+        
+        # --- [MODIFIKASI TAMBAHAN]: Hubungkan sinyal misi foto dari waypoints_panel ---
+        # (Sepertinya ini hilang di file Anda, saya tambahkan kembali)
+        self.waypoints_panel.send_photo_mission.connect(
+            lambda payload: self.api_client.send_command("SET_PHOTO_MISSION", payload)
+        )
 
     @Slot(str)
     def set_mode(self, mode):
@@ -265,11 +272,37 @@ class MainWindow(QMainWindow):
         self.api_client.shutdown()
         event.accept()
 
+    # --- [MODIFIKASI UTAMA DI SINI] ---
     @Slot(str)
     def load_predefined_mission(self, mission_id):
-        waypoints = get_lintasan_a() if mission_id == "A" else get_lintasan_b()
-        print(f"Memuat Lintasan {mission_id}...")
-        self.waypoints_panel.load_waypoints_to_list(waypoints)
+        """
+        Memuat misi yang telah ditentukan (A atau B).
+        Fungsi ini sekarang mem-parsing dictionary yang dikembalikan oleh missions.py.
+        """
+        mission_data = None
+        if mission_id == "A":
+            mission_data = get_lintasan_a()  # Mengembalikan {"arena": "A", "waypoints": []}
+        elif mission_id == "B":
+            mission_data = get_lintasan_b()  # Mengembalikan {"arena": "B", "waypoints": []}
+        else:
+            logging.warning(f"ID Arena tidak dikenal: {mission_id}")
+            return
+
+        if mission_data:
+            # 1. Ekstrak HANYA list 'waypoints' (yang sekarang kosong)
+            waypoints_list = mission_data.get("waypoints") 
+            
+            # 2. Ekstrak arena (untuk logging, karena panel sudah tahu arenanya)
+            arena = mission_data.get("arena")
+
+            print(f"Memuat Lintasan {arena} (Peta)...")
+            
+            # 3. Kirim HANYA list waypoints (yang kosong) ke fungsi
+            if waypoints_list is not None:
+                self.waypoints_panel.load_waypoints_to_list(waypoints_list)
+            else:
+                logging.error(f"Gagal memuat misi {mission_id}: format data salah.")
+    # --- [AKHIR MODIFIKASI UTAMA] ---
 
     def handle_manual_keys(self):
         self.api_client.send_command("MANUAL_CONTROL", list(self.active_manual_keys))
