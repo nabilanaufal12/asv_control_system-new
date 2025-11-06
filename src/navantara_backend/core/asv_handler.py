@@ -46,7 +46,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 0.0
+    nav_dist_to_wp: float = 9999.0 # default = 0.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -68,10 +68,17 @@ class AsvState:
     last_pixel_error: float = 0.0
     resume_waypoint_on_clear: bool = False
     inverse_servo: bool = False
-    # --- [MODIFIKASI 1.1: Atribut Misi Foto] ---
-    photo_mission_target_wp: int = -1
+    # --- [MODIFIKASI 1.1: Atribut Misi Foto Dual-Target] ---
+    # Target Waypoint (diset -1 jika tidak aktif)
+    photo_mission_target_wp1: int = -1
+    photo_mission_target_wp2: int = -1
+    
+    # Jumlah foto yang diminta (berlaku untuk KEDUA target)
     photo_mission_qty_requested: int = 0
-    photo_mission_qty_taken: int = 0
+    
+    # Counter terpisah untuk masing-masing target
+    photo_mission_qty_taken_1: int = 0
+    photo_mission_qty_taken_2: int = 0
     # --- [AKHIR MODIFIKASI 1.1] ---
 # --- [AKHIR OPTIMASI 3] ---
 
@@ -793,20 +800,26 @@ class AsvHandler:
             self.current_state.control_mode = "AUTO"
         self.logger.log_event("Memulai Return to Home.")
     
-    # --- [MODIFIKASI 1.3: Fungsi Handler Misi Foto] ---
+    # --- [MODIFIKASI 1.3: Fungsi Handler Misi Foto Diperbarui] ---
     def _handle_set_photo_mission(self, payload):
-        """Mengatur parameter untuk misi fotografi otomatis."""
+        """Mengatur parameter untuk misi fotografi otomatis (dual target)."""
         try:
-            target_wp = int(payload.get("wp_index", -1))
+            # Ambil nilai dari payload, default -1 jika tidak diisi
+            wp1 = int(payload.get("wp1", -1))
+            wp2 = int(payload.get("wp2", -1))
             count = int(payload.get("count", 0))
 
             with self.state_lock:
-                self.current_state.photo_mission_target_wp = target_wp
+                self.current_state.photo_mission_target_wp1 = wp1
+                self.current_state.photo_mission_target_wp2 = wp2
                 self.current_state.photo_mission_qty_requested = count
-                self.current_state.photo_mission_qty_taken = 0
+                
+                # Reset kedua counter saat misi baru di-set
+                self.current_state.photo_mission_qty_taken_1 = 0
+                self.current_state.photo_mission_qty_taken_2 = 0
             
-            logging.info(f"[AsvHandler] Misi Foto diatur: Target WP={target_wp}, Jumlah={count}")
-            self.logger.log_event(f"Misi Foto diatur: WP {target_wp}, {count} foto.")
+            logging.info(f"[AsvHandler] Misi Foto diatur: WP1={wp1}, WP2={wp2}, Jml={count}/lokasi")
+            self.logger.log_event(f"Misi Foto: WP {wp1}&{wp2}, {count}x foto.")
         
         except Exception as e:
             logging.warning(f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}")

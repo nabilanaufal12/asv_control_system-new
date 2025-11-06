@@ -77,28 +77,31 @@ class WaypointsPanel(QGroupBox):
         button_layout.addWidget(self.add_current_pos_button)
         button_layout.addWidget(self.delete_button)
 
-        # --- [MODIFIKASI 3: UI Misi Foto] ---
+        # --- [MODIFIKASI 3: UI Misi Foto Diperbarui] ---
         photo_mission_box = QGroupBox("Misi Fotografi Otomatis")
         photo_mission_layout = QVBoxLayout()
         
         photo_form_layout = QFormLayout()
-        self.wp_target_input = QLineEdit()
+        self.wp_target1_input = QLineEdit() # Ubah nama jadi target1
+        self.wp_target2_input = QLineEdit() # Tambah target2
         self.photo_count_input = QLineEdit()
         
-        # Validasi input agar hanya angka integer
         int_validator = QIntValidator(self)
-        self.wp_target_input.setValidator(int_validator)
+        self.wp_target1_input.setValidator(int_validator)
+        self.wp_target2_input.setValidator(int_validator)
         self.photo_count_input.setValidator(int_validator)
 
-        self.wp_target_input.setPlaceholderText("Indeks WP (misal: 1)")
-        self.photo_count_input.setPlaceholderText("Jumlah foto (misal: 3)")
+        self.wp_target1_input.setPlaceholderText("Indeks WP 1 (opsional)")
+        self.wp_target2_input.setPlaceholderText("Indeks WP 2 (opsional)")
+        self.photo_count_input.setPlaceholderText("Jml Foto per Lokasi")
         
-        photo_form_layout.addRow("Target WP:", self.wp_target_input)
+        photo_form_layout.addRow("Target WP 1:", self.wp_target1_input)
+        photo_form_layout.addRow("Target WP 2:", self.wp_target2_input)
         photo_form_layout.addRow("Jumlah Foto:", self.photo_count_input)
         
         self.set_photo_mission_button = QPushButton("Set Photo Mission")
         self.set_photo_mission_button.setStyleSheet(
-            "background-color: #DAA520; color: white; font-weight: bold;" # Warna kuning/emas
+            "background-color: #DAA520; color: white; font-weight: bold;"
         )
 
         photo_mission_layout.addLayout(photo_form_layout)
@@ -238,34 +241,34 @@ class WaypointsPanel(QGroupBox):
         print(f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {len(all_waypoints)} waypoints, Arena: {current_arena_to_send}")
     # --- [AKHIR MODIFIKASI UTAMA] ---
 
-    # --- [MODIFIKASI 6: Fungsi handler baru untuk Misi Foto] ---
+    # --- [MODIFIKASI 6: Fungsi handler Misi Foto Diperbarui] ---
     @Slot()
     def _on_set_photo_mission(self):
-        """Mengirim perintah untuk mengatur misi fotografi otomatis."""
-        wp_idx_text = self.wp_target_input.text()
+        """Mengirim perintah untuk mengatur misi fotografi otomatis (dual target)."""
+        wp1_text = self.wp_target1_input.text()
+        wp2_text = self.wp_target2_input.text()
         count_text = self.photo_count_input.text()
 
-        if not wp_idx_text or not count_text:
-            print("[WaypointsPanel] Error: Input Misi Foto tidak boleh kosong.")
+        # Minimal harus ada satu target WP dan jumlah foto
+        if (not wp1_text and not wp2_text) or not count_text:
+            print("[WaypointsPanel] Error: Isi minimal satu Target WP dan Jumlah Foto.")
             return
 
         try:
-            wp_idx = int(wp_idx_text)
+            # Konversi ke int, gunakan -1 jika kosong
+            wp1 = int(wp1_text) if wp1_text else -1
+            wp2 = int(wp2_text) if wp2_text else -1
             count = int(count_text)
 
-            # WP 0 adalah indeks yang valid (misal, RTH)
-            if wp_idx < 0 or count <= 0:
-                print("[WaypointsPanel] Error: WP harus >= 0 dan Jumlah Foto harus > 0.")
-                return
+            if count <= 0:
+                 print("[WaypointsPanel] Error: Jumlah Foto harus > 0.")
+                 return
 
-            payload = {"wp_index": wp_idx, "count": count}
+            # Kirim payload baru
+            payload = {"wp1": wp1, "wp2": wp2, "count": count}
             self.send_photo_mission.emit(payload)
             print(f"[WaypointsPanel] Sinyal send_photo_mission dipancarkan: {payload}")
-            
-            # Anda bisa memilih untuk mengosongkan input setelah dikirim
-            # self.wp_target_input.clear()
-            # self.photo_count_input.clear()
 
         except ValueError:
-            print("[WaypointsPanel] Error: Input Misi Foto tidak valid (bukan angka).")
+            print("[WaypointsPanel] Error: Input tidak valid (pastikan angka).")
     # --- [AKHIR MODIFIKASI 6] ---

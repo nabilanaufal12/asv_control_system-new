@@ -66,7 +66,7 @@ class VisionService:
             "gate_activation_distance_cm", 200.0
         )
         self.obstacle_activation_distance = vision_cfg.get(
-            "obstacle_activation_distance_cm", 120.0
+            "obstacle_activation_distance_cm", 100.0
         )
 
         # State internal
@@ -87,7 +87,11 @@ class VisionService:
         # --- [AKHIR MODIFIKASI 2.1] ---
 
         # Pengaturan deteksi kamera
-        cam_detect_cfg = self.config.get("camera_detection", {})
+        cam_detect_cfg = self.config.get("camera_detection", {
+            "red_buoy": 20.0,   # Contoh: Ubah 30.0 sesuai diameter asli bola merah Anda
+            "green_buoy": 20.0, # Contoh: Ubah 30.0 sesuai diameter asli bola hijau Anda
+            "buoy": 20.0        # Default jika kelas spesifik tidak ditemukan
+        })
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
         self.OBJECT_REAL_WIDTHS_CM = cam_detect_cfg.get("object_real_widths_cm", {})
 
@@ -223,11 +227,15 @@ class VisionService:
 
             # Adjusted HSV thresholds for more reliable color detection
             lower_red1 = np.array([0, 100, 60])  # Slightly relaxed saturation & value
+            # lower_red1 = np.array([0, 120, 70])
             upper_red1 = np.array([10, 255, 255])
             lower_red2 = np.array([170, 100, 60])  # For the wrap-around hue of red
+            # lower_red2 = np.array([175, 120, 70])
             upper_red2 = np.array([180, 255, 255])
             lower_green = np.array([35, 70, 35])  # Wider green range
             upper_green = np.array([85, 255, 255])
+            # lower_green = np.array([35, 40, 40]) 
+            # upper_green = np.array([90, 255, 255])
 
             mask_r = cv2.bitwise_or(
                 cv2.inRange(hsv_roi, lower_red1, upper_red1),
@@ -563,7 +571,7 @@ class VisionService:
             return frame
 
         if self.model is None:
-            logging.error("[Vision] Model tidak dimuat, inferensi dilompati.")
+            # logging.error("[Vision] Model tidak dimuat, inferensi dilompati.")
             return frame
 
         if frame is None:
@@ -628,9 +636,10 @@ class VisionService:
         blue_boxes_detected = []  # List untuk menyimpan deteksi kotak biru
 
         if not detections:
-            logging.warning(
-                "[Vision DEBUG] Daftar deteksi mentah KOSONG. Melompati validasi."
-            )
+            # logging.warning(
+            #     "[Vision DEBUG] Daftar deteksi mentah KOSONG. Melompati validasi."
+            # )
+            pass
 
         for det in detections:
             original_class = det.get("class")
@@ -679,35 +688,53 @@ class VisionService:
             d for d in validated_detections if d.get("class") == "blue_box"
         ]
 
-        # --- [MODIFIKASI 2.2: Logika Misi Foto Otomatis] ---
+        # --- [MODIFIKASI 2.2: Logika Misi Foto Otomatis Dual-Target] ---
         if green_boxes_detected or blue_boxes_detected:
             current_time = time.time()
-            # Ambil state misi DARI HANDLER (Otak)
+            
             with self.asv_handler.state_lock:
+                # Ambil state yang relevan
                 current_wp = self.asv_handler.current_state.nav_target_wp_index
-                mission_target_wp = self.asv_handler.current_state.photo_mission_target_wp
-                qty_taken = self.asv_handler.current_state.photo_mission_qty_taken
-                qty_requested = self.asv_handler.current_state.photo_mission_qty_requested
+                
+                target1 = self.asv_handler.current_state.photo_mission_target_wp1
+                target2 = self.asv_handler.current_state.photo_mission_target_wp2
+                qty_req = self.asv_handler.current_state.photo_mission_qty_requested
+                
+                taken1 = self.asv_handler.current_state.photo_mission_qty_taken_1
+                taken2 = self.asv_handler.current_state.photo_mission_qty_taken_2
 
-                # Cek kondisi misi
-                mission_active = (current_wp == mission_target_wp)
-                photos_needed = (qty_taken < qty_requested)
+                # Cek cooldown global
                 cooldown_ready = (current_time - self.last_auto_photo_time > self.photo_mission_cooldown_sec)
 
-                if mission_active and photos_needed and cooldown_ready:
-                    # KONDISI TERPENUHI: Ambil foto & update counter
-                    print(f"[Vision] Misi Foto Otomatis: Mengambil foto {qty_taken + 1} / {qty_requested}")
+                # Logika Deteksi Target Aktif
+                active_target = None
+                
+                # Cek Target 1
+                if target1 != -1 and current_wp == target1 and taken1 < qty_req:
+                    active_target = 1
+                # Cek Target 2 (hanya jika Target 1 tidak sedang aktif untuk frame ini)
+                elif target2 != -1 and current_wp == target2 and taken2 < qty_req:
+                    active_target = 2
 
-                    # Ambil snapshot state untuk foto (di dalam lock)
+                if active_target and cooldown_ready:
+                    # KONDISI TERPENUHI untuk salah satu target
+                    taken_now = taken1 if active_target == 1 else taken2
+                    print(f"[Vision] Misi Foto Otomatis (Target {active_target}): Mengambil foto {taken_now + 1} / {qty_req}")
+
+                    # Ambil snapshot state untuk overlay
                     current_state_photo = self.asv_handler.current_state 
 
-                    # Panggil fungsi yang ada
+                    # Lakukan pemotretan
                     self.handle_photography_mission(
                         frame, green_boxes_detected, blue_boxes_detected, current_state_photo
                     )
 
-                    # Update counter & cooldown
-                    self.asv_handler.current_state.photo_mission_qty_taken += 1
+                    # Update counter yang sesuai
+                    if active_target == 1:
+                        self.asv_handler.current_state.photo_mission_qty_taken_1 += 1
+                    else:
+                        self.asv_handler.current_state.photo_mission_qty_taken_2 += 1
+                        
                     self.last_auto_photo_time = current_time
         # --- [AKHIR MODIFIKASI 2.2] ---
 
@@ -825,9 +852,10 @@ class VisionService:
                     "object_center_x": closest_buoy["center"][0],
                     "frame_width": frame_width,
                 }
-                logging.critical(
-                    f"[Vision DEBUG] KONDISI OBSTACLE TERPENUHI. HENDAK MEMANGGIL process_command. Payload: {payload_obs}"
-                )
+
+                # logging.critical(
+                #     f"[Vision DEBUG] KONDISI OBSTACLE TERPENUHI. HENDAK MEMANGGIL process_command. Payload: {payload_obs}"
+                # )
 
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE",
