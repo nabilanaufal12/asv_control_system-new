@@ -66,7 +66,7 @@ class VisionService:
             "gate_activation_distance_cm", 200.0
         )
         self.obstacle_activation_distance = vision_cfg.get(
-            "obstacle_activation_distance_cm", 100.0
+            "obstacle_activation_distance_cm", 140.0
         )
 
         # State internal

@@ -197,18 +197,12 @@ def handle_socket_command(json_data):
     command = json_data.get("command")
     payload = json_data.get("payload", {})
     print(f"Menerima perintah via WebSocket: {command} dengan payload: {payload}")
-    vision_commands = ["SET_MODE", "SET_INVERSION"]
+
     try:
-        if command in vision_commands:
-            method_name = command.lower()
-            if hasattr(current_app.vision_service, method_name):
-                getattr(current_app.vision_service, method_name)(payload)
-            else:
-                print(
-                    f"[APyield (b'--frame\r\nI] Perintah vision tidak dikenal: {command}"
-                )
-        else:
-            current_app.asv_handler.process_command(command, payload)
+        # Kirim ke kedua layanan. Biarkan mereka mengurusnya.
+        current_app.asv_handler.process_command(command, payload)
+        current_app.vision_service.process_command(command, payload) # (Asumsi ini ada)
+
     except Exception as e:
         print(f"[API] Error saat memproses command '{command}': {e}")
         traceback.print_exc()
