@@ -450,3 +450,23 @@ body {
     background-repeat: no-repeat;
     background-position: center center;
 }
+
+/* MODIFIKASI: Styling Ikon Waypoint Kustom
+  Gunakan gambar marker Leaflet default, tapi ubah warnanya pakai filter CSS 
+*/
+
+/* Marker untuk WP yang sedang dituju (Target) - Biru Cerah/Default */
+.leaflet-marker-icon.wp-target {
+  /* filter: hue-rotate(170deg) brightness(1.2); */ 
+  /* (Biarkan default biru agar paling menonjol) */
+}
+
+/* Marker untuk WP yang sudah selesai - Hijau */
+.leaflet-marker-icon.wp-completed {
+  filter: hue-rotate(240deg) saturate(5) brightness(0.7); /* Ubah jadi Hijau */
+}
+
+/* Marker untuk WP yang akan datang - Abu-abu/Transparan */
+.leaflet-marker-icon.wp-pending {
+  filter: grayscale(100%) opacity(30%); /* Abu-abu dan sangat transparan */
+}
