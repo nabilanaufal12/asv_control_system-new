@@ -31,14 +31,20 @@ document.addEventListener("DOMContentLoaded", () => {
     sogValue: document.getElementById("sog-value"),
     cogValue: document.getElementById("cog-value"),
     hdgValue: document.getElementById("hdg-value"),
-    galleryImages: document.getElementById("gallery-images"),
+    
+    // === MODIFIKASI: Elemen Galeri Baru ===
     refreshGalleryBtn: document.getElementById("refresh-gallery-btn"),
+    galleryTabButtons: document.querySelectorAll(".gallery-tab-button"), // <-- BARU
+    surfaceGallery: document.getElementById("surface-gallery"),       // <-- BARU
+    underwaterGallery: document.getElementById("underwater-gallery"), // <-- BARU
+    
+    // === Elemen Modal (Tetap) ===
     modal: document.getElementById("image-modal"),
     modalImg: document.getElementById("modal-img"),
     downloadBtn: document.getElementById("download-btn"),
     closeModalBtn: document.getElementById("close-modal"),
-    manualCaptureSurface: document.getElementById("manual-capture-surface"),
-    manualCaptureUnderwater: document.getElementById("manual-capture-underwater"),
+    
+    // === Elemen Manual Capture Dihapus ===
   };
 
   // === INISIALISASI PETA LEAFLET ===
@@ -96,7 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   // --- [AKHIR MODIFIKASI] ---
 
-  // ... (Panggilan setupLocalSocketIO, listener galeri, dll. tetap sama) ...
+  // ... (Panggilan setupLocalSocketIO) ...
   if (typeof setupLocalSocketIO === "function") {
     // Kirim ikon yang baru dibuat ke fungsi setup
     setupLocalSocketIO(ELEMENTS, {
@@ -109,52 +115,65 @@ document.addEventListener("DOMContentLoaded", () => {
     console.error("Fungsi setupLocalSocketIO tidak ditemukan.");
   }
   
-  // ... (Sisa listener: refreshGalleryBtn, closeModalBtn, manualCapture...)
-  if (ELEMENTS.refreshGalleryBtn && ELEMENTS.galleryImages) {
-    ELEMENTS.refreshGalleryBtn.addEventListener("click", refreshGallery);
-    refreshGallery();
+  // === MODIFIKASI: Panggilan refreshGallery ===
+  if (ELEMENTS.refreshGalleryBtn) {
+    ELEMENTS.refreshGalleryBtn.addEventListener("click", () => refreshGallery(ELEMENTS));
+    refreshGallery(ELEMENTS); // Muat saat start
   }
+
+  // === MODIFIKASI: Panggil Fungsi Setup Tab ===
+  setupGalleryTabs(ELEMENTS);
+
+  // ... (Listener Modal)
   if (ELEMENTS.closeModalBtn && ELEMENTS.modal) {
     ELEMENTS.closeModalBtn.addEventListener("click", () => {
       ELEMENTS.modal.style.display = "none";
     });
   }
-  if (ELEMENTS.manualCaptureSurface) {
-    ELEMENTS.manualCaptureSurface.addEventListener("click", async () => {
-      await handleManualCapture("surface");
-    });
-  }
-  if (ELEMENTS.manualCaptureUnderwater) {
-    ELEMENTS.manualCaptureUnderwater.addEventListener("click", async () => {
-      await handleManualCapture("underwater");
-    });
-  }
+  
+  // === LISTENER MANUAL CAPTURE DIHAPUS ===
 });
 
-// ... (Fungsi refreshGallery tetap sama) ...
-async function refreshGallery() {
-  const galleryImagesEl = document.getElementById("gallery-images");
-  const refreshGalleryBtn = document.getElementById("refresh-gallery-btn");
+// === MODIFIKASI: Fungsi refreshGallery Diperbarui ===
+/**
+ * Mengambil daftar gambar dari API server dan memisahkannya
+ * ke galeri Surface dan Underwater.
+ */
+async function refreshGallery(elements) {
+  // Ambil elemen dari argumen
+  const surfaceGalleryEl = elements.surfaceGallery;
+  const underwaterGalleryEl = elements.underwaterGallery;
+  const refreshGalleryBtn = elements.refreshGalleryBtn;
 
-  if (!galleryImagesEl || !refreshGalleryBtn) {
-    console.error("refreshGallery dipanggil sebelum elemen siap.");
+  if (!surfaceGalleryEl || !underwaterGalleryEl || !refreshGalleryBtn) {
+    console.error("refreshGallery dipanggil sebelum elemen galeri siap.");
     return;
   }
+
   refreshGalleryBtn.textContent = "Memuat galeri...";
   refreshGalleryBtn.disabled = true;
+
   try {
     const response = await fetch(`${SERVER_IP}/api/gallery`);
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    const daftarGambar = await response.json();
-    galleryImagesEl.innerHTML = "";
-    if (daftarGambar.length === 0) {
-      galleryImagesEl.innerHTML = "<p>Galeri masih kosong.</p>";
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+    const daftarGambar = await response.json();
+
+    // Kosongkan kedua galeri
+    surfaceGalleryEl.innerHTML = "";
+    underwaterGalleryEl.innerHTML = "";
+
+    let surfaceCount = 0;
+    let underwaterCount = 0;
+
     daftarGambar.forEach((namaFile) => {
       const img = document.createElement("img");
       const imgSrc = `${SERVER_IP}/captures/${namaFile}`;
       img.src = imgSrc;
       img.alt = namaFile;
+
+      // Tambahkan listener modal (logika ini tetap sama)
       img.addEventListener("click", () => {
         const modal = document.getElementById("image-modal");
         const modalImg = document.getElementById("modal-img");
@@ -165,14 +184,61 @@ async function refreshGallery() {
           modal.style.display = "block";
         }
       });
-      galleryImagesEl.appendChild(img);
+
+      // Logika pemisah berdasarkan nama file
+      if (namaFile.startsWith("surface")) {
+        surfaceGalleryEl.appendChild(img);
+        surfaceCount++;
+      } else if (namaFile.startsWith("underwater")) {
+        underwaterGalleryEl.appendChild(img);
+        underwaterCount++;
+      }
     });
+
+    if (surfaceCount === 0) {
+      surfaceGalleryEl.innerHTML = "<p>Galeri Surface kosong.</p>";
+    }
+    if (underwaterCount === 0) {
+      underwaterGalleryEl.innerHTML = "<p>Galeri Underwater kosong.</p>";
+    }
+
   } catch (error) {
     console.error("Gagal mengambil galeri:", error);
-    galleryImagesEl.innerHTML = "<p>Gagal memuat galeri. Periksa konsol.</p>";
+    surfaceGalleryEl.innerHTML = "<p>Gagal memuat galeri.</p>";
+    underwaterGalleryEl.innerHTML = "<p>Gagal memuat galeri.</p>";
   }
+
   refreshGalleryBtn.textContent = "Refresh Gallery";
   refreshGalleryBtn.disabled = false;
+}
+
+// === FUNGSI BARU: setupGalleryTabs ===
+/**
+ * Mengatur logika klik untuk tab galeri (Surface/Underwater).
+ */
+function setupGalleryTabs(elements) {
+  if (elements.galleryTabButtons && elements.galleryTabButtons.length > 0) {
+    elements.galleryTabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        // Hapus 'active' dari semua tombol
+        elements.galleryTabButtons.forEach((btn) => btn.classList.remove("active"));
+        // Tambahkan 'active' ke tombol yang diklik
+        button.classList.add("active");
+
+        const tabName = button.getAttribute("data-tab");
+
+        // Tampilkan/sembunyikan galeri yang sesuai
+        if(elements.surfaceGallery) {
+          elements.surfaceGallery.classList.toggle("hidden", tabName !== "surface");
+        }
+        if(elements.underwaterGallery) {
+          elements.underwaterGallery.classList.toggle("hidden", tabName !== "underwater");
+        }
+      });
+    });
+     // Atur tab default (misal surface)
+     if (elements.galleryTabButtons[0]) elements.galleryTabButtons[0].click();
+  }
 }
 
 
@@ -501,63 +567,4 @@ function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
 }
 
 
-// === FUNGSI BARU: Handle Manual Capture (Tetap sama) ===
-// ... (fungsi handleManualCapture dan addImageToGallery tetap utuh) ...
-async function handleManualCapture(camType) {
-  // camType: "surface" atau "underwater"
-  let imgEl = null;
-  let btn = null;
-  if (camType === "surface") {
-    imgEl = document.querySelector('#cam1-container img');
-    btn = document.getElementById("manual-capture-surface");
-  } else if (camType === "underwater") {
-    imgEl = document.querySelector('#cam2-container img');
-    btn = document.getElementById("manual-capture-underwater");
-  } else {
-    alert("Jenis kamera tidak valid!");
-    return;
-  }
-  if (!imgEl) {
-    alert("Stream kamera tidak ditemukan!");
-    return;
-  }
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Memotret...";
-  }
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = imgEl.naturalWidth || imgEl.width;
-    canvas.height = imgEl.naturalHeight || imgEl.height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
-    const dataURL = canvas.toDataURL('image/jpeg');
-    addImageToGallery(dataURL, camType);
-  } catch (err) {
-    alert("Gagal mengambil foto: " + err.message);
-  }
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = camType === "surface" ? "Potret Atas (S)" : "Potret Bawah (U)";
-  }
-}
-
-function addImageToGallery(dataURL, camType) {
-  const galleryImagesEl = document.getElementById("gallery-images");
-  if (!galleryImagesEl) return;
-  const img = document.createElement("img");
-  img.src = dataURL;
-  img.alt = camType === "surface" ? "Surface Capture" : "Underwater Capture";
-  img.title = camType === "surface" ? "Surface Capture" : "Underwater Capture";
-  img.addEventListener("click", () => {
-    const modal = document.getElementById("image-modal");
-    const modalImg = document.getElementById("modal-img");
-    const downloadBtn = document.getElementById("download-btn");
-    if (modal && modalImg && downloadBtn) {
-      modalImg.src = dataURL;
-      downloadBtn.href = dataURL;
-      modal.style.display = "block";
-    }
-  });
-  galleryImagesEl.prepend(img); // Tambahkan di atas
-}
+// === FUNGSI MANUAL CAPTURE (DIHAPUS) ===

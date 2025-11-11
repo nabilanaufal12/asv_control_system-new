@@ -1,13 +1,33 @@
 :root {
-  --primary: #1e90ff;
-  --primary-dark: #0066cc;
-  --secondary: #8db3de;
-  --accent: #cc2e2e;
+  /* -- VAR LAMA (TEMA TERANG) --
   --light: #f5f5f5;
   --gray: #d9d9d9;
   --dark-gray: #9f9f9f;
   --text: #333333;
   --white: #ffffff;
+  --secondary: #8db3de;
+  */
+
+  /* === PALET WARNA BARU (TEMA GELAP) === */
+  --primary: #1e90ff;       /* Biru Cerah (Aksen) */
+  --primary-dark: #0066cc;  /* Biru Lebih Gelap (Hover) */
+  --accent: #cc2e2e;      /* Merah (Aksen Bahaya/Mode) */
+  
+  --bg-dark: #1a1a2e;      /* Latar Belakang Utama (Navy Paling Gelap) */
+  --bg-card: #2a2a4e;      /* Latar Belakang Panel/Card (Navy) */
+  --bg-item: #1a1a2e;      /* Latar Belakang Item Info (Gelap) */
+  --border: #4a4a70;      /* Warna Border Halus */
+
+  --text-primary: #f0f0f5;  /* Teks Utama (Putih Gading) */
+  --text-secondary: #b0b0d0; /* Teks Label (Abu-abu Keunguan) */
+  --white: #ffffff;         /* Putih Murni */
+
+  /* Pemetaan var lama ke baru untuk keamanan (jika ada yg terlewat) */
+  --light: var(--bg-dark);
+  --gray: var(--border);
+  --dark-gray: var(--text-secondary);
+  --text: var(--text-primary);
+  --secondary: var(--bg-card); /* Ganti --secondary lama */
 }
 
 * {
@@ -18,8 +38,9 @@
 }
 
 body {
-  background-color: var(--light);
-  color: var(--text);
+  /* Terapkan warna dasar tema gelap */
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
   line-height: 1.6;
 }
 
@@ -29,6 +50,7 @@ body {
   min-height: 100vh;
   max-width: 1920px;
   margin: 0 auto;
+  /* background-color: var(--light); (Sudah di body) */
 }
 
 /* Header Styles */
@@ -37,8 +59,10 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 20px 40px;
-  background-color: var(--primary);
+  /* Ganti dari biru ke warna card agar lebih elegan */
+  background-color: var(--bg-card); 
   color: var(--white);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-title h1 {
@@ -86,15 +110,18 @@ body {
   gap: 20px;
 }
 
-/* Section Styles */
+/* Section Styles (Card) */
 .trajectory-section,
 .camera-section,
 .info-section,
 .capture-section {
-  background-color: var(--white);
+  /* Terapkan gaya card */
+  background-color: var(--bg-card);
   border-radius: 15px;
   padding: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border);
+  /* box-shadow tidak terlihat di tema gelap, ganti dengan border */
+  /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); */
 }
 
 .section-header {
@@ -107,7 +134,7 @@ body {
 .section-header h3 {
   font-size: 1.8rem;
   font-weight: 800;
-  color: var(--text);
+  color: var(--text-primary); /* Pastikan warna teks utama */
 }
 
 .auto-mode {
@@ -132,9 +159,10 @@ body {
 /* Trajectory Map */
 .trajectory-map {
   height: 500px;
-  border: 3px solid var(--text);
-  border-radius: 15px 15px 0 0;
-  background-color: var(--gray);
+  /* Ganti border tebal dengan border halus */
+  border: 1px solid var(--border);
+  border-radius: 8px; /* Samakan dengan elemen internal lain */
+  background-color: var(--bg-dark); /* Latar peta lebih gelap dari card */
   position: relative;
   overflow: hidden;
 }
@@ -158,21 +186,23 @@ body {
 .camera-container {
   height: 300px;
   border-radius: 8px;
-  background-color: #222;
+  background-color: var(--bg-dark); /* Latar video/placeholder */
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
 
-.camera-feed video {
+.camera-feed video, 
+.camera-container img { /* Terapkan juga ke img */
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: 8px; /* Tambahkan radius ke gambar */
 }
 
 .camera-placeholder {
-  color: #aaa;
+  color: var(--text-secondary); /* Ganti warna placeholder */
   font-size: 1.2rem;
 }
 
@@ -185,22 +215,31 @@ body {
 
 .info-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 15px;
+  /* Gunakan 2 kolom agar tidak terlalu panjang */
+  grid-template-columns: 1fr 1fr; 
+  gap: 12px;
 }
 
 .info-item {
+  /* Desain ulang info-item agar lebih rapi */
+  background-color: var(--bg-item);
+  padding: 12px;
+  border-radius: 8px;
   display: flex;
   justify-content: space-between;
-  font-size: 1.3rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  font-size: 1rem; /* Sesuaikan ukuran font */
 }
 
 .info-item span:first-child {
   font-weight: 500;
+  color: var(--text-secondary); /* Warna label redup */
 }
 
 .info-item span:last-child {
   font-weight: 700;
+  color: var(--text-primary); /* Warna value terang */
 }
 
 /* Capture Section */
@@ -213,7 +252,7 @@ body {
 .capture-tabs {
   display: flex;
   margin-bottom: 20px;
-  border-bottom: 2px solid var(--gray);
+  border-bottom: 2px solid var(--border); /* Ganti warna border */
 }
 
 .tab-button {
@@ -224,11 +263,11 @@ body {
   font-weight: 800;
   cursor: pointer;
   position: relative;
-  color: var(--dark-gray);
+  color: var(--text-secondary); /* Ganti warna tab non-aktif */
 }
 
 .tab-button.active {
-  color: var(--primary);
+  color: var(--primary); /* Warna tab aktif (biru) */
 }
 
 .tab-button.active::after {
@@ -243,9 +282,9 @@ body {
 
 .capture-results {
   height: 300px;
-  background-color: var(--secondary);
+  background-color: var(--bg-dark); /* Ganti background jadi gelap */
   border-radius: 10px;
-  padding: 20px;
+  /* padding: 20px; (Padding sudah ada di .capture-grid) */
   position: relative;
   overflow: hidden;
 }
@@ -257,30 +296,37 @@ body {
   height: 100%;
   overflow-y: auto;
   padding: 10px;
+  border-radius: 8px; /* Tambahkan radius */
+}
+
+/* Styling untuk pesan 'loading' atau 'kosong' di galeri */
+.capture-grid p {
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0;
+  width: 100%;
+  grid-column: 1 / -1; /* Pastikan teks ter-span penuh */
 }
 
 .capture-grid.hidden {
   display: none;
 }
 
-.capture-item {
+/* Ganti .capture-item img dengan .capture-grid img */
+.capture-grid img {
+  width: 100%;
+  height: 100px; /* Beri tinggi tetap agar rapi */
+  object-fit: cover;
   background-color: var(--white);
   border-radius: 8px;
-  height: 100px;
   cursor: pointer;
   transition: transform 0.2s;
   overflow: hidden;
 }
 
-.capture-item:hover {
+.capture-grid img:hover {
   transform: scale(1.05);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-.capture-item img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 /* Wave Effect */
@@ -290,6 +336,8 @@ body {
   left: 0;
   width: 100%;
   overflow: hidden;
+  z-index: 0;
+  pointer-events: none; /* Agar tidak menghalangi klik */
 }
 
 .wave {
@@ -298,7 +346,8 @@ body {
   left: 0;
   width: 200%;
   height: 100px;
-  background: url('data:image/svg+xml;utf8,<svg viewBox="0 0 1200 120" xmlns="http://www.w3.org/2000/svg"><path d="M0,0V46.29c47.79,22.2,103.59,32.17,158,28,70.36-5.37,136.33-33.31,206.8-37.5C438.64,32.43,512.34,53.67,583,72.05c69.27,18,138.3,24.88,209.4,13.08,36.15-6,69.85-17.84,104.45-29.34C989.49,25,1113-14.29,1200,52.47V0Z" fill="%23BACEFF" opacity=".25"/></svg>');
+  /* Ganti warna fill SVG ke warna border tema gelap */
+  background: url('data:image/svg+xml;utf8,<svg viewBox="0 0 1200 120" xmlns="http://www.w3.org/2000/svg"><path d="M0,0V46.29c47.79,22.2,103.59,32.17,158,28,70.36-5.37,136.33-33.31,206.8-37.5C438.64,32.43,512.34,53.67,583,72.05c69.27,18,138.3,24.88,209.4,13.08,36.15-6,69.85-17.84,104.45-29.34C989.49,25,1113-14.29,1200,52.47V0Z" fill="%234a4a70" opacity=".25"/></svg>');
   background-size: 50% 100px;
   background-repeat: repeat-x;
   transform: rotate(180deg);
@@ -333,12 +382,13 @@ body {
 }
 
 .modal-content {
-  background-color: var(--white);
+  background-color: var(--bg-card); /* Modal juga gelap */
   border-radius: 15px;
   padding: 30px;
   max-width: 90%;
   max-height: 90%;
   text-align: center;
+  border: 1px solid var(--border);
 }
 
 #modal-img {
@@ -376,7 +426,7 @@ body {
 }
 
 .btn-secondary {
-  background-color: var(--dark-gray);
+  background-color: var(--border); /* Ganti warna secondary */
 }
 
 .btn-secondary:hover {
@@ -389,7 +439,7 @@ body {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #666;
+  color: var(--text-secondary); /* Ganti warna */
   font-size: 1.2rem;
 }
 
@@ -398,7 +448,7 @@ body {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #e74c3c;
+  color: #e74c3c; /* Warna error (merah) tetap ok */
   font-size: 1.2rem;
 }
 
@@ -415,6 +465,11 @@ body {
   .trajectory-map {
     height: 400px;
   }
+  
+  .info-grid {
+    /* Tetap 2 kolom di tablet */
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -422,6 +477,17 @@ body {
     flex-direction: column;
     text-align: center;
     gap: 15px;
+    padding: 15px; /* Kurangi padding di mobile */
+  }
+
+  .header-logos {
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap; /* Izinkan logo wrap */
+  }
+  
+  .logo {
+    height: 50px; /* Kecilkan logo di mobile */
   }
 
   .header-title h1 {
@@ -439,6 +505,20 @@ body {
   .capture-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .main-content {
+    padding: 10px; /* Kurangi padding di mobile */
+    gap: 10px;
+  }
+
+  .left-column, .right-column {
+    gap: 10px;
+  }
+
+  /* Buat info grid 1 kolom di mobile */
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 #map-canvas {
@@ -449,6 +529,7 @@ body {
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center center;
+    border-radius: 8px; /* Samakan radius */
 }
 
 /* MODIFIKASI: Styling Ikon Waypoint Kustom
@@ -457,8 +538,8 @@ body {
 
 /* Marker untuk WP yang sedang dituju (Target) - Biru Cerah/Default */
 .leaflet-marker-icon.wp-target {
-  /* filter: hue-rotate(170deg) brightness(1.2); */ 
-  /* (Biarkan default biru agar paling menonjol) */
+  /* Biarkan default biru agar paling menonjol */
+  /* filter: hue-rotate(0deg); */
 }
 
 /* Marker untuk WP yang sudah selesai - Hijau */

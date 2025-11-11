@@ -72,7 +72,8 @@
       }
 
       /* --- MODIFIKASI: CSS UNTUK GALERI BARU --- */
-      #gallery-images {
+      /* Menggunakan class .capture-grid yang sudah ada */
+      .capture-grid {
         max-height: 200px; /* Beri batas ketinggian */
         overflow-y: auto; /* Buat bisa di-scroll jika gambar banyak */
         background-color: #ecf0f1;
@@ -80,12 +81,12 @@
         padding: 10px;
         box-sizing: border-box;
       }
-      #gallery-images p {
+      .capture-grid p {
         color: #7f8c8d;
         text-align: center;
         margin: 0;
       }
-      #gallery-images img {
+      .capture-grid img {
         width: 100%;
         margin-bottom: 8px;
         border-radius: 4px;
@@ -93,23 +94,7 @@
       }
       /* --- AKHIR MODIFIKASI CSS --- */
 
-      /* --- === MODIFIKASI BARU: CSS UNTUK TOMBOL MANUAL CAPTURE === --- */
-      .manual-capture-controls {
-        margin-top: 10px; 
-        display: flex; 
-        gap: 10px;
-      }
-      .manual-capture-controls .btn {
-        flex: 1;
-        padding: 8px; /* Buat tombol sedikit lebih besar */
-        font-weight: bold;
-        cursor: pointer;
-      }
-      .manual-capture-controls .btn:disabled {
-        background-color: #bdc3c7; /* Warna saat loading */
-        cursor: wait;
-      }
-      /* --- === AKHIR CSS BARU === --- */
+      /* --- === CSS UNTUK TOMBOL MANUAL CAPTURE (DIHAPUS DARI SINI) === --- */
 
     </style>
   </head>
@@ -224,23 +209,37 @@
               </div>
             </div>
 
-            <div class="manual-capture-controls">
-              <button id="manual-capture-surface" class="btn" style="background-color: #3498db; color: white;">
-                Potret Atas (S)
-              </button>
-              <button id="manual-capture-underwater" class="btn btn-secondary" style="background-color: #95a5a6; color: white;">
-                Potret Bawah (U)
-              </button>
-            </div>
-            </section> <section class="capture-section">
-            <div class="section-header">
-              <h3>Capture Results</h3>
-              <button id="refresh-gallery-btn">Refresh Gallery</button>
-            </div>
-            <div id="gallery-images" class="capture-grid">
-              <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
-            </div>
-          </section>
+            </section> 
+            <section class="capture-section">
+              <div class="section-header">
+                <h3>Capture Results</h3>
+                <button id="refresh-gallery-btn">Refresh Gallery</button>
+              </div>
+
+              <div class="capture-tabs">
+                <button class="tab-button gallery-tab-button active" data-tab="surface">
+                  Surface
+                </button>
+                <button class="tab-button gallery-tab-button" data-tab="underwater">
+                  Underwater
+                </button>
+              </div>
+
+              <div class="capture-results">
+                <div class="capture-grid" id="surface-gallery">
+                  <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
+                </div>
+                <div class="capture-grid hidden" id="underwater-gallery">
+                  <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
+                </div>
+              
+                <div class="wave-container">
+                  <div class="wave"></div>
+                  <div class="wave"></div>
+                </div>
+              </div>
+
+            </section>
           
           </div>
       </main>
