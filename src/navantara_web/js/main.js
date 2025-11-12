@@ -32,11 +32,11 @@ document.addEventListener("DOMContentLoaded", () => {
     cogValue: document.getElementById("cog-value"),
     hdgValue: document.getElementById("hdg-value"),
     
-    // === MODIFIKASI: Elemen Galeri Baru ===
+    // === MODIFIKASI: Elemen Galeri Diperbarui ===
     refreshGalleryBtn: document.getElementById("refresh-gallery-btn"),
-    galleryTabButtons: document.querySelectorAll(".gallery-tab-button"), // <-- BARU
-    surfaceGallery: document.getElementById("surface-gallery"),       // <-- BARU
-    underwaterGallery: document.getElementById("underwater-gallery"), // <-- BARU
+    // galleryTabButtons: document.querySelectorAll(".gallery-tab-button"), // <-- [MODIFIKASI] DIHAPUS
+    surfaceGallery: document.getElementById("surface-gallery"),       
+    underwaterGallery: document.getElementById("underwater-gallery"), 
     
     // === Elemen Modal (Tetap) ===
     modal: document.getElementById("image-modal"),
@@ -121,8 +121,8 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshGallery(ELEMENTS); // Muat saat start
   }
 
-  // === MODIFIKASI: Panggil Fungsi Setup Tab ===
-  setupGalleryTabs(ELEMENTS);
+  // === MODIFIKASI: Panggil Fungsi Setup Tab DIHAPUS ===
+  // setupGalleryTabs(ELEMENTS); // <-- [MODIFIKASI] DIHAPUS
 
   // ... (Listener Modal)
   if (ELEMENTS.closeModalBtn && ELEMENTS.modal) {
@@ -212,34 +212,12 @@ async function refreshGallery(elements) {
   refreshGalleryBtn.disabled = false;
 }
 
-// === FUNGSI BARU: setupGalleryTabs ===
-/**
- * Mengatur logika klik untuk tab galeri (Surface/Underwater).
- */
+// === [MODIFIKASI] FUNGSI 'setupGalleryTabs' DIHAPUS ===
+/*
 function setupGalleryTabs(elements) {
-  if (elements.galleryTabButtons && elements.galleryTabButtons.length > 0) {
-    elements.galleryTabButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        // Hapus 'active' dari semua tombol
-        elements.galleryTabButtons.forEach((btn) => btn.classList.remove("active"));
-        // Tambahkan 'active' ke tombol yang diklik
-        button.classList.add("active");
-
-        const tabName = button.getAttribute("data-tab");
-
-        // Tampilkan/sembunyikan galeri yang sesuai
-        if(elements.surfaceGallery) {
-          elements.surfaceGallery.classList.toggle("hidden", tabName !== "surface");
-        }
-        if(elements.underwaterGallery) {
-          elements.underwaterGallery.classList.toggle("hidden", tabName !== "underwater");
-        }
-      });
-    });
-     // Atur tab default (misal surface)
-     if (elements.galleryTabButtons[0]) elements.galleryTabButtons[0].click();
-  }
+  ... (seluruh fungsi dihapus) ...
 }
+*/
 
 
 // === MODIFIKASI TOTAL: Menggunakan Server-Sent Events (SSE) ===

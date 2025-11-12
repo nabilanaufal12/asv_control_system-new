@@ -210,27 +210,27 @@
             </div>
 
             </section> 
+            
             <section class="capture-section">
               <div class="section-header">
                 <h3>Capture Results</h3>
                 <button id="refresh-gallery-btn">Refresh Gallery</button>
               </div>
 
-              <div class="capture-tabs">
-                <button class="tab-button gallery-tab-button active" data-tab="surface">
-                  Surface
-                </button>
-                <button class="tab-button gallery-tab-button" data-tab="underwater">
-                  Underwater
-                </button>
-              </div>
-
               <div class="capture-results">
-                <div class="capture-grid" id="surface-gallery">
-                  <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
+                
+                <div class="gallery-column">
+                  <h4>Surface</h4>
+                  <div class="capture-grid" id="surface-gallery">
+                    <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
+                  </div>
                 </div>
-                <div class="capture-grid hidden" id="underwater-gallery">
-                  <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
+
+                <div class="gallery-column">
+                  <h4>Underwater</h4>
+                  <div class="capture-grid" id="underwater-gallery">
+                    <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
+                  </div>
                 </div>
               
                 <div class="wave-container">
@@ -240,8 +240,7 @@
               </div>
 
             </section>
-          
-          </div>
+            </div>
       </main>
     </div>
 
