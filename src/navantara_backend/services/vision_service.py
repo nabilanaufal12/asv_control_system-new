@@ -8,26 +8,17 @@ import traceback
 import threading
 import eventlet
 import os
-import eventlet.tpool  # <-- Diimpor
+import eventlet.tpool
 import logging
 import torch
 import sys
 from pathlib import Path
-# --- [OPTIMASI 3] ---
 from dataclasses import asdict
-# --- [AKHIR OPTIMASI 3] ---
-
-# --- HAPUS IMPORT LAMA ---
-# from navantara_backend.vision.inference_engine import InferenceEngine
-
-# --- HAPUS IMPORT CLOUD UTILS ---
-# ... (impor cloud utils dihapus) ...
 
 from navantara_backend.vision.overlay_utils import (
     create_overlay_from_html,
     apply_overlay,
 )
-
 
 class VisionService:
     # --- Variabel Class untuk menyimpan frame terbaru & locks ---
@@ -66,7 +57,7 @@ class VisionService:
             "gate_activation_distance_cm", 200.0
         )
         self.obstacle_activation_distance = vision_cfg.get(
-            "obstacle_activation_distance_cm", 140.0
+            "obstacle_activation_distance_cm", 120.0
         )
 
         # State internal
@@ -472,14 +463,14 @@ class VisionService:
             cap.release()
         print(f"[{cam_id_log}] Loop dihentikan.")
 
-    # --- (Fungsi trigger_manual_capture tidak berubah) ---
+    # --- [MODIFIKASI UTAMA DI SINI] ---
     def trigger_manual_capture(self, capture_type: str):
         """
-        Memicu pengambilan gambar manual (Surface/Underwater)
+        Memicu pengambilan gambar (Surface/Underwater)
         dengan overlay telemetri.
-        Dipanggil oleh endpoint API.
+        Dipanggil oleh endpoint API / command socket.
         """
-        print(f"[Capture] Menerima trigger manual untuk: {capture_type}")
+        print(f"[Capture] Menerima trigger untuk: {capture_type}")
 
         frame_to_use = None
         mission_name = None
@@ -489,10 +480,7 @@ class VisionService:
         # 1. Dapatkan state telemetri saat ini
         try:
             with self.asv_handler.state_lock:
-                # --- [OPTIMASI 3] ---
-                # Ubah objek dataclass menjadi dict untuk overlay
                 current_state_dict = asdict(self.asv_handler.current_state)
-                # --- [AKHIR OPTIMASI 3] ---
         except Exception as e:
             print(f"[Capture] Gagal mendapatkan state ASV: {e}")
             return {"status": "error", "message": "Gagal mendapatkan state ASV."}
@@ -505,8 +493,9 @@ class VisionService:
                 else:
                     print("[Capture] Gagal: Frame CAM 1 (Surface) tidak tersedia.")
                     return {"status": "error", "message": "Frame CAM 1 tidak tersedia."}
-
-            mission_name = "Surface Imaging (Manual)"
+            
+            # --- [MODIFIKASI] Hapus kata "(Manual)" ---
+            mission_name = "Surface Imaging" 
             filename_prefix = "surface"
             image_count = self.surface_image_count
             self.surface_image_count += 1
@@ -519,7 +508,8 @@ class VisionService:
                     print("[Capture] Gagal: Frame CAM 2 (Underwater) tidak tersedia.")
                     return {"status": "error", "message": "Frame CAM 2 tidak tersedia."}
 
-            mission_name = "Underwater Imaging (Manual)"
+            # --- [MODIFIKASI] Hapus kata "(Manual)" ---
+            mission_name = "Underwater Imaging"
             filename_prefix = "underwater"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
@@ -528,12 +518,9 @@ class VisionService:
             return {"status": "error", "message": "Tipe capture tidak valid."}
 
         try:
-            # --- [OPTIMASI 3] ---
-            # Kirim dict, bukan objek dataclass
             overlay_data = create_overlay_from_html(
                 current_state_dict, mission_type=mission_name
             )
-            # --- [AKHIR OPTIMASI 3] ---
             snapshot = apply_overlay(frame_to_use, overlay_data)
         except Exception as e:
             print(f"[Capture] Gagal membuat overlay: {e}")
@@ -549,7 +536,7 @@ class VisionService:
             if ret:
                 with open(save_path, "wb") as f:
                     f.write(buffer)
-                print(f"[Capture] Foto manual BERHASIL disimpan: {save_path}")
+                print(f"[Capture] Foto BERHASIL disimpan: {save_path}")
                 return {"status": "success", "file": filename}
             else:
                 raise Exception("cv2.imencode gagal")
@@ -561,6 +548,7 @@ class VisionService:
             else:
                 self.underwater_image_count -= 1
             return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
+    # --- [AKHIR MODIFIKASI UTAMA] ---
 
     # --- [FUNGSI DIPERBARUI TOTAL] ---
     def process_and_control(self, frame, is_mode_auto):

@@ -194,6 +194,16 @@ class MainWindow(QMainWindow):
         self.waypoints_panel.send_photo_mission.connect(
             lambda payload: self.api_client.send_command("SET_PHOTO_MISSION", payload)
         )
+        
+        # --- [MODIFIKASI BARU UNTUK MANUAL CAPTURE] ---
+        # Hubungkan sinyal BARU dari control_panel ke slot/fungsi baru
+        self.control_panel.capture_surface_clicked.connect(
+            self.on_request_manual_capture_surface
+        )
+        self.control_panel.capture_underwater_clicked.connect(
+            self.on_request_manual_capture_underwater
+        )
+        # --- [AKHIR MODIFIKASI BARU] ---
 
     @Slot(str)
     def set_mode(self, mode):
@@ -266,6 +276,24 @@ class MainWindow(QMainWindow):
         self.header.connection_status_label.setText(status_text)
         self.header.connection_status_label.setProperty("status", status_prop)
         self.style().polish(self.header.connection_status_label)
+
+    # --- [MODIFIKASI BARU UNTUK MANUAL CAPTURE] ---
+    @Slot()
+    def on_request_manual_capture_surface(self):
+        """
+        Dipanggil ketika tombol 'Capture Surface' diklik.
+        """
+        print("[GUI] Meminta capture 'surface'...")
+        self.api_client.send_command("MANUAL_CAPTURE", {"type": "surface"})
+
+    @Slot()
+    def on_request_manual_capture_underwater(self):
+        """
+        Dipanggil ketika tombol 'Capture Underwater' diklik.
+        """
+        print("[GUI] Meminta capture 'underwater'...")
+        self.api_client.send_command("MANUAL_CAPTURE", {"type": "underwater"})
+    # --- [AKHIR MODIFIKASI BARU] ---
 
     def closeEvent(self, event):
         print("Menutup aplikasi...")

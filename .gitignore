@@ -26,11 +26,12 @@ config/
 *.sln
 *.sw?
 
-# File yang Dihasilkan Otomat
+# File yang Dihasilkan Otomatis
 snapshots/
 *.log
 yolov5/runs/
 mission_logs/
+logs/
 
 # File Sensitif (jika ada)
 credentials.json

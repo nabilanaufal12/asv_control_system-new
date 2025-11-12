@@ -199,10 +199,59 @@ def handle_socket_command(json_data):
     print(f"Menerima perintah via WebSocket: {command} dengan payload: {payload}")
 
     try:
-        # Kirim ke kedua layanan. Biarkan mereka mengurusnya.
-        current_app.asv_handler.process_command(command, payload)
-        current_app.vision_service.process_command(command, payload) # (Asumsi ini ada)
+        # --- [MODIFIKASI DIMULAI] ---
+        
+        # 1. Perintah Khusus untuk Fitur Baru (Manual Capture)
+        if command == "MANUAL_CAPTURE":
+            capture_type = payload.get("type") # "surface" atau "underwater"
+            if capture_type:
+                print(f"[API] Memanggil trigger_manual_capture untuk: {capture_type}")
+                # Panggil fungsi yang sudah ada di vision_service
+                result = current_app.vision_service.trigger_manual_capture(capture_type)
+                
+                # (Opsional) Kirim konfirmasi kembali ke GUI jika perlu
+                # socketio.emit("capture_status", result) 
+            else:
+                print("[API] Perintah MANUAL_CAPTURE diterima, tapi 'type' tidak ada.")
+                
+        # 2. Perintah Lainnya (Navigasi, dll)
+        else:
+            # Kirim ke asv_handler (seperti sebelumnya)
+            current_app.asv_handler.process_command(command, payload)
+            
+            # Cek apakah vision_service memiliki 'process_command'
+            # (File Anda memiliki asumsi ini, tapi tidak ada di vision_service.py)
+            if hasattr(current_app.vision_service, "process_command"):
+                 current_app.vision_service.process_command(command, payload)
+            # else:
+            #    print("[API] Peringatan: vision_service.process_command tidak ditemukan.")
+
+        # --- [MODIFIKASI SELESAI] ---
 
     except Exception as e:
         print(f"[API] Error saat memproses command '{command}': {e}")
         traceback.print_exc()
+
+# --- [CATATAN: PENDEKATAN HTTP YANG ANDA MINTA] ---
+# Jika Anda *tetap* menginginkan endpoint HTTP, Anda bisa menambahkannya seperti ini.
+# Namun, ini akan lebih rumit di sisi GUI karena api_client Anda
+# saat ini murni Socket.IO.
+
+@api_blueprint.route("/api/capture/<string:cam_type>", methods=["POST"])
+def http_manual_capture(cam_type):
+    """Endpoint HTTP alternatif untuk manual capture."""
+    if cam_type not in ["surface", "underwater"]:
+        return jsonify({"status": "error", "message": "Tipe kamera tidak valid"}), 400
+    
+    try:
+        vision_service = current_app.vision_service
+        result = vision_service.trigger_manual_capture(cam_type)
+        
+        if result.get("status") == "success":
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
+            
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
