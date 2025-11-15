@@ -1,7 +1,7 @@
 // js/main_local.js
 
 // === MODIFIKASI: Definisikan IP Server di satu tempat ===
-const SERVER_IP = "http://192.168.1.26:5000";
+const SERVER_IP = "http://192.168.1.20:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -32,11 +32,11 @@ document.addEventListener("DOMContentLoaded", () => {
     cogValue: document.getElementById("cog-value"),
     hdgValue: document.getElementById("hdg-value"),
     
-    // === MODIFIKASI: Elemen Galeri Diperbarui ===
+    // === MODIFIKASI: Elemen Galeri Baru ===
     refreshGalleryBtn: document.getElementById("refresh-gallery-btn"),
-    // galleryTabButtons: document.querySelectorAll(".gallery-tab-button"), // <-- [MODIFIKASI] DIHAPUS
-    surfaceGallery: document.getElementById("surface-gallery"),       
-    underwaterGallery: document.getElementById("underwater-gallery"), 
+    // galleryTabButtons: document.querySelectorAll(".gallery-tab-button"), // <-- DIHAPUS
+    surfaceGallery: document.getElementById("surface-gallery"),       // <-- BARU
+    underwaterGallery: document.getElementById("underwater-gallery"), // <-- BARU
     
     // === Elemen Modal (Tetap) ===
     modal: document.getElementById("image-modal"),
@@ -122,7 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // === MODIFIKASI: Panggil Fungsi Setup Tab DIHAPUS ===
-  // setupGalleryTabs(ELEMENTS); // <-- [MODIFIKASI] DIHAPUS
+  // setupGalleryTabs(ELEMENTS);
 
   // ... (Listener Modal)
   if (ELEMENTS.closeModalBtn && ELEMENTS.modal) {
@@ -319,7 +319,7 @@ function setupLocalSocketIO(elements, icons) { // <-- Terima ikon kustom
           completedPathCoords.push(wpLatLng);
 
         } else {
-          // STATUS: BELUM DIJELAJAHI
+          // STATUS: BELUM DIJELAJHI
           L.marker(wpLatLng, { icon: icons.pendingWpIcon }) // <-- Gunakan icon
             .addTo(waypointLayer)
             .bindPopup(`WP ${i} (Pending)`);
@@ -342,13 +342,18 @@ function setupLocalSocketIO(elements, icons) { // <-- Terima ikon kustom
     if (data.use_dummy_counter === true) {
       point = data.debug_waypoint_counter || 0;
     } else {
-      point = data.current_waypoint_index || 0; 
+      // =================================================================
+      // === PERBAIKAN DI SINI ===
+      // Mengganti 'data.current_waypoint_index' menjadi 'data.nav_target_wp_index'
+      point = data.nav_target_wp_index || 0; 
+      // =================================================================
+      
       if (
         data.waypoints &&
         data.waypoints.length > 0 &&
         point < data.waypoints.length
       ) {
-        point = point + 1;
+        point = point + 1; // Logika ini benar, karena canvas 'drawUpToPoint(N)' menggambar N titik pertama
       } else {
         point = 0;
       }
@@ -543,5 +548,6 @@ function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
   const lon2 = (lon2Rad * 180) / Math.PI;
   return { lat: lat2, lng: lon2 };
 }
+
 
 // === FUNGSI MANUAL CAPTURE (DIHAPUS) ===
