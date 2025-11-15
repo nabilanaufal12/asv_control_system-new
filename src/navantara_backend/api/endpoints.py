@@ -1,5 +1,12 @@
 # src/navantara_backend/api/endpoints.py
-from flask import Blueprint, current_app, Response
+from flask import (
+    Blueprint,
+    current_app,
+    Response,
+    stream_with_context,
+    request,
+    jsonify,  # <-- TAMBAHKAN INI
+)
 import cv2
 import eventlet
 import traceback  # Impor traceback untuk log error yang lebih detail

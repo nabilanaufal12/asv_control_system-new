@@ -1,7 +1,7 @@
 // js/main_local.js
 
 // === MODIFIKASI: Definisikan IP Server di satu tempat ===
-const SERVER_IP = "http://192.168.1.20:5000";
+const SERVER_IP = "http://192.168.1.26:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -543,6 +543,5 @@ function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
   const lon2 = (lon2Rad * 180) / Math.PI;
   return { lat: lat2, lng: lon2 };
 }
-
 
 // === FUNGSI MANUAL CAPTURE (DIHAPUS) ===

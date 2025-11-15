@@ -46,7 +46,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 9999.0 # default = 0.0
+    nav_dist_to_wp: float = 0.0 # default = 0.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
