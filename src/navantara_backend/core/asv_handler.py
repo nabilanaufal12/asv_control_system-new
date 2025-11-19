@@ -4,7 +4,7 @@ import time
 import math
 import numpy as np
 import json
-import logging  # <-- PASTIKAN INI ADA
+import logging
 
 # --- [OPTIMASI 3] ---
 from dataclasses import dataclass, asdict, field
@@ -46,7 +46,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 0.0 # default = 0.0
+    nav_dist_to_wp: float = 9999.0 # default = 0.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -59,6 +59,8 @@ class AsvState:
     use_dummy_counter: bool = False
     esp_status: str = None
     vision_target: dict = field(default_factory=lambda: {"active": False})
+    # gate_target & gate_context dibiarkan agar tidak error jika dipanggil UI/Vision, 
+    # tapi tidak lagi digunakan dalam logika.
     gate_target: dict = field(default_factory=lambda: {"active": False})
     avoidance_direction: str = None
     is_avoiding: bool = False
@@ -69,14 +71,9 @@ class AsvState:
     resume_waypoint_on_clear: bool = False
     inverse_servo: bool = False
     # --- [MODIFIKASI 1.1: Atribut Misi Foto Dual-Target] ---
-    # Target Waypoint (diset -1 jika tidak aktif)
     photo_mission_target_wp1: int = -1
     photo_mission_target_wp2: int = -1
-    
-    # Jumlah foto yang diminta (berlaku untuk KEDUA target)
     photo_mission_qty_requested: int = 0
-    
-    # Counter terpisah untuk masing-masing target
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
     # --- [AKHIR MODIFIKASI 1.1] ---
@@ -95,12 +92,10 @@ class AsvHandler:
         self.reconnect_interval = 5.0
 
         # --- [OPTIMASI 3] ---
-        # Mengganti kamus besar dengan instance dataclass
         self.current_state = AsvState()
         # --- [AKHIR OPTIMASI 3] ---
 
         # --- [OPTIMASI 1: DELTA STATE] ---
-        # Melacak state terakhir yang dikirim ke GUI
         self.last_emitted_state = {}
         # --- [AKHIR OPTIMASI 1] ---
 
@@ -142,7 +137,7 @@ class AsvHandler:
         logging.info("[AsvHandler] Memulai upaya koneksi serial otomatis...")
         self.serial_handler.find_and_connect_esp32(baud_rate)
 
-    # --- [FUNGSI _update_and_emit_state DIMODIFIKASI UNTUK OPTIMASI 3] ---
+    # --- [FUNGSI _update_and_emit_state DIMODIFIKASI] ---
     def _update_and_emit_state(self):
         """
         Secara efisien menghitung logika status dan HANYA mengirimkan
@@ -158,9 +153,7 @@ class AsvHandler:
             # 1. Salin HANYA data yang diperlukan untuk logika status
             is_serial_connected = self.serial_handler.is_connected
             control_mode = self.current_state.control_mode
-            gate_target_active = self.current_state.gate_target.get("active", False)
             vision_target_active = self.current_state.vision_target.get("active", False)
-            last_gate_config = self.current_state.gate_context.get("last_gate_config")
             recovering = self.current_state.recovering_from_avoidance
             esp_status = self.current_state.esp_status
             waypoints = self.current_state.waypoints
@@ -170,17 +163,13 @@ class AsvHandler:
             # 2. Update status koneksi internal (GUI perlu ini)
             self.current_state.is_connected_to_serial = is_serial_connected
 
-            # --- (SEMUA LOGIKA 'status' ANDA TETAP SAMA) ---
+            # 3. Logika Status (Dimodifikasi: Hapus Gate/Contextual)
             if not is_serial_connected:
                 processed_status = "DISCONNECTED (SERIAL)"
             elif rc_mode_switch < 1500:
                 processed_status = "RC MANUAL OVERRIDE"
-            elif gate_target_active:
-                processed_status = "AI: GATE TRAVERSAL"
-            elif vision_target_active and last_gate_config:
-                processed_status = f"AI: CONTEXTUAL AVOIDANCE ({last_gate_config})"
             elif vision_target_active:
-                processed_status = "AI: SIMPLE AVOIDANCE"
+                processed_status = "AI: STATIC AVOIDANCE"  # Status Baru
             elif recovering:
                 processed_status = "RECOVERING: STRAIGHTENING COURSE"
             elif control_mode == "AUTO":
@@ -198,13 +187,11 @@ class AsvHandler:
                 else:
                     processed_status = "AUTO IDLE"
             else:
-                processed_status = control_mode  # "MANUAL"
+                processed_status = control_mode
 
-            # 3. Tulis status yang baru diproses kembali ke state utama
             self.current_state.status = processed_status
 
-            # 4. Bangun "delta" (perbedaan)
-            #    Gunakan asdict() untuk mengubah dataclass menjadi dict untuk perbandingan
+            # 4. Bangun "delta"
             current_state_dict = asdict(self.current_state)
             for key, value in current_state_dict.items():
                 if (
@@ -213,15 +200,12 @@ class AsvHandler:
                 ):
                     delta_payload[key] = value
 
-            # 5. Update 'last_emitted_state' HANYA dengan apa yang berubah
             if delta_payload:
                 self.last_emitted_state.update(delta_payload)
-            # --- [LOCK DILEPAS] ---
 
-        # 6. Kirim HANYA 'delta_payload', bukan seluruh state
-        if delta_payload:  # Hanya kirim jika ada perubahan
+        if delta_payload:
             self.socketio.emit("telemetry_update", delta_payload)
-    # --- [AKHIR OPTIMASI 1 & 3] ---
+    # --- [AKHIR FUNGSI STATE] ---
 
 
     def _read_from_serial_loop(self):
@@ -295,7 +279,7 @@ class AsvHandler:
             )
     # --- [AKHIR OPTIMASI 3] ---
 
-    # --- [FUNGSI DIMODIFIKASI UNTUK OPTIMASI 2 & 3] ---
+    # --- [MAIN LOGIC LOOP DIMODIFIKASI TOTAL UNTUK REQUIREMENT BARU] ---
     def main_logic_loop(self):
         self.socketio.start_background_task(self._read_from_serial_loop)
         logging.info("[AsvHandler] Loop pembaca serial dimulai.")
@@ -319,7 +303,7 @@ class AsvHandler:
                     )
                     self.serial_handler.find_and_connect_esp32(baud_rate)
 
-                # --- (Blok EKF tetap sama, sudah pakai .key) ---
+                # --- (Blok EKF) ---
                 current_time = time.time()
                 dt = current_time - self.last_ekf_update_time
                 if dt > 0:
@@ -338,8 +322,7 @@ class AsvHandler:
                             ) % 360
                 # --- (Akhir Blok EKF) ---
 
-                # --- [OPTIMASI 2 & 3: MENGURANGI DURASI LOCK] ---
-                # Ambil HANYA data yang diperlukan untuk keputusan logika
+                # --- AMBIL DATA STATE ---
                 with self.state_lock:
                     rc_mode_switch = self.current_state.rc_channels[4]
                     control_mode = self.current_state.control_mode
@@ -349,25 +332,42 @@ class AsvHandler:
                     waypoints = self.current_state.waypoints
                     current_waypoint_index = self.current_state.current_waypoint_index
                     
-                    gate_target_active = self.current_state.gate_target.get("active", False)
-                    gate_target_frame_width = self.current_state.gate_target.get("frame_width", 640)
-                    gate_target_center_x = self.current_state.gate_target.get("gate_center_x")
-                    gate_target_red_x = self.current_state.gate_target.get("red_buoy_x")
-                    gate_target_green_x = self.current_state.gate_target.get("green_buoy_x")
-                    
                     vision_target_active = self.current_state.vision_target.get("active", False)
-                    vision_target_frame_width = self.current_state.vision_target.get("frame_width", 640)
-                    vision_target_obj_center_x = self.current_state.vision_target.get("object_center_x")
                     vision_target_obj_class = self.current_state.vision_target.get("obstacle_class", "")
                     
-                    gate_context_last_config = self.current_state.gate_context.get("last_gate_config")
+                    active_arena = self.current_state.active_arena
                     
                     resume_waypoint_on_clear = self.current_state.resume_waypoint_on_clear
                     nav_dist_to_wp = self.current_state.nav_dist_to_wp
                     esp_status = self.current_state.esp_status
-                    status = self.current_state.status  # Untuk cek WP_COMPLETE
-                    is_inverted = self.current_state.inverse_servo
-                # --- [LOCK DILEPAS] ---
+                    status = self.current_state.status
+                    # Note: inverse_servo (manual toggle) bisa digabung atau diabaikan jika sistem otomatis penuh
+
+                # --- KONFIGURASI SERVO & INVERSI ---
+                actuator_config = self.config.get("actuators", {})
+                servo_default = actuator_config.get("servo_default_angle", 90)
+                motor_base = actuator_config.get("motor_pwm_auto_base", 1300)
+                
+                # Sudut Statis (Normal)
+                # Default: Green -> 135 (Kanan), Red -> 45 (Kiri)
+                angle_static_right = 135
+                angle_static_left = 45
+                
+                # Konfigurasi Trigger Inversi
+                # (Bisa ditaruh di config.json bagian "avoidance_inversion")
+                inversion_cfg = self.config.get("avoidance_inversion", {
+                    "arena_a_wp_index": 7, # Default tinggi agar tidak terpicu sembarangan
+                    "arena_b_wp_index": 7
+                })
+                
+                # LOGIKA INVERSI OTOMATIS
+                is_inverted_auto = False
+                if active_arena == "Arena_A" and current_waypoint_index >= inversion_cfg.get("arena_a_wp_index", 999):
+                    is_inverted_auto = True
+                    logging.debug(f"[Logic] Auto Inversion ACTIVE (Arena A, WP {current_waypoint_index})")
+                elif active_arena == "Arena_B" and current_waypoint_index >= inversion_cfg.get("arena_b_wp_index", 999):
+                    is_inverted_auto = True
+                    logging.debug(f"[Logic] Auto Inversion ACTIVE (Arena B, WP {current_waypoint_index})")
 
                 command_to_send = None
 
@@ -387,154 +387,65 @@ class AsvHandler:
                     if mission_completed:
                         command_to_send = "W\n"
                     
-                    actuator_config = self.config.get("actuators", {})
-                    servo_default = actuator_config.get("servo_default_angle", 90)
-                    servo_min = actuator_config.get("servo_min_angle", 45)
-                    servo_max = actuator_config.get("servo_max_angle", 135)
-                    motor_base = actuator_config.get("motor_pwm_auto_base", 1300)
-
-                    # === PRIORITAS 3.1: MELEWATI GERBANG (GATE TRAVERSAL) ===
-                    if gate_target_active:
-                        with self.state_lock:
-                            self.current_state.recovering_from_avoidance = False
-                            self.current_state.is_avoiding = False
-                            self.current_state.avoidance_direction = None
-
-                        frame_width = gate_target_frame_width
-                        gate_center_x = gate_target_center_x
-                        red_buoy_x = gate_target_red_x
-                        green_buoy_x = gate_target_green_x
-
-                        if red_buoy_x is not None and green_buoy_x is not None:
-                            with self.state_lock:
-                                if red_buoy_x < green_buoy_x:
-                                    self.current_state.gate_context[
-                                        "last_gate_config"
-                                    ] = "red_left_green_right"
-                                else:
-                                    self.current_state.gate_context[
-                                        "last_gate_config"
-                                    ] = "green_left_red_right"
-
-                        if gate_center_x is not None:
-                            pixel_error = gate_center_x - (frame_width / 2)
-                            correction = map_value(
-                                pixel_error, -frame_width / 2, frame_width / 2, -35.0, 35.0
-                            )
-                            
-                            # Terapkan inversi
-                            if is_inverted:
-                                correction = -correction
-
-                            servo_cmd = int(
-                                max(servo_min, min(servo_max, servo_default - correction))
-                            )
-                            pwm_cmd = motor_base - 75
-
-                            # Cek jarak WP
-                            if nav_dist_to_wp < 1.5:
-                                command_to_send = "W\n"
-                                logging.info("[AsvHandler] AI GATE: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
-                            else:
-                                command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
-                                logging.info(f"[AsvHandler] AI CONTROL [Gate] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
-
-                    # === PRIORITAS 3.2: PENGHINDARAN TUNGGAL BERKONTEKS ===
-                    elif (
-                        vision_target_active
-                        and gate_context_last_config
-                    ):
+                    # === PRIORITAS 3.1: PENGHINDARAN STATIS (SIMPLE AVOIDANCE) ===
+                    # Menggantikan Gate Traversal & Contextual Avoidance
+                    if vision_target_active:
                         with self.state_lock:
                             self.current_state.recovering_from_avoidance = False
                             self.current_state.is_avoiding = True
-
-                        frame_width = vision_target_frame_width
-                        obj_center_x = vision_target_obj_center_x
-                        obj_class = vision_target_obj_class
-                        last_config = gate_context_last_config
-                        target_side = None
-
-                        if last_config == "red_left_green_right":
-                            if obj_class == "red_buoy": target_side = "left"
-                            elif obj_class == "green_buoy": target_side = "right"
-                        elif last_config == "green_left_red_right":
-                            if obj_class == "green_buoy": target_side = "left"
-                            elif obj_class == "red_buoy": target_side = "right"
-
-                        if target_side:
-                            target_x = (
-                                frame_width * 0.2 if target_side == "left" else frame_width * 0.8
-                            )
-                            pixel_error = obj_center_x - target_x
-                            correction_deg = (pixel_error / (frame_width / 2)) * 45.0
-                            
-                            if is_inverted:
-                                correction_deg = -correction_deg
-
-                            servo_cmd = int(
-                                max(servo_min, min(servo_max, servo_default - correction_deg))
-                            )
-                            pwm_cmd = int(max(1300, motor_base - abs(correction_deg) * 2))
-
-                            if nav_dist_to_wp < 1.5:
-                                command_to_send = "W\n"
-                                logging.info("[AsvHandler] AI CTX: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
-                            elif esp_status == "WP_COMPLETE" or status == "WP_COMPLETE":
-                                command_to_send = "W\n"
-                                logging.info("[AsvHandler] WP_COMPLETE dilaporkan oleh ESP32 -> mengirim W untuk melanjutkan waypoint")
-                            else:
-                                command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
-                                logging.info(f"[AsvHandler] AI CONTROL [Avoid Ctx] -> Servo: {servo_cmd} deg, Motor: {int(pwm_cmd)} us")
-                        else:
-                            with self.state_lock:
-                                self.current_state.gate_context["last_gate_config"] = None
-
-                    # === PRIORITAS 3.3: PENGHINDARAN TUNGGAL SEDERHANA (TANPA KONTEKS) ===
-                    elif vision_target_active:
-                        with self.state_lock:
-                            self.current_state.recovering_from_avoidance = False
-                            self.current_state.is_avoiding = True
+                            self.current_state.gate_context["last_gate_config"] = None # Clear context
                         
                         obj_class = vision_target_obj_class
+                        servo_cmd = servo_default
+                        desc = "Neutral"
                         
-                        angle_green_buoy = 50
-                        angle_red_buoy = 130
-                        
-                        if is_inverted:
-                            if obj_class == "green_buoy": servo_cmd = angle_red_buoy
-                            elif obj_class == "red_buoy": servo_cmd = angle_green_buoy
-                            else: servo_cmd = servo_default
+                        # Logika Pemilihan Sudut
+                        if is_inverted_auto:
+                            # INVERS:
+                            # Hijau -> Kiri (45)
+                            # Merah -> Kanan (135)
+                            if obj_class == "green_buoy":
+                                servo_cmd = angle_static_left
+                                desc = "Green->Left (INV)"
+                            elif obj_class == "red_buoy":
+                                servo_cmd = angle_static_right
+                                desc = "Red->Right (INV)"
                         else:
-                            if obj_class == "green_buoy": servo_cmd = angle_green_buoy
-                            elif obj_class == "red_buoy": servo_cmd = angle_red_buoy
-                            else: servo_cmd = servo_default
+                            # NORMAL:
+                            # Hijau -> Kanan (135)
+                            # Merah -> Kiri (45)
+                            if obj_class == "green_buoy":
+                                servo_cmd = angle_static_right
+                                desc = "Green->Right (NRM)"
+                            elif obj_class == "red_buoy":
+                                servo_cmd = angle_static_left
+                                desc = "Red->Left (NRM)"
                         
+                        # Motor agak ngebut untuk menghindar
                         pwm_cmd = motor_base + 350
                         
+                        # Pengecekan Jarak WP untuk override AI
                         if nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] AI SIMPLE: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
+                            logging.info("[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
                         elif esp_status == "WP_COMPLETE" or status == "WP_COMPLETE":
                             command_to_send = "W\n"
                             logging.info("[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W untuk melanjutkan waypoint")
                         else:
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
-                            logging.info(f"[AsvHandler] AI CONTROL [Avoid] -> Servo diputar ke: {servo_cmd}° untuk {obj_class}")
+                            logging.info(f"[AsvHandler] AI CONTROL [Static] -> {desc} | Servo: {servo_cmd}")
 
-                    # === PRIORITAS 3.4: TRANSISI INSTAN KE WAYPOINT ===
+                    # === PRIORITAS 3.2: TRANSISI INSTAN KE WAYPOINT ===
                     elif resume_waypoint_on_clear:
                         with self.state_lock:
-                            # --- [OPTIMASI 3] ---
-                            # update() tidak berfungsi di dataclass, set atribut individual
                             self.current_state.is_avoiding = False
                             self.current_state.avoidance_direction = None
                             self.current_state.recovering_from_avoidance = False
                             self.current_state.resume_waypoint_on_clear = False
-                            # --- [AKHIR OPTIMASI 3] ---
                         command_to_send = "W\n"
                         logging.info("[AsvHandler] Transisi cepat -> waypoint mode")
 
-                    # === PRIORITAS 3.5 (DEFAULT): NAVIGASI WAYPOINT ===
+                    # === PRIORITAS 3.3 (DEFAULT): NAVIGASI WAYPOINT ===
                     else:
                         with self.state_lock:
                             self.current_state.last_pixel_error = 0
@@ -545,7 +456,7 @@ class AsvHandler:
                             command_to_send = None
                             logging.info("[AsvHandler] WAYPOINT CONTROL -> Menunggu koneksi serial...")
 
-                # --- (Blok kirim perintah tetap sama) ---
+                # --- (Blok kirim perintah akhir) ---
                 if control_mode == "AUTO":
                     if esp_status == "WP_COMPLETE" or status in (
                         "WP_COMPLETE",
@@ -556,41 +467,33 @@ class AsvHandler:
                             and not command_to_send.strip().startswith("W")
                         ):
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] Mission complete detected -> forcing W and suppressing actuator commands")
+                            logging.info("[AsvHandler] Mission complete detected -> forcing W")
 
                 if command_to_send is None and resume_waypoint_on_clear:
-                    if (
-                        self.serial_handler.is_connected
-                        and control_mode == "AUTO"
-                    ):
+                    if self.serial_handler.is_connected and control_mode == "AUTO":
                         command_to_send = "W\n"
-                        logging.info("[AsvHandler] Vision cleared -> sending resume W to ESP32")
+                        logging.info("[AsvHandler] Vision cleared -> sending resume W")
                         with self.state_lock:
                             self.current_state.resume_waypoint_on_clear = False
 
                 if command_to_send:
                     self.serial_handler.send_command(command_to_send)
 
-                # --- [OPTIMASI 2 & 3: Buat dict HANYA untuk logging] ---
-                # Fungsi _update_and_emit_state sekarang menangani statenya sendiri
-                # Kita hanya perlu dict untuk logger dan firebase.
                 with self.state_lock:
                     state_for_log = asdict(self.current_state)
-                # --- [AKHIR OPTIMASI] ---
 
                 self.logger.log_telemetry(state_for_log)
-                self._update_and_emit_state() # Memanggil fungsi delta-state baru
+                self._update_and_emit_state() 
                 send_telemetry_to_firebase(state_for_log, self.config)
 
             except Exception as e:
                 logging.error(f"[FATAL] Error di main_logic_loop: {e}", exc_info=True)
 
             self.socketio.sleep(0.02)
-    # --- [AKHIR OPTIMASI 2 & 3] ---
+    # --- [AKHIR MAIN LOGIC LOOP] ---
 
 
     def process_command(self, command, payload):
-        # (Log debug sudah dihapus sesuai permintaan)
         # logging.critical(f"[Handler DEBUG] MENERIMA process_command: {command}")
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
@@ -601,13 +504,11 @@ class AsvHandler:
             "NAV_RETURN": self._handle_initiate_rth,
             "UPDATE_PID": self._handle_update_pid,
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
-            "GATE_TRAVERSAL_COMMAND": self._handle_gate_traversal_command,
+            # "GATE_TRAVERSAL_COMMAND": DIHAPUS
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "INVERSE_SERVO": self._handle_inverse_servo,
-            "SET_INVERSION": self._handle_set_inversion,  # (Handler inversi baru)
-            # --- [MODIFIKASI 1.2: Handler Misi Foto] ---
+            "SET_INVERSION": self._handle_set_inversion,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
-            # --- [AKHIR MODIFIKASI 1.2] ---
         }
         handler = command_handlers.get(command)
         if handler:
@@ -617,7 +518,6 @@ class AsvHandler:
                 f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'"
             )
 
-    # --- [FUNGSI DIMODIFIKASI UNTUK OPTIMASI 3] ---
     def _handle_set_inversion(self, payload):
         """Menangani toggling mode inversi dari GUI."""
         with self.state_lock:
@@ -635,19 +535,7 @@ class AsvHandler:
                 self.current_state.inverse_servo = bool(payload["value"])
             logging.info(f"[AsvHandler] inverse_servo diubah ke: {self.current_state.inverse_servo}")
 
-    def _handle_gate_traversal_command(self, payload):
-        with self.state_lock:
-            was_active = self.current_state.gate_target.get("active", False)
-            is_active = payload.get("active", False)
-            if was_active and not is_active:
-                logging.info("[AsvHandler] Gate traversal complete. Initiating recovery...")
-                self.current_state.recovering_from_avoidance = True
-                self.current_state.last_avoidance_time = time.time()
-
-            self.current_state.gate_target["active"] = is_active
-            if is_active:
-                self.current_state.gate_target.update(payload)
-                self.current_state.vision_target["active"] = False
+    # _handle_gate_traversal_command DIHAPUS
 
     def _handle_debug_counter(self, payload):
         action = payload.get("action")
@@ -669,40 +557,33 @@ class AsvHandler:
 
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
-            if self.current_state.gate_target.get("active"):
-                return
+            # Pengecekan gate_target.get("active") DIHAPUS karena gate logic sudah non-aktif
             was_active = self.current_state.vision_target.get("active")
             is_active = payload.get("active")
             if was_active and not is_active:
                 logging.info("[AsvHandler] Deteksi selesai -> langsung ke waypoint")
-                # --- [OPTIMASI 3] ---
-                # update() tidak berfungsi di dataclass, set atribut individual
                 self.current_state.recovering_from_avoidance = False
                 self.current_state.is_avoiding = False
                 self.current_state.avoidance_direction = None
                 self.current_state.resume_waypoint_on_clear = True
-                # --- [AKHIR OPTIMASI 3] ---
+                self.current_state.gate_context["last_gate_config"] = None # Reset
                 
             self.current_state.vision_target["active"] = is_active
             if is_active:
                 self.current_state.vision_target.update(payload)
-    # --- [AKHIR OPTIMASI 3] ---
 
     # --- [FUNGSI DIMODIFIKASI UNTUK OPTIMASI 2 & 3] ---
     def _handle_manual_control(self, payload):
-        # Ambil nilai yang diperlukan dari state DENGAN lock
         with self.state_lock:
             rc_channel_5 = self.current_state.rc_channels[4]
             control_mode = self.current_state.control_mode
             is_inverted = self.current_state.inverse_servo
 
-        # Logika keputusan bisa di luar lock
         if rc_channel_5 < 1500:
             return
         if control_mode != "MANUAL":
             return
 
-        # Logika perhitungan
         keys, actuator_config = set(payload), self.config.get("actuators", {})
         pwm_stop, pwr = actuator_config.get(
             "motor_pwm_stop", 1500
@@ -723,7 +604,6 @@ class AsvHandler:
         servo = servo_def - turn * (servo_def - servo_min)
         servo = max(servo_min, min(servo_max, servo))
 
-        # Tulis kembali hasil ke state DENGAN lock
         with self.state_lock:
             self.current_state.manual_servo_cmd = int(servo)
             self.current_state.manual_motor_cmd = int(pwm)
@@ -752,12 +632,10 @@ class AsvHandler:
         else:
             self.serial_handler.connect(port, baud)
 
-    # --- [FUNGSI DIMODIFIKASI UNTUK OPTIMASI 3] ---
     def _handle_mode_change(self, payload):
         with self.state_lock:
             new_mode = payload.get("mode", "MANUAL")
             self.current_state.control_mode = new_mode
-            # Simpan log
             self.logger.log_event(f"Mode kontrol GUI diubah ke: {new_mode}")
 
         if new_mode == "MANUAL":
@@ -800,11 +678,9 @@ class AsvHandler:
             self.current_state.control_mode = "AUTO"
         self.logger.log_event("Memulai Return to Home.")
     
-    # --- [MODIFIKASI 1.3: Fungsi Handler Misi Foto Diperbarui] ---
     def _handle_set_photo_mission(self, payload):
         """Mengatur parameter untuk misi fotografi otomatis (dual target)."""
         try:
-            # Ambil nilai dari payload, default -1 jika tidak diisi
             wp1 = int(payload.get("wp1", -1))
             wp2 = int(payload.get("wp2", -1))
             count = int(payload.get("count", 0))
@@ -813,8 +689,6 @@ class AsvHandler:
                 self.current_state.photo_mission_target_wp1 = wp1
                 self.current_state.photo_mission_target_wp2 = wp2
                 self.current_state.photo_mission_qty_requested = count
-                
-                # Reset kedua counter saat misi baru di-set
                 self.current_state.photo_mission_qty_taken_1 = 0
                 self.current_state.photo_mission_qty_taken_2 = 0
             
@@ -823,9 +697,6 @@ class AsvHandler:
         
         except Exception as e:
             logging.warning(f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}")
-    # --- [AKHIR MODIFIKASI 1.3] ---
-
-    # --- [AKHIR OPTIMASI 3] ---
 
     def stop(self):
         self.running = False
