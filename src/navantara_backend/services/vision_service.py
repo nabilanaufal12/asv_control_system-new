@@ -1,5 +1,4 @@
 # src/navantara_backend/services/vision_service.py
-# --- VERSI FINAL DENGAN PEMUAT MODEL BARU (YOLOv5 LANGSUNG) ---
 import cv2
 import numpy as np
 import collections
@@ -10,10 +9,13 @@ import eventlet
 import os
 import eventlet.tpool
 import logging
-import torch
 import sys
 from pathlib import Path
 from dataclasses import asdict
+
+# --- [MIGRASI 1: Import Ultralytics] ---
+from ultralytics import YOLO
+# ---------------------------------------
 
 from navantara_backend.vision.overlay_utils import (
     create_overlay_from_html,
@@ -36,18 +38,22 @@ class VisionService:
         self.socketio = socketio
         self.running = False
 
-        # --- [PERUBAHAN BESAR] Panggil pemuat model baru ---
+        # Ambil threshold dari config untuk digunakan saat inferensi nanti
+        vision_cfg = self.config.get("vision", {})
+        self.conf_thres = float(vision_cfg.get("conf_threshold", 0.25))
+        self.iou_thres = float(vision_cfg.get("iou_threshold", 0.45))
+
+        # --- [MIGRASI 2: Panggil pemuat model Ultralytics] ---
         self.model = self._load_yolo_model(config)
-        # --- [AKHIR PERUBAHAN] ---
+        # -----------------------------------------------------
 
         self.settings_lock = threading.Lock()
 
         # Pengaturan awal
         self.gui_is_listening = False
-        self.is_inverted = False  # State ini sudah tidak dipakai di sini
+        self.is_inverted = False
 
         # Pengaturan dari config.json
-        vision_cfg = self.config.get("vision", {})
         self.camera_index_1 = int(vision_cfg.get("camera_index_1", 0))
         self.camera_index_2 = int(vision_cfg.get("camera_index_2", 1))
         self.KNOWN_CLASSES = vision_cfg.get("known_classes", [])
@@ -72,10 +78,9 @@ class VisionService:
         self.surface_image_count = 0
         self.underwater_image_count = 0
 
-        # --- [MODIFIKASI 2.1: Atribut Cooldown Misi Foto] ---
+        # Atribut Cooldown Misi Foto
         self.photo_mission_cooldown_sec = 2.0
         self.last_auto_photo_time = 0
-        # --- [AKHIR MODIFIKASI 2.1] ---
 
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get("camera_detection", {
@@ -86,64 +91,56 @@ class VisionService:
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
         self.OBJECT_REAL_WIDTHS_CM = cam_detect_cfg.get("object_real_widths_cm", {})
 
-        print("[VisionService] Layanan Visi diinisialisasi.")
+        print("[VisionService] Layanan Visi (YOLOv11 + TensorRT Ready) diinisialisasi.")
 
-    # --- [FUNGSI BARU] Pemuat Model ---
+    # --- [FUNGSI BARU: ULTRALYTICS LOADER] ---
     def _load_yolo_model(self, config):
-        """Memuat model YOLOv5 (TensorRT atau PyTorch) secara langsung."""
+        """Memuat model YOLOv11 dengan prioritas TensorRT (.engine) lalu PyTorch (.pt)."""
         try:
-            # Tentukan path ke folder yolov5 BARU
-            yolo_dir = Path(__file__).parent.parent / "yolov5"
+            # Path relatif ke folder src/navantara_backend/vision/
+            vision_dir = Path(__file__).parent.parent / "vision"
+            
+            engine_path = vision_dir / "best.engine"
+            pt_path = vision_dir / "best.pt"
 
-            # Tentukan path HANYA ke file .pt
-            pt_path = yolo_dir / "besto.pt"
+            model_path = None
+            task_msg = ""
 
-            # Tambahkan path yolov5 ke sys.path agar torch.hub bisa bekerja
-            if str(yolo_dir) not in sys.path:
-                sys.path.insert(0, str(yolo_dir))
-
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-
-            # Kita HARUS memeriksa file .pt terlebih dahulu.
-            if not pt_path.exists():
-                print(
-                    f"[VisionService] KRITIS: File 'besto.pt' tidak ditemukan di {yolo_dir}"
-                )
-                print(
-                    f"[VisionService] Pastikan Anda sudah menyalin 'besto.pt' ke dalam folder 'yolov5' yang baru."
-                )
+            # 1. Cek TensorRT (.engine) - PRIORITAS UTAMA
+            if engine_path.exists():
+                print(f"[VisionService] MENEMUKAN MODEL TENSORRT: {engine_path}")
+                print("[VisionService] Menggunakan akselerasi hardware Jetson (CUDA/TensorRT).")
+                model_path = str(engine_path)
+                task_msg = "TensorRT Engine"
+            
+            # 2. Fallback ke PyTorch (.pt)
+            elif pt_path.exists():
+                print(f"[VisionService] Warning: .engine tidak ditemukan. Fallback ke .pt: {pt_path}")
+                print("[VisionService] Performa mungkin lebih lambat dibandingkan TensorRT.")
+                model_path = str(pt_path)
+                task_msg = "PyTorch Model"
+            
+            else:
+                print(f"[VisionService] KRITIS: Tidak ada model 'best.engine' atau 'best.pt' di {vision_dir}")
                 return None
 
-            print(f"[VisionService] Memuat model dari {pt_path}.")
-            print(
-                f"[VisionService] (Akan otomatis mencari 'besto.engine' untuk optimasi)"
-            )
-
-            # Muat model menggunakan torch.hub.
-            model = torch.hub.load(
-                str(yolo_dir),
-                "custom",
-                path=str(pt_path),  # <-- SELALU ARAHKAN KE .pt
-                source="local",
-                force_reload=True,
-                trust_repo=True,
-            )
-
-            model.to(device)
-
-            # Ambil conf/iou dari config
-            vision_cfg = config.get("vision", {})
-            model.conf = float(vision_cfg.get("conf_threshold", 0.25))
-            model.iou = float(vision_cfg.get("iou_threshold", 0.45))
-
-            print(f"[VisionService] Model YOLOv5 berhasil dimuat di device {device}.")
+            # Muat Model menggunakan Ultralytics
+            print(f"[VisionService] Memuat {task_msg}...")
+            model = YOLO(model_path, task='detect')
+            
+            # Pemanasan awal (Warmup) agar inferensi pertama tidak lag
+            # Gunakan ukuran gambar dummy standar 640x640
+            print("[VisionService] Melakukan warmup model...")
+            model.predict(source=np.zeros((640, 640, 3), dtype=np.uint8), verbose=False, device=0)
+            
+            print(f"[VisionService] Model berhasil dimuat dan siap.")
             return model
 
         except Exception as e:
-            print(f"[VisionService] KRITIS: Gagal total memuat model YOLOv5: {e}")
+            print(f"[VisionService] KRITIS: Gagal memuat model YOLOv11: {e}")
             traceback.print_exc()
             return None
-    # --- [AKHIR FUNGSI BARU] ---
+    # -----------------------------------------
 
     def _estimate_distance(self, pixel_width, object_class):
         real_width_cm = self.OBJECT_REAL_WIDTHS_CM.get(object_class)
@@ -327,7 +324,6 @@ class VisionService:
                     )
 
                 if apply_detection:
-
                     try:
                         processed_frame_ai = self.process_and_control(frame, is_auto)
                     except Exception as e:
@@ -435,12 +431,10 @@ class VisionService:
             cap.release()
         print(f"[{cam_id_log}] Loop dihentikan.")
 
-    # --- [MODIFIKASI UTAMA DI SINI] ---
     def trigger_manual_capture(self, capture_type: str):
         """
         Memicu pengambilan gambar (Surface/Underwater)
         dengan overlay telemetri.
-        Dipanggil oleh endpoint API / command socket.
         """
         print(f"[Capture] Menerima trigger untuk: {capture_type}")
 
@@ -518,10 +512,14 @@ class VisionService:
             else:
                 self.underwater_image_count -= 1
             return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
-    # --- [AKHIR MODIFIKASI UTAMA] ---
 
+    # --- [MIGRASI 3: INFERENSI BARU (ULTRALYTICS)] ---
     def process_and_control(self, frame, is_mode_auto):
-        """Processes frame with AI and triggers control logic if AUTO mode is active."""
+        """
+        Memproses frame menggunakan YOLOv11 (Ultralytics).
+        Menggunakan 'results.boxes' untuk mengekstrak data deteksi
+        secara manual tanpa Pandas, demi kompatibilitas format.
+        """
 
         if not is_mode_auto:
             return frame
@@ -537,44 +535,64 @@ class VisionService:
         annotated_frame = frame.copy()
 
         try:
-            logging.info("[Vision] Starting inference on frame...")
+            # logging.info("[Vision] Starting inference on frame...")
 
-            model_input_frame = cv2.resize(frame, (640, 640))
-            results = eventlet.tpool.execute(self.model, model_input_frame)
-
-            df = results.pandas().xyxy[0]
-            for _, row in df.iterrows():
-                orig_h, orig_w = frame.shape[:2]
-
-                detections.append(
-                    {
-                        "xyxy": [
-                            row["xmin"] * (orig_w / 640.0),
-                            row["ymin"] * (orig_h / 640.0),
-                            row["xmax"] * (orig_w / 640.0),
-                            row["ymax"] * (orig_h / 640.0),
-                        ],
-                        "center": (
-                            int((row["xmin"] + row["xmax"]) / 2 * (orig_w / 640.0)),
-                            int((row["ymin"] + row["ymax"]) / 2 * (orig_h / 640.0)),
-                        ),
-                        "class": row["name"],
-                        "confidence": row["confidence"],
-                    }
-                )
-
-            logging.info(f"[Vision] Raw detections: {len(detections)} objects found")
-
-            annotated_resized = results.render()[0]
-            annotated_frame = cv2.resize(
-                annotated_resized, (frame.shape[1], frame.shape[0])
+            # Ultralytics menangani resizing (imgsz=640) secara internal.
+            # Kita cukup mengirimkan frame asli.
+            # Gunakan eventlet.tpool jika ingin non-blocking di server context
+            # conf dan iou diset saat prediksi.
+            results = eventlet.tpool.execute(
+                self.model.predict, 
+                source=frame, 
+                imgsz=640, 
+                conf=self.conf_thres, 
+                iou=self.iou_thres,
+                verbose=False
             )
+            
+            result = results[0]  # Ambil hasil frame pertama
+
+            # Parsing Manual Results (Pengganti Pandas)
+            # Kita butuh format list of dicts:
+            # [{'xyxy': [x1,y1,x2,y2], 'center': (cx,cy), 'class': 'name', 'confidence': 0.9}, ...]
+            
+            boxes = result.boxes
+            if boxes is not None:
+                for box in boxes:
+                    # Koordinat [x1, y1, x2, y2] (sudah dalam skala gambar asli)
+                    coords = box.xyxy[0].cpu().numpy().tolist()
+                    x1, y1, x2, y2 = coords
+                    
+                    # Confidence Score
+                    conf = float(box.conf[0].cpu().numpy())
+                    
+                    # Class ID & Name
+                    cls_id = int(box.cls[0].cpu().numpy())
+                    cls_name = result.names[cls_id]
+
+                    # Hitung Center
+                    center_x = int((x1 + x2) / 2)
+                    center_y = int((y1 + y2) / 2)
+
+                    detections.append({
+                        "xyxy": [x1, y1, x2, y2],
+                        "center": (center_x, center_y),
+                        "class": cls_name,
+                        "confidence": conf
+                    })
+
+            # logging.info(f"[Vision] Raw detections: {len(detections)} objects found")
+
+            # Gambar bounding box (Annotated Frame)
+            # result.plot() mengembalikan numpy array BGR yang sudah digambar
+            annotated_frame = result.plot()
 
         except Exception as e:
             logging.error(f"[Vision] Inference error: {str(e)}")
             logging.error(traceback.format_exc())
             return frame
 
+        # --- Bagian di bawah ini TIDAK DIUBAH (Logika Navigasi & Misi) ---
         validated_detections = []
         green_boxes_detected = []
         blue_boxes_detected = []
@@ -610,7 +628,6 @@ class VisionService:
             d for d in validated_detections if d.get("class") == "blue_box"
         ]
 
-        # --- [MODIFIKASI 2.2: Logika Misi Foto Otomatis Dual-Target] ---
         if green_boxes_detected or blue_boxes_detected:
             current_time = time.time()
             
@@ -648,31 +665,23 @@ class VisionService:
                         self.asv_handler.current_state.photo_mission_qty_taken_2 += 1
                         
                     self.last_auto_photo_time = current_time
-        # --- [AKHIR MODIFIKASI 2.2] ---
 
         return annotated_frame
+    # -----------------------------------------
 
-    # --- [LOGIKA BARU: SIMPLE AVOIDANCE ONLY] ---
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
         """Handles autonomous navigation based on object detections."""
 
         if not detections:
-            logging.info("[Vision] No objects detected for navigation")
+            # logging.info("[Vision] No objects detected for navigation")
             return
 
         detected_classes = [d.get("class", "unknown") for d in detections]
-        logging.info(f"[Vision] Processing navigation for objects: {detected_classes}")
+        # logging.info(f"[Vision] Processing navigation for objects: {detected_classes}")
 
-        # --- [OPTIMASI 3] ---
-        logging.info(
-            f"[Vision] Current control mode: {current_state.control_mode}"
-        )
         if current_state.control_mode != "AUTO":
-            logging.warning("[Vision] Not in AUTO mode, skipping navigation")
             return
-        # --- [AKHIR OPTIMASI 3] ---
 
-        # --- [MODIFIKASI: MENGHAPUS LOGIKA GATE DINAMIS] ---
         red_buoys = []
         green_buoys = []
 
@@ -689,8 +698,7 @@ class VisionService:
             elif cls == "green_buoy":
                 green_buoys.append(det)
 
-        # --- [LOGIKA BARU: SIMPLE AVOIDANCE (STATIS)] ---
-        # Gabungkan semua pelampung, cari yang terdekat
+        # Simple Avoidance (Statis)
         all_buoys = red_buoys + green_buoys
         
         if all_buoys:
@@ -720,15 +728,9 @@ class VisionService:
                 )
                 return
 
-        # --- CLEANUP / COOLDOWN ---
-        logging.info(
-            f"[Vision DEBUG] Nav handler selesai. Tidak ada perintah AI dikirim. Cooldown: {(time.time() - self.last_buoy_seen_time)}"
-        )
-
+        # Cleanup / Cooldown
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
-            # Reset target visi jika sudah melewati masa cooldown
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
-            # Command GATE_TRAVERSAL_COMMAND telah dihapus dari handler, jadi tidak dipanggil lagi di sini.
 
     def handle_photography_mission(
         self, frame_cam1, green_boxes, blue_boxes, current_state

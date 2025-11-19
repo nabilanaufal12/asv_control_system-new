@@ -1,6 +1,5 @@
 // js/main.js
 
-// === MODIFIKASI: Definisikan IP Server di satu tempat ===
 const SERVER_IP = "http://192.168.1.20:5000";
 
 // Variabel Global untuk Peta Leaflet
@@ -11,18 +10,49 @@ let trailLine = null;
 let trailCoords = [];
 let waypointLayer = null;
 
-// --- [MODIFIKASI TAHAP 1: Variabel Global Baru] ---
-let fullMissionWaypoints = []; // Menyimpan semua WP misi
-let completedPathLayer = null; // Layer untuk garis jalur yang sudah selesai
-// --- [AKHIR MODIFIKASI] ---
+let fullMissionWaypoints = []; 
+let completedPathLayer = null; 
 
 // Variabel global untuk state
 let lastKnownArena = null;
 let lastKnownPoint = 0;
 let lastKnownGps = { lat: 0, lng: 0 };
 
+// --- [OPTIMASI: REVERSE KEY MAPPING] ---
+// Mapping balik dari Short Key ke Long Key (sesuai Backend)
+const REVERSE_KEY_MAP = {
+    "lat": "latitude",
+    "lon": "longitude",
+    "hdg": "heading",
+    "sog": "speed",
+    "bat": "battery_voltage",
+    "sts": "status",
+    "mode": "control_mode",
+    "ar": "active_arena",
+    "inv": "inverse_servo",
+    "wps": "waypoints",
+    "cur_wp": "current_waypoint_index",
+    "wp_idx": "nav_target_wp_index",
+    "wp_dst": "nav_dist_to_wp",
+    "err_hdg": "nav_heading_error",
+    "tgt_brg": "nav_target_bearing",
+    "sat": "nav_gps_sats",
+    "srv": "nav_servo_cmd",
+    "mot": "nav_motor_cmd",
+    "m_srv": "manual_servo_cmd",
+    "m_mot": "manual_motor_cmd",
+    "time": "mission_time",
+    "rc": "rc_channels",
+    "conn": "is_connected_to_serial",
+    "dum": "use_dummy_counter",
+    "dbg_cnt": "debug_waypoint_counter",
+    "vis": "vision_target",
+    "esp_sts": "esp_status"
+};
+// --- [AKHIR MAPPING] ---
+
+
 document.addEventListener("DOMContentLoaded", () => {
-  // === ELEMEN DOM DIPERBARUI ===
   const ELEMENTS = {
     dayValue: document.getElementById("day-value"),
     dateValue: document.getElementById("date-value"),
@@ -32,21 +62,18 @@ document.addEventListener("DOMContentLoaded", () => {
     cogValue: document.getElementById("cog-value"),
     hdgValue: document.getElementById("hdg-value"),
     
-    // === MODIFIKASI: Elemen Galeri Baru ===
     refreshGalleryBtn: document.getElementById("refresh-gallery-btn"),
-    surfaceGallery: document.getElementById("surface-gallery"),       
+    surfaceGallery: document.getElementById("surface-gallery"),        
     underwaterGallery: document.getElementById("underwater-gallery"), 
     
-    // === Elemen Modal (Tetap) ===
     modal: document.getElementById("image-modal"),
     modalImg: document.getElementById("modal-img"),
     downloadBtn: document.getElementById("download-btn"),
     closeModalBtn: document.getElementById("close-modal"),
   };
 
-  // === INISIALISASI PETA LEAFLET ===
   try {
-    const initialCoords = [0.916, 104.444]; // Posisi awal
+    const initialCoords = [0.916, 104.444]; 
     map = L.map("map-canvas").setView(initialCoords, 17);
 
     L.tileLayer("http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}", {
@@ -55,7 +82,6 @@ document.addEventListener("DOMContentLoaded", () => {
       attribution: "© Google Maps",
     }).addTo(map);
 
-    // Marker Lingkaran Merah
     vehicleMarker = L.circleMarker(initialCoords, {
       radius: 10,
       color: "#FFFFFF",
@@ -67,17 +93,13 @@ document.addEventListener("DOMContentLoaded", () => {
       .bindPopup("NAVANTARA ASV");
 
     waypointLayer = L.layerGroup().addTo(map);
-    // --- [MODIFIKASI TAHAP 2: Inisialisasi Layer Baru] ---
     completedPathLayer = L.layerGroup().addTo(map); 
-    // --- [AKHIR MODIFIKASI] ---
 
     console.log("Peta Leaflet (Google Satellite) berhasil dimuat.");
   } catch (e) {
     console.error("Gagal memuat Peta Leaflet.", e);
   }
-  // === AKHIR INISIALISASI PETA ===
 
-  // --- [MODIFIKASI TAHAP 3: Buat Ikon Kustom] ---
   const targetWpIcon = L.icon({
     iconUrl: "lib/leaflet/images/marker-icon.png",
     shadowUrl: "lib/leaflet/images/marker-shadow.png",
@@ -96,7 +118,6 @@ document.addEventListener("DOMContentLoaded", () => {
     className: "wp-pending",
     iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
   });
-  // --- [AKHIR MODIFIKASI] ---
 
   if (typeof setupLocalSocketIO === "function") {
     setupLocalSocketIO(ELEMENTS, {
@@ -121,7 +142,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// === MODIFIKASI: Fungsi refreshGallery ===
 async function refreshGallery(elements) {
   const surfaceGalleryEl = elements.surfaceGallery;
   const underwaterGalleryEl = elements.underwaterGallery;
@@ -188,7 +208,7 @@ async function refreshGallery(elements) {
 }
 
 
-// === MODIFIKASI TOTAL: Menggunakan Server-Sent Events (SSE) ===
+// === MODIFIKASI SSE: MENERAPKAN NORMALISASI KEY ===
 function setupLocalSocketIO(elements, icons) { 
   const serverURL = `${SERVER_IP}/stream-telemetry`;
   console.log(`[SSE] Menghubungkan ke ${serverURL}`);
@@ -209,48 +229,52 @@ function setupLocalSocketIO(elements, icons) {
   };
 
   eventSource.onmessage = function (event) {
-    const data = JSON.parse(event.data);
-    if (!data) {
+    const rawData = JSON.parse(event.data);
+    if (!rawData) {
       console.warn("[SSE] Menerima data null.");
       return;
     }
 
-    // --- [PERBAIKAN LOGIKA UPDATE UI] ---
+    // --- [START OPTIMASI: REHYDRATE KEYS] ---
+    // Mengubah key pendek kembali ke key panjang agar kode UI di bawah tidak error
+    const data = {};
     
-    // 1. Normalisasi Nama Arena (Backend kirim "Arena_A", Frontend butuh "A")
+    // Salin data raw ke data baru, sambil mengecek mapping
+    Object.keys(rawData).forEach(key => {
+        // Jika ada di map, pakai nama panjang. Jika tidak, pakai key asli.
+        const longKey = REVERSE_KEY_MAP[key] || key;
+        data[longKey] = rawData[key];
+    });
+    // --- [END OPTIMASI] ---
+
+    // 1. Normalisasi Nama Arena
     let rawArena = data.active_arena;
     let arena = null;
 
     if (rawArena) {
-        // Jika mengandung huruf "B", anggap Arena B (Prioritas deteksi B agar aman)
         if (rawArena.includes("B") || rawArena === "Arena_B") {
             arena = "B";
         } 
-        // Jika mengandung huruf "A", anggap Arena A
         else if (rawArena.includes("A") || rawArena === "Arena_A") {
             arena = "A";
         }
-        // Fallback: gunakan nilai asli jika format lain
         else {
             arena = rawArena; 
         }
     }
 
-    // 2. Kontrol Switch Arena (Event untuk Canvas di index.html)
     if (arena && arena !== lastKnownArena) {
       console.log(`[UI] Arena berubah dari ${lastKnownArena} ke ${arena} (Raw: ${rawArena})`);
       lastKnownArena = arena;
       
       const switchArenaEvent = new CustomEvent("switchArena", {
-        detail: { arena: arena }, // Mengirim "A" atau "B" yang bersih
+        detail: { arena: arena },
       });
       window.dispatchEvent(switchArenaEvent);
     }
 
-    // 3. Kontrol Background Peta (Div #map-canvas)
     if (arena) {
       const mapImageDiv = document.getElementById("map-canvas");
-      // Cek dataset.currentArena vs variable 'arena' yang sudah dinormalisasi
       if (mapImageDiv && mapImageDiv.dataset.currentArena !== arena) {
         if (arena === "A") {
           mapImageDiv.style.backgroundImage = "url('images/Arena_A.png')";
@@ -262,9 +286,8 @@ function setupLocalSocketIO(elements, icons) {
         mapImageDiv.dataset.currentArena = arena;
       }
     }
-    // --- [AKHIR PERBAIKAN] ---
 
-    // --- [MODIFIKASI: Logika Visualisasi Waypoint Progresif] ---
+    // --- Visualisasi Waypoint ---
     if (data.waypoints && Array.isArray(data.waypoints)) {
       if (JSON.stringify(fullMissionWaypoints) !== JSON.stringify(data.waypoints)) {
         console.log("Menerima daftar waypoint misi baru.");
@@ -312,7 +335,6 @@ function setupLocalSocketIO(elements, icons) {
         }).addTo(completedPathLayer);
       }
     }
-    // --- [AKHIR MODIFIKASI] ---
 
     // Kontrol Titik (Point)
     let point = 0;
@@ -459,7 +481,6 @@ function setupLocalSocketIO(elements, icons) {
   setInterval(() => updateDateTime(elements), 1000);
 }
 
-// === FUNGSI HELPER ===
 function updateDateTime(elements) {
   const now = new Date();
   const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
