@@ -1,7 +1,7 @@
-// js/main_local.js
+// js/main.js
 
 // === MODIFIKASI: Definisikan IP Server di satu tempat ===
-const SERVER_IP = "http://192.168.2.174:5000";
+const SERVER_IP = "http://192.168.1.20:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -34,17 +34,14 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // === MODIFIKASI: Elemen Galeri Baru ===
     refreshGalleryBtn: document.getElementById("refresh-gallery-btn"),
-    // galleryTabButtons: document.querySelectorAll(".gallery-tab-button"), // <-- DIHAPUS
-    surfaceGallery: document.getElementById("surface-gallery"),       // <-- BARU
-    underwaterGallery: document.getElementById("underwater-gallery"), // <-- BARU
+    surfaceGallery: document.getElementById("surface-gallery"),       
+    underwaterGallery: document.getElementById("underwater-gallery"), 
     
     // === Elemen Modal (Tetap) ===
     modal: document.getElementById("image-modal"),
     modalImg: document.getElementById("modal-img"),
     downloadBtn: document.getElementById("download-btn"),
     closeModalBtn: document.getElementById("close-modal"),
-    
-    // === Elemen Manual Capture Dihapus ===
   };
 
   // === INISIALISASI PETA LEAFLET ===
@@ -71,7 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     waypointLayer = L.layerGroup().addTo(map);
     // --- [MODIFIKASI TAHAP 2: Inisialisasi Layer Baru] ---
-    completedPathLayer = L.layerGroup().addTo(map); // <-- TAMBAHKAN INI
+    completedPathLayer = L.layerGroup().addTo(map); 
     // --- [AKHIR MODIFIKASI] ---
 
     console.log("Peta Leaflet (Google Satellite) berhasil dimuat.");
@@ -81,11 +78,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // === AKHIR INISIALISASI PETA ===
 
   // --- [MODIFIKASI TAHAP 3: Buat Ikon Kustom] ---
-  // (Pastikan path 'lib/leaflet/images/' sudah benar)
   const targetWpIcon = L.icon({
     iconUrl: "lib/leaflet/images/marker-icon.png",
     shadowUrl: "lib/leaflet/images/marker-shadow.png",
-    className: "wp-target", // <-- Tambahkan kelas CSS
+    className: "wp-target", 
     iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
   });
   const completedWpIcon = L.icon({
@@ -102,9 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   // --- [AKHIR MODIFIKASI] ---
 
-  // ... (Panggilan setupLocalSocketIO) ...
   if (typeof setupLocalSocketIO === "function") {
-    // Kirim ikon yang baru dibuat ke fungsi setup
     setupLocalSocketIO(ELEMENTS, {
       targetWpIcon,
       completedWpIcon,
@@ -115,32 +109,20 @@ document.addEventListener("DOMContentLoaded", () => {
     console.error("Fungsi setupLocalSocketIO tidak ditemukan.");
   }
   
-  // === MODIFIKASI: Panggilan refreshGallery (mengirim ELEMENTS) ===
   if (ELEMENTS.refreshGalleryBtn) {
     ELEMENTS.refreshGalleryBtn.addEventListener("click", () => refreshGallery(ELEMENTS));
-    refreshGallery(ELEMENTS); // Muat saat start
+    refreshGallery(ELEMENTS); 
   }
 
-  // === MODIFIKASI: Panggil Fungsi Setup Tab DIHAPUS ===
-  // setupGalleryTabs(ELEMENTS);
-
-  // ... (Listener Modal)
   if (ELEMENTS.closeModalBtn && ELEMENTS.modal) {
     ELEMENTS.closeModalBtn.addEventListener("click", () => {
       ELEMENTS.modal.style.display = "none";
     });
   }
-  
-  // === LISTENER MANUAL CAPTURE DIHAPUS ===
 });
 
-// === MODIFIKASI: Fungsi refreshGallery Diperbarui ===
-/**
- * Mengambil daftar gambar dari API server dan memisahkannya
- * ke galeri Surface dan Underwater.
- */
+// === MODIFIKASI: Fungsi refreshGallery ===
 async function refreshGallery(elements) {
-  // Ambil elemen dari argumen
   const surfaceGalleryEl = elements.surfaceGallery;
   const underwaterGalleryEl = elements.underwaterGallery;
   const refreshGalleryBtn = elements.refreshGalleryBtn;
@@ -160,7 +142,6 @@ async function refreshGallery(elements) {
     }
     const daftarGambar = await response.json();
 
-    // Kosongkan kedua galeri
     surfaceGalleryEl.innerHTML = "";
     underwaterGalleryEl.innerHTML = "";
 
@@ -173,7 +154,6 @@ async function refreshGallery(elements) {
       img.src = imgSrc;
       img.alt = namaFile;
 
-      // Tambahkan listener modal (logika ini tetap sama)
       img.addEventListener("click", () => {
         const modal = document.getElementById("image-modal");
         const modalImg = document.getElementById("modal-img");
@@ -185,7 +165,6 @@ async function refreshGallery(elements) {
         }
       });
 
-      // Logika pemisah berdasarkan nama file
       if (namaFile.startsWith("surface")) {
         surfaceGalleryEl.appendChild(img);
         surfaceCount++;
@@ -195,12 +174,8 @@ async function refreshGallery(elements) {
       }
     });
 
-    if (surfaceCount === 0) {
-      surfaceGalleryEl.innerHTML = "<p>Galeri Surface kosong.</p>";
-    }
-    if (underwaterCount === 0) {
-      underwaterGalleryEl.innerHTML = "<p>Galeri Underwater kosong.</p>";
-    }
+    if (surfaceCount === 0) surfaceGalleryEl.innerHTML = "<p>Galeri Surface kosong.</p>";
+    if (underwaterCount === 0) underwaterGalleryEl.innerHTML = "<p>Galeri Underwater kosong.</p>";
 
   } catch (error) {
     console.error("Gagal mengambil galeri:", error);
@@ -212,17 +187,9 @@ async function refreshGallery(elements) {
   refreshGalleryBtn.disabled = false;
 }
 
-// === [MODIFIKASI] FUNGSI 'setupGalleryTabs' DIHAPUS ===
-/*
-function setupGalleryTabs(elements) {
-  ... (seluruh fungsi dihapus) ...
-}
-*/
-
 
 // === MODIFIKASI TOTAL: Menggunakan Server-Sent Events (SSE) ===
-function setupLocalSocketIO(elements, icons) { // <-- Terima ikon kustom
-  // ... (Koneksi EventSource Anda tetap utuh) ...
+function setupLocalSocketIO(elements, icons) { 
   const serverURL = `${SERVER_IP}/stream-telemetry`;
   console.log(`[SSE] Menghubungkan ke ${serverURL}`);
   const eventSource = new EventSource(serverURL);
@@ -241,7 +208,6 @@ function setupLocalSocketIO(elements, icons) { // <-- Terima ikon kustom
     }
   };
 
-  // 5. Dipanggil SETIAP KALI data baru diterima dari server
   eventSource.onmessage = function (event) {
     const data = JSON.parse(event.data);
     if (!data) {
@@ -249,87 +215,99 @@ function setupLocalSocketIO(elements, icons) { // <-- Terima ikon kustom
       return;
     }
 
-    // --- MULAI LOGIKA UPDATE UI ---
+    // --- [PERBAIKAN LOGIKA UPDATE UI] ---
+    
+    // 1. Normalisasi Nama Arena (Backend kirim "Arena_A", Frontend butuh "A")
+    let rawArena = data.active_arena;
+    let arena = null;
 
-    // Kontrol Arena & Peta Latar (Logika Anda yang ada)
-    const arena = data.active_arena;
+    if (rawArena) {
+        // Jika mengandung huruf "B", anggap Arena B (Prioritas deteksi B agar aman)
+        if (rawArena.includes("B") || rawArena === "Arena_B") {
+            arena = "B";
+        } 
+        // Jika mengandung huruf "A", anggap Arena A
+        else if (rawArena.includes("A") || rawArena === "Arena_A") {
+            arena = "A";
+        }
+        // Fallback: gunakan nilai asli jika format lain
+        else {
+            arena = rawArena; 
+        }
+    }
+
+    // 2. Kontrol Switch Arena (Event untuk Canvas di index.html)
     if (arena && arena !== lastKnownArena) {
+      console.log(`[UI] Arena berubah dari ${lastKnownArena} ke ${arena} (Raw: ${rawArena})`);
       lastKnownArena = arena;
+      
       const switchArenaEvent = new CustomEvent("switchArena", {
-        detail: { arena: arena },
+        detail: { arena: arena }, // Mengirim "A" atau "B" yang bersih
       });
       window.dispatchEvent(switchArenaEvent);
     }
-    if (data.active_arena) {
+
+    // 3. Kontrol Background Peta (Div #map-canvas)
+    if (arena) {
       const mapImageDiv = document.getElementById("map-canvas");
-      if (mapImageDiv && mapImageDiv.dataset.currentArena !== data.active_arena) {
-        console.log(`Mengganti peta ke Arena: ${data.active_arena}`);
-        if (data.active_arena === "A") {
+      // Cek dataset.currentArena vs variable 'arena' yang sudah dinormalisasi
+      if (mapImageDiv && mapImageDiv.dataset.currentArena !== arena) {
+        if (arena === "A") {
           mapImageDiv.style.backgroundImage = "url('images/Arena_A.png')";
-        } else if (data.active_arena === "B") {
+        } else if (arena === "B") {
           mapImageDiv.style.backgroundImage = "url('images/Arena_B.png')";
         } else {
           mapImageDiv.style.backgroundImage = "none";
         }
-        mapImageDiv.dataset.currentArena = data.active_arena;
+        mapImageDiv.dataset.currentArena = arena;
       }
     }
+    // --- [AKHIR PERBAIKAN] ---
 
     // --- [MODIFIKASI: Logika Visualisasi Waypoint Progresif] ---
-
-    // Langkah 1: Simpan daftar waypoint lengkap jika ada di payload
-    // (Ini biasanya hanya dikirim sekali saat misi di-load)
     if (data.waypoints && Array.isArray(data.waypoints)) {
       if (JSON.stringify(fullMissionWaypoints) !== JSON.stringify(data.waypoints)) {
         console.log("Menerima daftar waypoint misi baru.");
         fullMissionWaypoints = data.waypoints;
-        // Saat daftar baru dimuat, bersihkan semua visualisasi lama
         waypointLayer.clearLayers();
         completedPathLayer.clearLayers();
       }
     }
 
-    // Langkah 2: Ambil indeks target saat ini (pastikan valid)
     const targetIndex = data.nav_target_wp_index;
 
-    // Langkah 3: Gambar ulang waypoint dan jalur berdasarkan indeks target
     if (targetIndex !== undefined && fullMissionWaypoints.length > 0) {
-      // Hapus marker dan jalur lama (untuk digambar ulang)
       waypointLayer.clearLayers();
       completedPathLayer.clearLayers();
 
-      let completedPathCoords = []; // Koordinat untuk garis Polyline
+      let completedPathCoords = [];
 
       for (let i = 0; i < fullMissionWaypoints.length; i++) {
         const wp = fullMissionWaypoints[i];
         const wpLatLng = [wp.lat, wp.lon];
 
         if (i < targetIndex) {
-          // STATUS: SUDAH DILEWATI
-          L.marker(wpLatLng, { icon: icons.completedWpIcon }) // <-- Gunakan icon
+          L.marker(wpLatLng, { icon: icons.completedWpIcon })
             .addTo(waypointLayer)
             .bindPopup(`WP ${i} (Completed)`);
           completedPathCoords.push(wpLatLng);
 
         } else if (i === targetIndex) {
-          // STATUS: TARGET SAAT INI
-          L.marker(wpLatLng, { icon: icons.targetWpIcon }) // <-- Gunakan icon
+          L.marker(wpLatLng, { icon: icons.targetWpIcon })
             .addTo(waypointLayer)
             .bindPopup(`TARGET: WP ${i}`);
           completedPathCoords.push(wpLatLng);
 
         } else {
-          // STATUS: BELUM DIJELAJHI
-          L.marker(wpLatLng, { icon: icons.pendingWpIcon }) // <-- Gunakan icon
+          L.marker(wpLatLng, { icon: icons.pendingWpIcon })
             .addTo(waypointLayer)
             .bindPopup(`WP ${i} (Pending)`);
         }
       }
 
-      // Gambar garis Polyline yang menghubungkan semua titik yang sudah selesai
       if (completedPathCoords.length > 1) {
         L.polyline(completedPathCoords, {
-          color: "cyan", // Warna jalur yang sudah selesai
+          color: "cyan", 
           weight: 5,
         }).addTo(completedPathLayer);
       }
@@ -337,23 +315,18 @@ function setupLocalSocketIO(elements, icons) { // <-- Terima ikon kustom
     // --- [AKHIR MODIFIKASI] ---
 
     // Kontrol Titik (Point)
-    // ... (Logika 'point' Anda tetap sama) ...
     let point = 0;
     if (data.use_dummy_counter === true) {
       point = data.debug_waypoint_counter || 0;
     } else {
-      // =================================================================
-      // === PERBAIKAN DI SINI ===
-      // Mengganti 'data.current_waypoint_index' menjadi 'data.nav_target_wp_index'
       point = data.nav_target_wp_index || 0; 
-      // =================================================================
       
       if (
         data.waypoints &&
         data.waypoints.length > 0 &&
         point < data.waypoints.length
       ) {
-        point = point + 1; // Logika ini benar, karena canvas 'drawUpToPoint(N)' menggambar N titik pertama
+        point = point + 1; 
       } else {
         point = 0;
       }
@@ -366,7 +339,7 @@ function setupLocalSocketIO(elements, icons) { // <-- Terima ikon kustom
       window.dispatchEvent(setPointEvent);
     }
 
-    // --- (Sisa logika update UI Anda untuk GPS, SOG, COG, HDG, dll. tetap utuh) ---
+    // --- Update Data Sensor ---
     let currentLatLng = null;
     const lat = data.latitude;
     const lng = data.longitude;
@@ -481,73 +454,37 @@ function setupLocalSocketIO(elements, icons) { // <-- Terima ikon kustom
       map.removeLayer(headingLine);
       headingLine = null;
     }
-    // --- AKHIR LOGIKA UPDATE UI ---
   };
 
-  // Perbarui waktu lokal setiap detik
   setInterval(() => updateDateTime(elements), 1000);
 }
 
-// === FUNGSI HELPER (TIDAK BERUBAH) ===
-// ... (fungsi updateDateTime, decimalToHemisphere, calculateDestinationPoint tetap utuh) ...
+// === FUNGSI HELPER ===
 function updateDateTime(elements) {
   const now = new Date();
-  const days = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ];
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const dateOptions = { day: "2-digit", month: "2-digit", year: "numeric" };
-  const timeOptions = {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  };
+  const timeOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
 
-  if (elements.dayValue) {
-    elements.dayValue.textContent = days[now.getDay()];
-  }
-  if (elements.dateValue) {
-    elements.dateValue.textContent = now.toLocaleDateString("en-GB", dateOptions);
-  }
-  if (elements.timeValue) {
-    elements.timeValue.textContent = now.toLocaleTimeString(
-      "en-GB",
-      timeOptions
-    );
-  }
+  if (elements.dayValue) elements.dayValue.textContent = days[now.getDay()];
+  if (elements.dateValue) elements.dateValue.textContent = now.toLocaleDateString("en-GB", dateOptions);
+  if (elements.timeValue) elements.timeValue.textContent = now.toLocaleTimeString("en-GB", timeOptions);
 }
 
 function decimalToHemisphere(dec, isLng) {
   let absDec = Math.abs(dec);
-  let hem;
-  if (isLng) {
-    hem = dec >= 0 ? "E" : "W";
-  } else {
-    hem = dec >= 0 ? "N" : "S";
-  }
+  let hem = isLng ? (dec >= 0 ? "E" : "W") : (dec >= 0 ? "N" : "S");
   return `${hem} ${absDec.toFixed(5)}`;
 }
 
 function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
-  const R = 6371; // Radius bumi dalam km
+  const R = 6371; 
   const bearingRad = (bearing * Math.PI) / 180;
   const lat1Rad = (lat1 * Math.PI) / 180;
   const lon1Rad = (lon1 * Math.PI) / 180;
   const lat2Rad = lat1Rad + (distanceKm / R) * Math.cos(bearingRad);
-  // Perhitungan Lng yang dikoreksi untuk lintang
-  const lon2Rad =
-    lon1Rad +
-    ((distanceKm / R) * Math.sin(bearingRad)) / Math.cos(lat1Rad);
+  const lon2Rad = lon1Rad + ((distanceKm / R) * Math.sin(bearingRad)) / Math.cos(lat1Rad);
   const lat2 = (lat2Rad * 180) / Math.PI;
   const lon2 = (lon2Rad * 180) / Math.PI;
   return { lat: lat2, lng: lon2 };
 }
-
-
-// === FUNGSI MANUAL CAPTURE (DIHAPUS) ===
