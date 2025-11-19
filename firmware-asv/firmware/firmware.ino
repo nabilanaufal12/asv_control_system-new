@@ -7,12 +7,9 @@
 // ---------------- GPS (Diganti ke U-Blox 10Hz) ----------------
 SFE_UBLOX_GPS myGPS;
 HardwareSerial gpsSerial(2);
-#define GPS_BAUD_RATE 9600
-#define GPS_RX_PIN 16
-#define GPS_TX_PIN 17
-
-// ---------------- LED GPS FIX (TAMBAHAN) ----------------
-#define LED_GPS 2    // LED ESP32 (GPIO 2)
+#define GPS_BAUD_RATE 9600 // Sesuaikan dengan setting U-Blox Anda (9600 atau 115200)
+#define GPS_RX_PIN 16 // Pin default Serial 2 (RX)
+#define GPS_TX_PIN 17 // Pin default Serial 2 (TX)
 
 // ---------------- CMPS12 ----------------
 #define CMPS12_ADDRESS 0x60
@@ -201,61 +198,35 @@ void displayAllData() {
 // ---------------- MODE FLAG ----------------
 bool isManual = true;
 
-// --- [INI FUNGSI YANG DIPERBAIKI] ---
 // --- [FIX] FUNGSI BARU UNTUK MEMBACA PERINTAH SERIAL ---
 void checkSerialInput() {
   if (Serial.available() > 0) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
     
-    // Intip (peek) byte pertama di buffer tanpa menghapusnya
-    char firstChar = Serial.peek();
-
-    // 1. Cek apakah ini data JSON echo kita sendiri?
-    if (firstChar == '{') {
-      // Benar, ini adalah echo. Baca dan buang data ini agar buffer bersih.
-      Serial.readStringUntil('\n');
-      return; // Keluar dari fungsi, abaikan echo ini.
+    if (input.length() > 0) {
+      serialCommand = input.charAt(0);
     }
 
-    // 2. Cek apakah ini perintah yang valid dari Jetson?
-    if (firstChar == 'A' || firstChar == 'W') {
-      // Benar, ini perintah. Baca seluruh baris.
-      String input = Serial.readStringUntil('\n');
-      input.trim();
+    if (serialCommand == 'A') {
+      int firstComma = input.indexOf(',');
+      int secondComma = input.indexOf(',', firstComma + 1);
 
-      if (input.length() > 0) {
-        // Set variabel command global
-        serialCommand = input.charAt(0);
-
-        // Jika perintahnya 'A', kita perlu parse data servo dan motor
-        if (serialCommand == 'A') {
-          int firstComma = input.indexOf(',');
-          int secondComma = input.indexOf(',', firstComma + 1);
-
-          if (firstComma > 0 && secondComma > 0) {
-            String servoStr = input.substring(firstComma + 1, secondComma);
-            String motorStr = input.substring(secondComma + 1);
-            ai_servo_val = servoStr.toInt();
-            ai_motor_val = motorStr.toInt();
-          }
-        }
-        // Jika 'W', kita tidak perlu parse apa-apa, 
-        // serialCommand sudah di-set ke 'W' dan loop utama akan menanganinya.
+      if (firstComma > 0 && secondComma > 0) {
+        String servoStr = input.substring(firstComma + 1, secondComma);
+        String motorStr = input.substring(secondComma + 1);
+        ai_servo_val = servoStr.toInt();
+        ai_motor_val = motorStr.toInt();
       }
-    } else {
-      // Ini adalah data lain/sampah (mungkin newline kosong atau data error).
-      // Buang data ini dari buffer agar tidak menumpuk.
-      Serial.readStringUntil('\n');
     }
   }
 }
 
+
 void setup() {
   Serial.begin(115200);
-
-  // --- LED GPS FIX (TAMBAHAN) ---
-  pinMode(LED_GPS, OUTPUT);
-  digitalWrite(LED_GPS, LOW);
-
+  
+  // --- Inisialisasi GPS U-Blox (Baru) ---
   Serial.println("Mencoba koneksi ke GPS U-Blox...");
   gpsSerial.begin(GPS_BAUD_RATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
 
@@ -265,6 +236,7 @@ void setup() {
     Serial.println("Gagal koneksi ke GPS. Cek kabel & baud rate.");
   }
 
+  // --- Konfigurasi GPS untuk UBX 10Hz ---
   myGPS.setUART1Output(COM_TYPE_UBX);
   myGPS.setNavigationFrequency(10);
   myGPS.setAutoPVT(true);
@@ -280,8 +252,8 @@ void setup() {
 
   Wire.begin(21, 22);
 
-  rudderServo.attach(32);
-  motorESC.attach(25);
+  rudderServo.attach(18);
+  motorESC.attach(19);
   auxOutput.attach(23);
 
   rudderServo.write(90);
@@ -307,33 +279,27 @@ void setup() {
 // --- Variabel Global Telemetri ---
 float heading = 0.0;
 double lat = 0.0, lon = 0.0;
-double speed = 0.0;
+double speed = 0.0; // km/jam
 int sats = 0;
 // ---------------------------------
 
 void loop() {
-
   // --- 1. Baca Sensor ---
   if (myGPS.getPVT()) {
     uint8_t fixType = myGPS.getFixType();
-
-    if (fixType > 0) digitalWrite(LED_GPS, HIGH);
-    else digitalWrite(LED_GPS, LOW);
-
     if (fixType > 0) {
-      lat = myGPS.getLatitude() / 10000000.0;
-      lon = myGPS.getLongitude() / 10000000.0;
-      speed = myGPS.getGroundSpeed() / 1000.0 * 3.6;
-      sats = myGPS.getSIV();
+        lat = myGPS.getLatitude() / 10000000.0;
+        lon = myGPS.getLongitude() / 10000000.0;
+        speed = myGPS.getGroundSpeed() / 1000.0 * 3.6;
+        sats = myGPS.getSIV();
     } else {
-      lat = 0.0;
-      lon = 0.0;
-      speed = 0.0;
-      sats = 0;
+        lat = 0.0;
+        lon = 0.0;
+        speed = 0.0;
+        sats = 0;
     }
   }
   
-  // Fungsi yang diperbaiki dipanggil di sini
   checkSerialInput();
   
   heading = readCompass();
@@ -342,6 +308,7 @@ void loop() {
   int ch5 = readChannel(4);
   int ch6 = readChannel(5);
 
+  // --- Variabel Penampung Status ---
   String mode = "MANUAL";
   String status = "ACTIVE";
   int finalServo = 90;
@@ -352,11 +319,12 @@ void loop() {
   double wp_target_brg = 0.0;
   double wp_error_hdg = 0.0;
 
+
   // ----------------- MANUAL MODE -----------------
   if (ch5 < 1500) {
     if (!isManual) {
       Serial.println("Switching to MANUAL...");
-      auxOutput.writeMicroseconds(1500);  
+      auxOutput.writeMicroseconds(1500); 
       isManual = true;
       wasInCaptureMode = false;
       wasInSaveMode = false;
@@ -373,7 +341,8 @@ void loop() {
 
     int ch8 = readChannel(7);
     auxOutput.writeMicroseconds(ch8);
-
+    
+    // --- Logika Perekaman Waypoint (Tetap Sama) ---
     if (ch6 >= 1400 && ch6 <= 1600) {
       if (!wasInCaptureMode) {
         Serial.println("🟡 MODE REKAM: Siap merekam waypoint baru.");
@@ -412,7 +381,6 @@ void loop() {
       wasInCaptureMode = false;
     }
   }
-
   // ----------------- AUTO MODE -----------------
   else {
     if (isManual) {
@@ -424,19 +392,23 @@ void loop() {
     mode = "AUTO";
 
     if (serialCommand == 'A') {
+      // PRIORITAS 1: Perintah AI
       finalServo = ai_servo_val;
       finalMotor = ai_motor_val;
       status = "AI_ACTIVE";
-    }  
+    } 
     else if (serialCommand == 'W') {
+      // PRIORITAS 2: Waypoint
       status = "WAYPOINT";
       
       if (dataIndex > 0 && myGPS.getFixType() > 0) {
         if (counter >= dataIndex) {
+          // Selesai
           finalServo = 90;
           finalMotor = 1000;
           status = "WP_COMPLETE";
         } else {
+          // Navigasi
           double targetLat = latitudes[counter];
           double targetLon = longitudes[counter];
           double dist = haversine(lat, lon, targetLat, targetLon);
@@ -447,50 +419,61 @@ void loop() {
           
           int servoPos = PID_servo(targetBearing, heading);
           finalServo = servoPos;
-
-          // -------------------------
-          //  *** PERMINTAAN ANDA ***
-          //  motorSpeed = nilai asli CH7
-          // -------------------------
-          int motorSpeed = readChannel(6);    // <--- CH7
+  
+          int motorSpeed = 1700; 
+          if (dist < 3.0) motorSpeed = 1600;
+          if (dist < 1.0) motorSpeed = 1500;
           finalMotor = motorSpeed;
-          // -------------------------
-
+          
           if (dist < 1.75) {
             counter++;
           }
-
+  
+          // Simpan data WP untuk JSON
           wp_target_idx = counter + 1;
           wp_dist_m = dist;
           wp_target_brg = targetBearing;
           wp_error_hdg = errorHeading;
         }
       } else {
+        // Error
         finalServo = 90;
         finalMotor = 1500;
-        if (dataIndex == 0) status = "NO_WAYPOINTS";
-        else status = "GPS_INVALID";
+        if (dataIndex == 0) {
+          status = "NO_WAYPOINTS";
+        } else {
+          status = "GPS_INVALID";
+        }
       }
     }
   }
 
+  // --- 3. Kontrol Aktuator (Satu Titik) ---
   rudderServo.write(finalServo);
   motorESC.writeMicroseconds(finalMotor);
 
+  
+  // ========================================
+  // --- 4. BLOK TELEMETRI JSON BARU ---
+  // ========================================
+  
   jsonDoc.clear();
 
   jsonDoc["mode"] = mode;
   jsonDoc["status"] = status;
 
+  // Data Sensor Inti (SELALU DIKIRIM)
   jsonDoc["heading"] = (float)round(heading * 100) / 100;
   jsonDoc["lat"] = lat;
   jsonDoc["lon"] = lon;
   jsonDoc["speed_kmh"] = (float)round(speed * 100) / 100;
   jsonDoc["sats"] = sats;
 
+  // Data Output Aktuator (SELALU DIKIRIM)
   jsonDoc["servo_out"] = finalServo;
   jsonDoc["motor_out"] = finalMotor;
 
+  // Data khusus Waypoint (HANYA DIKIRIM JIKA PERLU)
   if (mode == "AUTO" && status == "WAYPOINT") {
     jsonDoc["wp_target_idx"] = wp_target_idx;
     jsonDoc["wp_dist_m"] = (float)round(wp_dist_m * 100) / 100;
@@ -498,8 +481,9 @@ void loop() {
     jsonDoc["wp_error_hdg"] = (float)round(wp_error_hdg * 100) / 100;
   }
 
+  // Kirim JSON ke Serial
   serializeJson(jsonDoc, Serial);
-  Serial.println();
-
+  Serial.println(); // PENTING: Kirim newline sebagai penanda akhir baris
+  
   delay(50);
 }

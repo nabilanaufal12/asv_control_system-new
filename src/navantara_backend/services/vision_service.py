@@ -54,10 +54,10 @@ class VisionService:
         self.poi_confidence_threshold = vision_cfg.get("poi_confidence_threshold", 0.65)
         self.poi_validation_frames = vision_cfg.get("poi_validation_frames", 5)
         self.gate_activation_distance = vision_cfg.get(
-            "gate_activation_distance_cm", 200.0
+            "gate_activation_distance_cm", 0.0
         )
         self.obstacle_activation_distance = vision_cfg.get(
-            "obstacle_activation_distance_cm", 120.0
+            "obstacle_activation_distance_cm", 160.0
         )
 
         # State internal

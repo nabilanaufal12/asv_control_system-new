@@ -509,7 +509,7 @@ class AsvHandler:
                             elif obj_class == "red_buoy": servo_cmd = angle_red_buoy
                             else: servo_cmd = servo_default
                         
-                        pwm_cmd = motor_base + 50
+                        pwm_cmd = motor_base + 350
                         
                         if nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
