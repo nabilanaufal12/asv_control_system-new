@@ -7,7 +7,7 @@
 
 
 # --- [REFAKTORISASI TAHAP 1] ---
-# Data waypoint yang di-hardcode (LINTASAN_A_WAYPOINTS) dan 
+# Data waypoint yang di-hardcode (LINTASAN_A_WAYPOINTS) dan
 # logika mirroring (CENTER_LONGITUDE) telah dihapus/dikomentari.
 # Fungsi sekarang hanya mengembalikan ID arena dan list waypoint kosong
 # untuk memicu pemuatan peta di GUI Web.
@@ -34,10 +34,7 @@ def get_lintasan_a():
     HANYA mengirim ID arena dan list waypoint KOSONG.
     """
     # return list(LINTASAN_A_WAYPOINTS) # <-- Logika lama
-    return {
-        "arena": "A",
-        "waypoints": []
-    }
+    return {"arena": "A", "waypoints": []}
 
 
 def get_lintasan_b():
@@ -53,8 +50,5 @@ def get_lintasan_b():
     #     new_lon = (2 * CENTER_LONGITUDE) - old_lon
     #     lintasan_b.append({"lat": lat, "lon": new_lon})
     # return lintasan_b # <-- Logika lama
-    
-    return {
-        "arena": "B",
-        "waypoints": []
-    }
+
+    return {"arena": "B", "waypoints": []}

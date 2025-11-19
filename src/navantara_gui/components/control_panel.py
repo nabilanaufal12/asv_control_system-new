@@ -1,9 +1,7 @@
 # gui/components/control_panel.py
 # --- VERSI FINAL: Disederhanakan, semua logika dipindah ke MainWindow ---
 
-from PySide6.QtWidgets import (
-    QVBoxLayout, QGroupBox, QPushButton, QGridLayout
-)
+from PySide6.QtWidgets import QVBoxLayout, QGroupBox, QPushButton, QGridLayout
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont
 
@@ -14,7 +12,7 @@ class ControlPanel(QGroupBox):
     auto_button_clicked = Signal()
     emergency_stop_clicked = Signal()
     navigation_command = Signal(str)
-    
+
     # --- [MODIFIKASI DIMULAI] ---
     # Sinyal BARU untuk capture
     capture_surface_clicked = Signal()
@@ -58,7 +56,7 @@ class ControlPanel(QGroupBox):
         mode_layout.addWidget(self.auto_mode_btn)
         mode_layout.addWidget(self.emergency_stop_btn)
         mode_box.setLayout(mode_layout)
-        
+
         # --- Box 2: Navigation ---
         navigation_box = QGroupBox("Navigation")
         navigation_layout = QVBoxLayout()
@@ -82,20 +80,22 @@ class ControlPanel(QGroupBox):
         navigation_layout.addWidget(self.pause_mission_btn)
         navigation_layout.addWidget(self.return_home_btn)
         navigation_box.setLayout(navigation_layout)
-        
+
         # --- Box 3: Manual Capture (BARU) ---
         capture_box = QGroupBox("Manual Capture")
         capture_layout = QVBoxLayout()
-        
+
         self.capture_surface_btn = QPushButton("Capture Surface (CAM 1)")
         self.capture_surface_btn.setFont(button_font)
-        
+
         self.capture_underwater_btn = QPushButton("Capture Underwater (CAM 2)")
         self.capture_underwater_btn.setFont(button_font)
-        
+
         # Hubungkan Tombol ke Sinyal Baru
         self.capture_surface_btn.clicked.connect(self.capture_surface_clicked.emit)
-        self.capture_underwater_btn.clicked.connect(self.capture_underwater_clicked.emit)
+        self.capture_underwater_btn.clicked.connect(
+            self.capture_underwater_clicked.emit
+        )
 
         capture_layout.addWidget(self.capture_surface_btn)
         capture_layout.addWidget(self.capture_underwater_btn)
@@ -124,7 +124,7 @@ class ControlPanel(QGroupBox):
         # --- Tambahkan semua box ke layout utama ---
         main_layout.addWidget(mode_box)
         main_layout.addWidget(navigation_box)
-        main_layout.addWidget(capture_box) # <- Tambahkan box baru di sini
+        main_layout.addWidget(capture_box)  # <- Tambahkan box baru di sini
         main_layout.addWidget(manual_control_box)
         main_layout.addStretch()
         self.setLayout(main_layout)

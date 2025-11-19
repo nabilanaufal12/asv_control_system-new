@@ -9,7 +9,7 @@ eventlet.monkey_patch()
 
 # Konfigurasi logging (Level WARNING agar tidak terlalu berisik)
 logging.basicConfig(
-    level=logging.WARNING, 
+    level=logging.WARNING,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
@@ -34,11 +34,11 @@ if __name__ == "__main__":
     # Ambil konfigurasi yang sudah dimuat oleh create_app()
     config = app.config.get("ASV_CONFIG", {})
     backend_config = config.get("backend_connection", {})
-    
+
     # Gunakan 0.0.0.0 sebagai default host
-    host = backend_config.get("ip_address", "0.0.0.0") 
+    host = backend_config.get("ip_address", "0.0.0.0")
     # Gunakan 5000 sebagai default port
-    port = int(backend_config.get("port", 5000)) 
+    port = int(backend_config.get("port", 5000))
     # --- [AKHIR PERBAIKAN] ---
 
     print(f"Server akan berjalan di http://{host}:{port}")

@@ -67,11 +67,11 @@ class ApiClient(QObject):
         def on_telemetry_update(data):
             # --- [MODIFIKASI UTAMA OPTIMASI 1] ---
             # 'data' sekarang adalah 'delta_payload' (hanya perubahan)
-            
+
             # 1. Gabungkan (merge) data delta ke dalam state lengkap
             try:
                 self.full_gui_state.update(data)
-                
+
                 # 2. Emit state yang SUDAH LENGKAP ke seluruh GUI
                 #    Buat salinan (.copy()) agar aman antar thread
                 self.data_updated.emit(self.full_gui_state.copy())
@@ -85,9 +85,11 @@ class ApiClient(QObject):
             try:
                 # Cek jika data yang diterima adalah bytes, jika tidak, abaikan
                 if not isinstance(data, bytes):
-                    print(f"[API-CAM1] Menerima data frame, tapi bukan bytes (tipe: {type(data)}). Melompati.")
-                    return 
-                
+                    print(
+                        f"[API-CAM1] Menerima data frame, tapi bukan bytes (tipe: {type(data)}). Melompati."
+                    )
+                    return
+
                 # Ubah data byte JPEG kembali menjadi gambar OpenCV
                 nparr = np.frombuffer(data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -99,15 +101,16 @@ class ApiClient(QObject):
             except Exception as e:
                 print(f"[API-CAM1] Error processing frame: {e}")
 
-
         @self.sio.on("frame_cam2")
         def on_frame_cam2(data):
             # (Fungsi ini menyertakan perbaikan dari error log Anda sebelumnya)
             try:
                 # Cek jika data yang diterima adalah bytes, jika tidak, abaikan
                 if not isinstance(data, bytes):
-                    print(f"[API-CAM2] Menerima data frame, tapi bukan bytes (tipe: {type(data)}). Melompati.")
-                    return 
+                    print(
+                        f"[API-CAM2] Menerima data frame, tapi bukan bytes (tipe: {type(data)}). Melompati."
+                    )
+                    return
 
                 nparr = np.frombuffer(data, np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)

@@ -38,6 +38,7 @@ except:
 if not cap.isOpened():
     raise IOError("Tidak dapat membuka kamera!")
 
+
 def generate_frames():
     """Generator yang mengambil frame dari kamera dan mengemasnya dalam format JPEG."""
     while True:
@@ -45,23 +46,27 @@ def generate_frames():
         success, frame = cap.read()
         if not success:
             break
-        
+
         # Encoding frame ke format JPEG
         # Encoding JPEG ini yang TIDAK menggunakan akselerasi GPU (dilakukan di CPU)
-        ret, buffer = cv2.imencode('.jpg', frame)
+        ret, buffer = cv2.imencode(".jpg", frame)
         frame_bytes = buffer.tobytes()
 
         # Yield frame dalam format MJPEG
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        yield (
+            b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+        )
 
-@app.route('/video_feed')
+
+@app.route("/video_feed")
 def video_feed():
     """Rute streaming MJPEG."""
-    return Response(generate_frames(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(
+        generate_frames(), mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
 
-@app.route('/')
+
+@app.route("/")
 def index():
     """Halaman HTML sederhana untuk menampilkan stream."""
     return (
@@ -69,6 +74,7 @@ def index():
         f"<img src='{app.url_for('video_feed')}' width='{FRAME_WIDTH}'/>"
     )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Pastikan server dapat diakses dari jaringan lokal
-    app.run(host='0.0.0.0', port=FLASK_PORT, debug=False)
+    app.run(host="0.0.0.0", port=FLASK_PORT, debug=False)

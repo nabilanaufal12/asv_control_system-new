@@ -2,7 +2,7 @@ import sys
 from ultralytics import YOLO
 
 # Pastikan path model benar
-MODEL_PATH = "src/navantara_backend/vision/best.pt" 
+MODEL_PATH = "src/navantara_backend/vision/best.pt"
 
 try:
     print(f"Memuat model dari {MODEL_PATH}...")

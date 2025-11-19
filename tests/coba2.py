@@ -10,11 +10,11 @@ cap0 = cv2.VideoCapture(0)
 cap0.set(cv2.CAP_PROP_FRAME_WIDTH, DISPLAY_WIDTH)
 cap0.set(cv2.CAP_PROP_FRAME_HEIGHT, DISPLAY_HEIGHT)
 
-# Buka Kamera 1 (USB) di /dev/video2 
+# Buka Kamera 1 (USB) di /dev/video2
 # (Saya tebak '2' karena Anda mencoba sensor-id=2)
 # Jika gagal, coba ganti ke cv2.VideoCapture(1)
 print("Membuka Kamera 1 di /dev/video2")
-cap1 = cv2.VideoCapture(2) 
+cap1 = cv2.VideoCapture(2)
 cap1.set(cv2.CAP_PROP_FRAME_WIDTH, DISPLAY_WIDTH)
 cap1.set(cv2.CAP_PROP_FRAME_HEIGHT, DISPLAY_HEIGHT)
 
@@ -43,7 +43,7 @@ while True:
     combined_frame = np.hstack((frame0, frame1))
     cv2.imshow(window_name, combined_frame)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
 print("Menutup kamera...")

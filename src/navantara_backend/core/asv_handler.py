@@ -23,13 +23,12 @@ TELEMETRY_KEY_MAP = {
     "latitude": "lat",
     "longitude": "lon",
     "heading": "hdg",
-    "speed": "sog",             # Speed Over Ground
+    "speed": "sog",  # Speed Over Ground
     "battery_voltage": "bat",
     "status": "sts",
     "control_mode": "mode",
     "active_arena": "ar",
     "inverse_servo": "inv",
-    
     # Navigation & Waypoints
     "waypoints": "wps",
     "current_waypoint_index": "cur_wp",
@@ -38,13 +37,11 @@ TELEMETRY_KEY_MAP = {
     "nav_heading_error": "err_hdg",
     "nav_target_bearing": "tgt_brg",
     "nav_gps_sats": "sat",
-    
     # Actuators
     "nav_servo_cmd": "srv",
     "nav_motor_cmd": "mot",
     "manual_servo_cmd": "m_srv",
     "manual_motor_cmd": "m_mot",
-    
     # Debug & Misc
     "mission_time": "time",
     "rc_channels": "rc",
@@ -52,14 +49,16 @@ TELEMETRY_KEY_MAP = {
     "use_dummy_counter": "dum",
     "debug_waypoint_counter": "dbg_cnt",
     "vision_target": "vis",
-    "esp_status": "esp_sts"
+    "esp_status": "esp_sts",
 }
 # --- [AKHIR OPTIMASI] ---
+
 
 def map_value(x, in_min, in_max, out_min, out_max):
     if in_max == in_min:
         return out_min
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
 
 @dataclass
 class AsvState:
@@ -79,7 +78,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 9999.0 
+    nav_dist_to_wp: float = 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -87,7 +86,7 @@ class AsvState:
     nav_gps_sats: int = 0
     manual_servo_cmd: int = 90
     manual_motor_cmd: int = 1500
-    active_arena: str = "Unknown" 
+    active_arena: str = "Unknown"
     debug_waypoint_counter: int = 0
     use_dummy_counter: bool = False
     esp_status: str = None
@@ -148,7 +147,9 @@ class AsvHandler:
         if force_port:
             self.use_dummy_serial = False
             self.serial_handler.use_dummy_serial = False
-            logging.info(f"[AsvHandler] Memaksa koneksi serial ke: {force_port} @ {baud_rate}")
+            logging.info(
+                f"[AsvHandler] Memaksa koneksi serial ke: {force_port} @ {baud_rate}"
+            )
             connected = self.serial_handler.connect(force_port, baud_rate)
             if not connected:
                 logging.warning(
@@ -216,7 +217,7 @@ class AsvHandler:
 
             # --- BUILD DELTA PAYLOAD & MINIFY ---
             current_state_dict = asdict(self.current_state)
-            
+
             for key, value in current_state_dict.items():
                 # 1. Cek apakah data berubah dibandingkan emisi terakhir
                 # Menggunakan key ASLI untuk tracking state internal
@@ -225,11 +226,13 @@ class AsvHandler:
                     or self.last_emitted_state[key] != value
                 ):
                     # 2. Jika berubah, ambil SHORT CODE dari mapping
-                    short_key = TELEMETRY_KEY_MAP.get(key, key) # Default ke key asli jika tidak ada di map
-                    
+                    short_key = TELEMETRY_KEY_MAP.get(
+                        key, key
+                    )  # Default ke key asli jika tidak ada di map
+
                     # 3. Masukkan ke payload dengan key pendek
                     delta_payload[short_key] = value
-                    
+
                     # 4. Update tracking state dengan key asli dan value baru
                     self.last_emitted_state[key] = value
 
@@ -237,7 +240,7 @@ class AsvHandler:
             self.socketio.emit("telemetry_update", delta_payload)
 
     # ... (Sisa kode di bawah ini sama persis dengan sebelumnya)
-    
+
     def _read_from_serial_loop(self):
         while self.running:
             line = self.serial_handler.read_line()
@@ -276,7 +279,7 @@ class AsvHandler:
                 )
                 status_val = data.get("status", None)
                 self.current_state.esp_status = status_val
-                
+
                 self.current_state.rc_channels = data.get(
                     "rc_ch", self.current_state.rc_channels
                 )
@@ -294,9 +297,7 @@ class AsvHandler:
                         self.current_state.nav_target_bearing = data.get(
                             "wp_target_brg"
                         )
-                        self.current_state.nav_heading_error = data.get(
-                            "wp_error_hdg"
-                        )
+                        self.current_state.nav_heading_error = data.get("wp_error_hdg")
                         self.current_state.nav_servo_cmd = data.get("servo_out")
                         self.current_state.nav_motor_cmd = data.get("motor_out")
                     elif status == "AI_ACTIVE":
@@ -323,7 +324,9 @@ class AsvHandler:
                     > self.reconnect_interval
                 ):
                     self.last_reconnect_attempt = current_time
-                    logging.info("[AsvHandler] Mode AUTO aktif, mencoba koneksi ulang ke ESP32...")
+                    logging.info(
+                        "[AsvHandler] Mode AUTO aktif, mencoba koneksi ulang ke ESP32..."
+                    )
                     baud_rate = self.config.get("serial_connection", {}).get(
                         "default_baud_rate", 115200
                     )
@@ -350,43 +353,53 @@ class AsvHandler:
                     control_mode = self.current_state.control_mode
                     manual_servo_cmd = self.current_state.manual_servo_cmd
                     manual_motor_cmd = self.current_state.manual_motor_cmd
-                    
+
                     waypoints = self.current_state.waypoints
                     current_waypoint_index = self.current_state.current_waypoint_index
-                    
-                    vision_target_active = self.current_state.vision_target.get("active", False)
-                    vision_target_obj_class = self.current_state.vision_target.get("obstacle_class", "")
-                    
+
+                    vision_target_active = self.current_state.vision_target.get(
+                        "active", False
+                    )
+                    vision_target_obj_class = self.current_state.vision_target.get(
+                        "obstacle_class", ""
+                    )
+
                     active_arena = self.current_state.active_arena
-                    
-                    resume_waypoint_on_clear = self.current_state.resume_waypoint_on_clear
+
+                    resume_waypoint_on_clear = (
+                        self.current_state.resume_waypoint_on_clear
+                    )
                     nav_dist_to_wp = self.current_state.nav_dist_to_wp
                     esp_status = self.current_state.esp_status
                     status = self.current_state.status
-                    
+
                     use_dummy = self.current_state.use_dummy_counter
                     debug_counter = self.current_state.debug_waypoint_counter
 
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
                 motor_base = actuator_config.get("motor_pwm_auto_base", 1300)
-                
+
                 angle_left = 45
                 angle_right = 135
-                
+
                 is_arena_b = False
                 if active_arena:
-                    normalized_arena = str(active_arena).strip().lower().replace(" ", "_")
-                    if "b" in normalized_arena and "a" not in normalized_arena: 
-                         is_arena_b = True
+                    normalized_arena = (
+                        str(active_arena).strip().lower().replace(" ", "_")
+                    )
+                    if "b" in normalized_arena and "a" not in normalized_arena:
+                        is_arena_b = True
                     elif normalized_arena == "b":
-                         is_arena_b = True
+                        is_arena_b = True
                     elif "arena_b" in normalized_arena:
-                         is_arena_b = True
-                
+                        is_arena_b = True
+
                 trigger_wp_index = 7
-                current_effective_wp = debug_counter if use_dummy else current_waypoint_index
-                is_wp_triggered = (current_effective_wp >= trigger_wp_index)
+                current_effective_wp = (
+                    debug_counter if use_dummy else current_waypoint_index
+                )
+                is_wp_triggered = current_effective_wp >= trigger_wp_index
 
                 final_inversion_state = is_arena_b ^ is_wp_triggered
 
@@ -400,27 +413,33 @@ class AsvHandler:
                     logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
 
                 elif control_mode == "MANUAL":
-                    command_to_send = f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)}\n"
-                    logging.info(f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us")
+                    command_to_send = (
+                        f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)}\n"
+                    )
+                    logging.info(
+                        f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us"
+                    )
 
                 elif control_mode == "AUTO":
-                    mission_completed = bool(waypoints and current_waypoint_index >= len(waypoints))
+                    mission_completed = bool(
+                        waypoints and current_waypoint_index >= len(waypoints)
+                    )
                     if mission_completed:
                         command_to_send = "W\n"
-                    
+
                     if vision_target_active:
                         with self.state_lock:
                             self.current_state.recovering_from_avoidance = False
                             self.current_state.is_avoiding = True
-                            self.current_state.gate_context["last_gate_config"] = None 
-                        
+                            self.current_state.gate_context["last_gate_config"] = None
+
                         obj_class = vision_target_obj_class
                         servo_cmd = servo_default
                         desc = "Neutral"
-                        
+
                         if final_inversion_state:
                             if obj_class == "green_buoy":
-                                servo_cmd = angle_left   # 45
+                                servo_cmd = angle_left  # 45
                                 desc = "Green->45 (INV)"
                             elif obj_class == "red_buoy":
                                 servo_cmd = angle_right  # 135
@@ -430,17 +449,21 @@ class AsvHandler:
                                 servo_cmd = angle_right  # 135
                                 desc = "Green->135 (NRM)"
                             elif obj_class == "red_buoy":
-                                servo_cmd = angle_left   # 45
+                                servo_cmd = angle_left  # 45
                                 desc = "Red->45 (NRM)"
-                        
+
                         pwm_cmd = motor_base + 350
-                        
+
                         if nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
+                            logging.info(
+                                "[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav."
+                            )
                         elif esp_status == "WP_COMPLETE" or status == "WP_COMPLETE":
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W untuk melanjutkan waypoint")
+                            logging.info(
+                                "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W untuk melanjutkan waypoint"
+                            )
                         else:
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
                             logging.info(
@@ -466,7 +489,9 @@ class AsvHandler:
                             logging.info("[AsvHandler] WAYPOINT CONTROL -> Mengirim: W")
                         else:
                             command_to_send = None
-                            logging.info("[AsvHandler] WAYPOINT CONTROL -> Menunggu koneksi serial...")
+                            logging.info(
+                                "[AsvHandler] WAYPOINT CONTROL -> Menunggu koneksi serial..."
+                            )
 
                 if control_mode == "AUTO":
                     if esp_status == "WP_COMPLETE" or status in (
@@ -478,7 +503,9 @@ class AsvHandler:
                             and not command_to_send.strip().startswith("W")
                         ):
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] Mission complete detected -> forcing W")
+                            logging.info(
+                                "[AsvHandler] Mission complete detected -> forcing W"
+                            )
 
                 if command_to_send is None and resume_waypoint_on_clear:
                     if self.serial_handler.is_connected and control_mode == "AUTO":
@@ -494,14 +521,13 @@ class AsvHandler:
                     state_for_log = asdict(self.current_state)
 
                 self.logger.log_telemetry(state_for_log)
-                self._update_and_emit_state() 
+                self._update_and_emit_state()
                 send_telemetry_to_firebase(state_for_log, self.config)
 
             except Exception as e:
                 logging.error(f"[FATAL] Error di main_logic_loop: {e}", exc_info=True)
 
             self.socketio.sleep(0.02)
-
 
     def process_command(self, command, payload):
         command_handlers = {
@@ -539,7 +565,9 @@ class AsvHandler:
                 self.current_state.inverse_servo = not self.current_state.inverse_servo
             elif "value" in payload:
                 self.current_state.inverse_servo = bool(payload["value"])
-            logging.info(f"[AsvHandler] inverse_servo diubah ke: {self.current_state.inverse_servo}")
+            logging.info(
+                f"[AsvHandler] inverse_servo diubah ke: {self.current_state.inverse_servo}"
+            )
 
     def _handle_debug_counter(self, payload):
         action = payload.get("action")
@@ -557,7 +585,9 @@ class AsvHandler:
             self.current_state.debug_waypoint_counter = min(
                 self.current_state.debug_waypoint_counter, max_points_in_monitor
             )
-            logging.info(f"[AsvHandler] Debug counter diatur ke: {self.current_state.debug_waypoint_counter}")
+            logging.info(
+                f"[AsvHandler] Debug counter diatur ke: {self.current_state.debug_waypoint_counter}"
+            )
 
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
@@ -569,8 +599,8 @@ class AsvHandler:
                 self.current_state.is_avoiding = False
                 self.current_state.avoidance_direction = None
                 self.current_state.resume_waypoint_on_clear = True
-                self.current_state.gate_context["last_gate_config"] = None 
-                
+                self.current_state.gate_context["last_gate_config"] = None
+
             self.current_state.vision_target["active"] = is_active
             if is_active:
                 self.current_state.vision_target.update(payload)
@@ -643,22 +673,24 @@ class AsvHandler:
             pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
             servo_def = actuator_config.get("servo_default_angle", 90)
             command_str = f"A,{int(servo_def)},{int(pwm_stop)}\n"
-            logging.info(f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}")
+            logging.info(
+                f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
+            )
             self.serial_handler.send_command(command_str)
 
     def _handle_set_waypoints(self, payload):
         waypoints_data = payload.get("waypoints")
         raw_arena = payload.get("arena") or payload.get("arena_id")
-        
+
         arena_id = "Unknown"
         if raw_arena:
             clean_arena = str(raw_arena).strip().upper().replace(" ", "_")
             if "B" in clean_arena and "A" not in clean_arena:
-                 arena_id = "Arena_B"
+                arena_id = "Arena_B"
             elif "A" in clean_arena:
-                 arena_id = "Arena_A"
+                arena_id = "Arena_A"
             else:
-                 arena_id = clean_arena
+                arena_id = clean_arena
 
         if not isinstance(waypoints_data, list):
             logging.warning("[AsvHandler] Gagal set waypoints: Data tidak valid.")
@@ -689,7 +721,7 @@ class AsvHandler:
             self.current_state.current_waypoint_index = 0
             self.current_state.control_mode = "AUTO"
         self.logger.log_event("Memulai Return to Home.")
-    
+
     def _handle_set_photo_mission(self, payload):
         try:
             wp1 = int(payload.get("wp1", -1))
@@ -702,12 +734,16 @@ class AsvHandler:
                 self.current_state.photo_mission_qty_requested = count
                 self.current_state.photo_mission_qty_taken_1 = 0
                 self.current_state.photo_mission_qty_taken_2 = 0
-            
-            logging.info(f"[AsvHandler] Misi Foto diatur: WP1={wp1}, WP2={wp2}, Jml={count}/lokasi")
+
+            logging.info(
+                f"[AsvHandler] Misi Foto diatur: WP1={wp1}, WP2={wp2}, Jml={count}/lokasi"
+            )
             self.logger.log_event(f"Misi Foto: WP {wp1}&{wp2}, {count}x foto.")
-        
+
         except Exception as e:
-            logging.warning(f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}")
+            logging.warning(
+                f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}"
+            )
 
     def stop(self):
         self.running = False
