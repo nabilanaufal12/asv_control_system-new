@@ -15,7 +15,6 @@ from dataclasses import asdict
 
 # --- [MIGRASI: Import Ultralytics] ---
 from ultralytics import YOLO
-
 # -------------------------------------
 
 from navantara_backend.vision.overlay_utils import (
@@ -520,11 +519,11 @@ class VisionService:
     # --- [REFACTOR: ULTRALYTICS INFERENCE + LABEL MAPPING] ---
     def process_and_control(self, frame, is_mode_auto):
         """
-        Memproses frame menggunakan YOLOv11.
+        Memproses frame menggunakan YOLOv11 dengan Skala Ulang Koordinat.
         Fitur Utama:
-        1. Tpool execution untuk non-blocking.
-        2. Ekstraksi manual results.boxes (No Pandas).
-        3. Label Mapping (Green_Ball -> green_buoy).
+        1. Resize input hanya untuk AI (Inference).
+        2. Tampilan output dan navigasi menggunakan resolusi asli (HD).
+        3. Koordinat bounding box di-scale back agar akurat.
         """
 
         if not is_mode_auto:
@@ -537,18 +536,29 @@ class VisionService:
             return frame
 
         detections = []
+        
+        # 1. Siapkan Canvas Asli untuk Digambar (HD/Asli)
+        # Gunakan frame asli sebagai base, jangan frame resize
         annotated_frame = frame.copy()
+        
+        # Ambil dimensi asli untuk scaling balik
+        orig_h, orig_w = frame.shape[:2]
+        
+        # Ukuran target input model (sesuai engine TensorRT/YOLO)
+        target_size = 320
 
         try:
-            # --- [OPTIMASI: Resize Manual Sebelum Inference] ---
-            # Kita resize input agar data yang dikirim ke thread lebih kecil/ringan
-            frame_resized = cv2.resize(frame, (320, 320))
-            # ---------------------------------------------------
+            # 2. Resize HANYA untuk input AI (Optimasi Speed)
+            frame_resized = cv2.resize(frame, (target_size, target_size))
+            
+            # Hitung faktor skala
+            scale_x = orig_w / target_size
+            scale_y = orig_h / target_size
 
             results = eventlet.tpool.execute(
                 self.model.predict,
-                source=frame_resized,  # <--- Gunakan frame yang sudah di-resize
-                imgsz=320,  # Ukuran Engine TensorRT
+                source=frame_resized,  
+                imgsz=target_size,  
                 conf=self.conf_thres,
                 iou=self.iou_thres,
                 verbose=False,
@@ -556,20 +566,25 @@ class VisionService:
 
             result = results[0]
 
-            # Parsing Boxes Manual
+            # 3. Parsing Boxes Manual & Scaling Balik
             boxes = result.boxes
             if boxes is not None:
                 for box in boxes:
-                    coords = box.xyxy[0].cpu().numpy().tolist()
-                    x1, y1, x2, y2 = coords
+                    # Koordinat dalam skala 320x320
+                    coords_small = box.xyxy[0].cpu().numpy().tolist()
+                    x1_s, y1_s, x2_s, y2_s = coords_small
+                    
+                    # Scaling balik ke koordinat asli
+                    x1 = int(x1_s * scale_x)
+                    y1 = int(y1_s * scale_y)
+                    x2 = int(x2_s * scale_x)
+                    y2 = int(y2_s * scale_y)
 
                     conf = float(box.conf[0].cpu().numpy())
-
                     cls_id = int(box.cls[0].cpu().numpy())
                     raw_cls_name = result.names[cls_id]
 
                     # --- [LABEL MAPPING LOGIC] ---
-                    # Translate class name dari model baru ke nama class sistem lama
                     final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
                     # -----------------------------
 
@@ -580,16 +595,23 @@ class VisionService:
                         {
                             "xyxy": [x1, y1, x2, y2],
                             "center": (center_x, center_y),
-                            "class": final_cls_name,  # Gunakan nama yang sudah dimapping
+                            "class": final_cls_name,
                             "confidence": conf,
-                            "original_class": raw_cls_name,  # Simpan untuk debug jika perlu
+                            "original_class": raw_cls_name,
                         }
                     )
-
-            # Gunakan annotated_frame bawaan Ultralytics sebagai dasar
-            # Note: Plot akan menggunakan nama asli label model.
-            # Jika ingin custom label di visualisasi, harus digambar manual via OpenCV.
-            annotated_frame = result.plot()
+                    
+                    # --- [GAMBAR MANUAL HD] ---
+                    # Kita gambar manual karena result.plot() resolusinya kecil (320px)
+                    color = (0, 255, 0) # Default Hijau
+                    if "red" in final_cls_name: color = (0, 0, 255)
+                    elif "gate" in final_cls_name: color = (0, 255, 255)
+                    
+                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                    label_text = f"{final_cls_name} {conf:.2f}"
+                    cv2.putText(annotated_frame, label_text, (x1, y1 - 10), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                    # --------------------------
 
         except Exception as e:
             logging.error(f"[Vision] Inference error: {str(e)}")
@@ -603,6 +625,7 @@ class VisionService:
 
         for det in detections:
             # Logic warna buoy tetap dijalankan sebagai validasi lapis kedua
+            # PENTING: Gunakan 'frame' (asli) untuk validasi warna agar akurat
             if "buoy" in det["class"]:
                 det["class"] = self._validate_buoy_color(frame, det)
                 pixel_width = (
@@ -620,8 +643,9 @@ class VisionService:
         if is_mode_auto:
             with self.asv_handler.state_lock:
                 current_state_nav = self.asv_handler.current_state
+            # PENTING: Kirim lebar frame ASLI (orig_w) agar kalkulasi navigasi presisi
             self.handle_autonomous_navigation(
-                validated_detections, frame.shape[1], current_state_nav
+                validated_detections, orig_w, current_state_nav
             )
 
         # Misi fotografi
@@ -658,6 +682,7 @@ class VisionService:
                 if active_target and cooldown_ready:
                     # Trigger Photo
                     current_state_photo = self.asv_handler.current_state
+                    # PENTING: Gunakan frame ASLI (frame) agar foto resolusi tinggi
                     self.handle_photography_mission(
                         frame,
                         green_boxes_detected,
