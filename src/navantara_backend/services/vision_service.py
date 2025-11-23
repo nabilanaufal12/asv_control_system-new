@@ -618,12 +618,21 @@ class VisionService:
 
     # -----------------------------------------
 
+    # --- [PERBAIKAN: FIX STUCK MODE A] ---
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
         """Handles autonomous navigation based on object detections."""
+        
+        # 1. CEK COOLDOWN TERLEBIH DAHULU
+        # Ini wajib dijalankan setiap frame, ada deteksi atau tidak.
+        # Jika sudah lama (misal 2 detik) tidak melihat buoy valid, matikan mode Vision.
+        if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
+            self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
+        # 2. Baru cek apakah ada deteksi
         if not detections:
             return
 
+        # 3. Cek Mode Navigasi
         if current_state.control_mode != "AUTO":
             return
 
@@ -669,6 +678,7 @@ class VisionService:
                     payload_obs,
                 )
                 return
+    # -------------------------------------
 
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})

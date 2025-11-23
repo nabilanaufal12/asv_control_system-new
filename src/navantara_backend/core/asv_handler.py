@@ -78,7 +78,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 9999.0
+    nav_dist_to_wp: float = 0.0 # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -395,7 +395,7 @@ class AsvHandler:
                     elif "arena_b" in normalized_arena:
                         is_arena_b = True
 
-                trigger_wp_index = 7
+                trigger_wp_index = 5 # inversi di WP 5
                 current_effective_wp = (
                     debug_counter if use_dummy else current_waypoint_index
                 )
