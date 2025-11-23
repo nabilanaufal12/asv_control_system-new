@@ -102,20 +102,19 @@ class VisionService:
 
         print("[VisionService] Layanan Visi (YOLOv11 + TensorRT Ready) diinisialisasi.")
 
-    # --- [REFACTOR: SMART MODEL LOADER] ---
+    # --- [REFACTOR: SMART MODEL LOADER - BERSIH] ---
     def _load_yolo_model(self, config):
         """
         Memuat model dengan urutan prioritas:
         1. best.engine (TensorRT - Tercepat)
         2. best.pt (PyTorch Standard)
-        3. besto.pt (Backup)
         """
         try:
+            # Path relatif ke folder src/navantara_backend/vision/
             vision_dir = Path(__file__).parent.parent / "vision"
-
+            
             engine_path = vision_dir / "best.engine"
             pt_path = vision_dir / "best.pt"
-            pt_backup_path = vision_dir / "besto.pt"
 
             model_path = None
             task_msg = ""
@@ -123,44 +122,29 @@ class VisionService:
             # 1. Cek TensorRT (.engine) - PRIORITAS UTAMA
             if engine_path.exists():
                 print(f"[VisionService] MENEMUKAN MODEL TENSORRT: {engine_path}")
-                print(
-                    "[VisionService] Menggunakan akselerasi hardware Jetson (CUDA/TensorRT)."
-                )
+                print("[VisionService] Menggunakan akselerasi hardware Jetson (CUDA/TensorRT).")
                 model_path = str(engine_path)
                 task_msg = "TensorRT Engine"
-
-            # 2. Fallback ke Standard .pt
+            
+            # 2. Fallback ke PyTorch (.pt)
             elif pt_path.exists():
-                print(
-                    f"[VisionService] Warning: .engine tidak ditemukan. Menggunakan: {pt_path}"
-                )
+                print(f"[VisionService] Warning: .engine tidak ditemukan. Fallback ke .pt: {pt_path}")
+                print("[VisionService] Performa mungkin lebih lambat dibandingkan TensorRT.")
                 model_path = str(pt_path)
-                task_msg = "PyTorch Model (Standard)"
-
-            # 3. Fallback ke Backup .pt
-            elif pt_backup_path.exists():
-                print(
-                    f"[VisionService] Warning: best.pt tidak ditemukan. Menggunakan backup: {pt_backup_path}"
-                )
-                model_path = str(pt_backup_path)
-                task_msg = "PyTorch Model (Backup)"
-
+                task_msg = "PyTorch Model"
+            
             else:
-                print(
-                    f"[VisionService] KRITIS: Tidak ada model (best.engine, best.pt, atau besto.pt) di {vision_dir}"
-                )
+                print(f"[VisionService] KRITIS: Tidak ada model 'best.engine' atau 'best.pt' di {vision_dir}")
                 return None
 
             # Muat Model menggunakan Ultralytics
             print(f"[VisionService] Memuat {task_msg}...")
-            model = YOLO(model_path, task="detect")
-
-            # Warmup
+            model = YOLO(model_path, task='detect')
+            
+            # Pemanasan awal (Warmup)
             print("[VisionService] Melakukan warmup model...")
-            model.predict(
-                source=np.zeros((640, 640, 3), dtype=np.uint8), verbose=False, device=0
-            )
-
+            model.predict(source=np.zeros((640, 640, 3), dtype=np.uint8), verbose=False, device=0)
+            
             print(f"[VisionService] Model berhasil dimuat dan siap.")
             return model
 
@@ -168,7 +152,6 @@ class VisionService:
             print(f"[VisionService] KRITIS: Gagal memuat model YOLOv11: {e}")
             traceback.print_exc()
             return None
-
     # -----------------------------------------
 
     def _estimate_distance(self, pixel_width, object_class):
