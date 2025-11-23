@@ -53,7 +53,7 @@ class SerialHandler:
             )
             time.sleep(1.5)
             new_port.reset_input_buffer()
-            print(f"[Serial] ESP32 siap. Buffer bersih.")
+            print("[Serial] ESP32 siap. Buffer bersih.")
             # --- [AKHIR] ---
 
             with self.serial_lock:

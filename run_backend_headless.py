@@ -22,8 +22,8 @@ try:
 except NameError:
     sys.path.insert(0, "./src")
 
-from navantara_backend.main import create_app
-from navantara_backend.extensions import socketio
+from navantara_backend.main import create_app  # noqa: E402
+from navantara_backend.extensions import socketio  # noqa: E402
 
 app = create_app()
 

@@ -172,7 +172,7 @@ def apply_overlay(background_frame, overlay_data):
     y_pos += line_height
     putText_with_shadow(
         frame,
-        f"Lokasi: ASV NAVANTARA - UMRAH",
+        "Lokasi: ASV NAVANTARA - UMRAH",
         (info_x, y_pos),
         font_sub,
         font_size,

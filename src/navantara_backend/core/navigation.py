@@ -120,7 +120,7 @@ def run_navigation_logic(current_state, config, pid_controller):
             "motor_pwm_stop", 1500
         )
 
-    print(f"--- NAV LOGIC ---")
+    print("--- NAV LOGIC ---")
     print(
         f"  Target Bearing: {target_bearing:.2f}° | Current Heading: {current_heading:.2f}°"
     )

@@ -1,8 +1,4 @@
 # src/navantara_backend/vision/cloud_utils.py
-import requests
-import time
-
-
 def send_telemetry_to_firebase(telemetry_data, config):
     """Mengirim data telemetri ke Firebase Realtime Database."""
     # --- MODIFIKASI: Fungsionalitas di-comment ---

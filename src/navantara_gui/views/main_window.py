@@ -16,7 +16,6 @@ except NameError:
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
-    QHBoxLayout,
     QVBoxLayout,
     QTabWidget,
     QStatusBar,

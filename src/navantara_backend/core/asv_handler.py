@@ -1,18 +1,15 @@
 # src/navantara_backend/core/asv_handler.py
 import threading
 import time
-import math
 import numpy as np
 import json
 import logging
 from dataclasses import dataclass, asdict, field
 
 from navantara_backend.services.serial_service import SerialHandler
-from navantara_backend.core.navigation import (
-    run_navigation_logic,
-    PIDController,
-    haversine_distance,
-)
+
+# [FIX] Hapus 'run_navigation_logic' dan 'haversine_distance' yang tidak dipakai
+from navantara_backend.core.navigation import PIDController
 from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
 from navantara_backend.vision.cloud_utils import send_telemetry_to_firebase

@@ -3,19 +3,16 @@ from flask import (
     Blueprint,
     current_app,
     Response,
-    stream_with_context,
-    request,
-    jsonify,  # <-- TAMBAHKAN INI
+    jsonify,
 )
 import cv2
 import eventlet
-import traceback  # Impor traceback untuk log error yang lebih detail
+import traceback
 
 from navantara_backend.extensions import socketio
 
-# --- TAMBAHAN IMPORT (Meskipun tidak dipakai langsung di generator) ---
-# Ini diperlukan agar Python tahu tipe 'vision_service' saat type hinting,
-# tapi akses sebenarnya tetap melalui argumen 'vision_service'.
+# --- TAMBAHAN IMPORT ---
+# Diperlukan agar Python tahu tipe 'vision_service' saat type hinting
 from navantara_backend.services.vision_service import VisionService
 
 # --- AKHIR TAMBAHAN ---
@@ -24,9 +21,7 @@ api_blueprint = Blueprint("api", __name__)
 
 
 # --- Generator untuk CAM 1 (Hasil AI, Kualitas Disesuaikan) ---
-def generate_video_frames_cam1(
-    vision_service: VisionService,
-):
+def generate_video_frames_cam1(vision_service: VisionService):
     """Generator untuk streaming video frame CAM 1 (hasil AI) - OPTIMASI JPEG."""
     if not vision_service:
         print("ERROR CAM1: Vision service tidak diteruskan!")
@@ -86,9 +81,7 @@ def generate_video_frames_cam1(
 
 
 # --- Generator untuk CAM 2 (Mentah, Kualitas Disesuaikan) ---
-def generate_video_frames_cam2(
-    vision_service: VisionService,
-):
+def generate_video_frames_cam2(vision_service: VisionService):
     """Generator untuk streaming video frame CAM 2 (mentah) - OPTIMASI JPEG."""
     if not vision_service:
         print("ERROR CAM2: Vision service tidak diteruskan!")
@@ -169,7 +162,7 @@ def live_video_feed_cam2():
     )
 
 
-# --- Event Socket.IO (Tidak berubah) ---
+# --- Event Socket.IO ---
 @socketio.on("connect")
 def handle_connect():
     print("Klien GUI terhubung. Menunggu permintaan stream...")
@@ -206,46 +199,29 @@ def handle_socket_command(json_data):
     print(f"Menerima perintah via WebSocket: {command} dengan payload: {payload}")
 
     try:
-        # --- [MODIFIKASI DIMULAI] ---
-
         # 1. Perintah Khusus untuk Fitur Baru (Manual Capture)
         if command == "MANUAL_CAPTURE":
             capture_type = payload.get("type")  # "surface" atau "underwater"
             if capture_type:
                 print(f"[API] Memanggil trigger_manual_capture untuk: {capture_type}")
-                # Panggil fungsi yang sudah ada di vision_service
-                result = current_app.vision_service.trigger_manual_capture(capture_type)
-
-                # (Opsional) Kirim konfirmasi kembali ke GUI jika perlu
-                # socketio.emit("capture_status", result)
+                # Panggil fungsi di vision_service (tanpa menyimpan result yang tidak dipakai)
+                current_app.vision_service.trigger_manual_capture(capture_type)
             else:
                 print("[API] Perintah MANUAL_CAPTURE diterima, tapi 'type' tidak ada.")
 
         # 2. Perintah Lainnya (Navigasi, dll)
         else:
-            # Kirim ke asv_handler (seperti sebelumnya)
             current_app.asv_handler.process_command(command, payload)
-
             # Cek apakah vision_service memiliki 'process_command'
-            # (File Anda memiliki asumsi ini, tapi tidak ada di vision_service.py)
             if hasattr(current_app.vision_service, "process_command"):
                 current_app.vision_service.process_command(command, payload)
-            # else:
-            #    print("[API] Peringatan: vision_service.process_command tidak ditemukan.")
-
-        # --- [MODIFIKASI SELESAI] ---
 
     except Exception as e:
         print(f"[API] Error saat memproses command '{command}': {e}")
         traceback.print_exc()
 
 
-# --- [CATATAN: PENDEKATAN HTTP YANG ANDA MINTA] ---
-# Jika Anda *tetap* menginginkan endpoint HTTP, Anda bisa menambahkannya seperti ini.
-# Namun, ini akan lebih rumit di sisi GUI karena api_client Anda
-# saat ini murni Socket.IO.
-
-
+# --- Endpoint HTTP Alternatif (Optional) ---
 @api_blueprint.route("/api/capture/<string:cam_type>", methods=["POST"])
 def http_manual_capture(cam_type):
     """Endpoint HTTP alternatif untuk manual capture."""

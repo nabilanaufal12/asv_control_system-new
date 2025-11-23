@@ -9,7 +9,6 @@ import eventlet
 import os
 import eventlet.tpool
 import logging
-import sys
 import base64
 from pathlib import Path
 from dataclasses import asdict
@@ -43,23 +42,27 @@ class ThreadedCamera:
 
     def update(self):
         while not self.stopped:
-            if not self.capture.isOpened():
-                time.sleep(0.1)
-                continue
+            try:
+                if not self.capture.isOpened():
+                    time.sleep(0.1)
+                    continue
 
-            # Baca frame terus menerus secepat mungkin
-            status, frame = self.capture.read()
+                # Baca frame terus menerus secepat mungkin
+                status, frame = self.capture.read()
 
-            # Hanya simpan frame terbaru (timpa yang lama)
-            with self.lock:
-                if status:
-                    self.status = status
-                    self.frame = frame
-                else:
-                    self.status = False
+                # Hanya simpan frame terbaru (timpa yang lama)
+                with self.lock:
+                    if status:
+                        self.status = status
+                        self.frame = frame
+                    else:
+                        self.status = False
 
-            # Tidur sangat sebentar agar CPU tidak 100%
-            time.sleep(0.005)
+                # Tidur sangat sebentar agar CPU tidak 100%
+                time.sleep(0.005)
+            except Exception:
+                # Tangkap error (termasuk saat shutdown) agar tidak noisy
+                break
 
     def read(self):
         # Kembalikan frame terakhir yang berhasil diambil
@@ -203,7 +206,7 @@ class VisionService:
                 source=np.zeros((640, 640, 3), dtype=np.uint8), verbose=False, device=0
             )
 
-            print(f"[VisionService] Model berhasil dimuat dan siap.")
+            print("[VisionService] Model berhasil dimuat dan siap.")
             return model
 
         except Exception as e:
@@ -435,7 +438,7 @@ class VisionService:
                         self.socketio.emit(event_name, b64_string)
                         # Yield sebentar ke network
                         eventlet.sleep(0)
-                except Exception as e:
+                except Exception:
                     pass
 
             # Yield wajib untuk Eventlet

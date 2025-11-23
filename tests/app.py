@@ -1,5 +1,4 @@
 import cv2
-import numpy as np
 from flask import Flask, Response
 
 # --- Konfigurasi ---
@@ -27,7 +26,7 @@ try:
     )
     cap = cv2.VideoCapture(gstreamer_pipeline, cv2.CAP_GSTREAMER)
     print("Menggunakan GStreamer Pipeline...")
-except:
+except Exception:
     # Fallback ke input OpenCV standar jika GStreamer gagal
     cap = cv2.VideoCapture(CAMERA_INDEX)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)

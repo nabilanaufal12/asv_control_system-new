@@ -40,7 +40,6 @@ def simulate_mission():
     Thread terpisah yang berjalan di latar belakang,
     memperbarui state telemetri seolah-olah kapal sedang bergerak.
     """
-    global current_telemetry
 
     # Beri waktu 5 detik bagi browser untuk terhubung sebelum memulai
     print("[Simulator] Menunggu 5 detik sebelum memulai misi...")

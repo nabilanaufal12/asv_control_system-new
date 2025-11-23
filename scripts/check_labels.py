@@ -1,4 +1,4 @@
-import sys
+# src/scripts/check_labels.py
 from ultralytics import YOLO
 
 # Pastikan path model benar

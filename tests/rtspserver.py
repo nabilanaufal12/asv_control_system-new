@@ -100,9 +100,11 @@ def detect_fingers(frame):
                     # Hitung defects yang dalam (mewakili celah antar jari)
                     valid_defects = 0
                     for i in range(defects.shape[0]):
+                        # [FIX] Kembalikan baris ini karena s dan d dipake
+                        # Variabel e dan f tidak dipakai, tapi harus di-unpack
                         s, e, f, d = defects[i, 0]
                         start = tuple(max_contour[s][0])
-                        far = tuple(max_contour[f][0])
+                        # far = tuple(max_contour[f][0]) # far tidak dipakai, bisa dicomment
 
                         # Hanya pertimbangkan defects yang memiliki kedalaman cukup
                         if d > MIN_DEFECT_DEPTH:
@@ -194,10 +196,10 @@ def index():
         <body>
             <h1>Kamera 1 (Indeks {CAMERA_INDEX_1})</h1>
             <img src="/video_feed/1" style="max-width: 48%; border: 2px solid blue; margin-right: 1%;">
-            
+
             <h1>Kamera 2 (Indeks {CAMERA_INDEX_2})</h1>
             <img src="/video_feed/2" style="max-width: 48%; border: 2px solid red;">
-            
+
             <p>Konfigurasi: Resolusi {TARGET_WIDTH}x{TARGET_HEIGHT}, Kualitas JPEG {JPEG_QUALITY}%</p>
             <p><strong>Catatan:</strong> Deteksi jari berbasis warna kulit dan kontur. Akurasi sangat bergantung pada pencahayaan dan latar belakang. Pastikan tangan Anda memiliki kontras yang baik.</p>
         </body>

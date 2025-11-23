@@ -124,7 +124,7 @@ class VideoView(QWidget):
                 )
                 label_widget.setPixmap(scaled_pix)
 
-        except Exception as e:
+        except Exception:
             # Supaya log tidak penuh spam error, kita print sekali saja jika perlu
             # print(f"GUI Error (_display_frame): {e}")
             pass

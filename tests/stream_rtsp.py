@@ -1,5 +1,4 @@
 import cv2
-import numpy as np
 import os
 from flask import Flask, Response, render_template_string, url_for
 
