@@ -124,6 +124,7 @@ class ApiClient(QObject):
 
             except Exception as e:
                 print(f"[API-CAM2] Error processing frame: {e}")
+
         # --- [AKHIR PERBAIKAN] ---
 
     def initial_stream_request(self):

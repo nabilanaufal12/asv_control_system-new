@@ -25,6 +25,53 @@ from navantara_backend.vision.overlay_utils import (
 )
 
 
+class ThreadedCamera:
+    def __init__(self, src=0):
+        self.capture = cv2.VideoCapture(src)
+        # Coba set hardware buffer (meski sering diabaikan driver, tetap kita coba)
+        self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        # Inisialisasi frame
+        self.status, self.frame = self.capture.read()
+        self.stopped = False
+        self.lock = threading.Lock()
+
+        # Jalankan thread pembaca di background
+        self.thread = threading.Thread(target=self.update, args=())
+        self.thread.daemon = True
+        self.thread.start()
+
+    def update(self):
+        while not self.stopped:
+            if not self.capture.isOpened():
+                time.sleep(0.1)
+                continue
+
+            # Baca frame terus menerus secepat mungkin
+            status, frame = self.capture.read()
+
+            # Hanya simpan frame terbaru (timpa yang lama)
+            with self.lock:
+                if status:
+                    self.status = status
+                    self.frame = frame
+                else:
+                    self.status = False
+
+            # Tidur sangat sebentar agar CPU tidak 100%
+            time.sleep(0.005)
+
+    def read(self):
+        # Kembalikan frame terakhir yang berhasil diambil
+        with self.lock:
+            return self.status, self.frame.copy() if self.frame is not None else None
+
+    def stop(self):
+        self.stopped = True
+        self.thread.join()
+        self.capture.release()
+
+
 class VisionService:
     # --- Variabel Class untuk menyimpan frame terbaru & locks ---
     _latest_processed_frame_cam1 = None
@@ -113,7 +160,7 @@ class VisionService:
         try:
             # Path relatif ke folder src/navantara_backend/vision/
             vision_dir = Path(__file__).parent.parent / "vision"
-            
+
             engine_path = vision_dir / "best.engine"
             pt_path = vision_dir / "best.pt"
 
@@ -123,29 +170,39 @@ class VisionService:
             # 1. Cek TensorRT (.engine) - PRIORITAS UTAMA
             if engine_path.exists():
                 print(f"[VisionService] MENEMUKAN MODEL TENSORRT: {engine_path}")
-                print("[VisionService] Menggunakan akselerasi hardware Jetson (CUDA/TensorRT).")
+                print(
+                    "[VisionService] Menggunakan akselerasi hardware Jetson (CUDA/TensorRT)."
+                )
                 model_path = str(engine_path)
                 task_msg = "TensorRT Engine"
-            
+
             # 2. Fallback ke PyTorch (.pt)
             elif pt_path.exists():
-                print(f"[VisionService] Warning: .engine tidak ditemukan. Fallback ke .pt: {pt_path}")
-                print("[VisionService] Performa mungkin lebih lambat dibandingkan TensorRT.")
+                print(
+                    f"[VisionService] Warning: .engine tidak ditemukan. Fallback ke .pt: {pt_path}"
+                )
+                print(
+                    "[VisionService] Performa mungkin lebih lambat dibandingkan TensorRT."
+                )
                 model_path = str(pt_path)
                 task_msg = "PyTorch Model"
-            
+
             else:
-                print(f"[VisionService] KRITIS: Tidak ada model 'best.engine' atau 'best.pt' di {vision_dir}")
+                print(
+                    f"[VisionService] KRITIS: Tidak ada model 'best.engine' atau 'best.pt' di {vision_dir}"
+                )
                 return None
 
             # Muat Model menggunakan Ultralytics
             print(f"[VisionService] Memuat {task_msg}...")
-            model = YOLO(model_path, task='detect')
-            
+            model = YOLO(model_path, task="detect")
+
             # Pemanasan awal (Warmup)
             print("[VisionService] Melakukan warmup model...")
-            model.predict(source=np.zeros((640, 640, 3), dtype=np.uint8), verbose=False, device=0)
-            
+            model.predict(
+                source=np.zeros((640, 640, 3), dtype=np.uint8), verbose=False, device=0
+            )
+
             print(f"[VisionService] Model berhasil dimuat dan siap.")
             return model
 
@@ -153,6 +210,7 @@ class VisionService:
             print(f"[VisionService] KRITIS: Gagal memuat model YOLOv11: {e}")
             traceback.print_exc()
             return None
+
     # -----------------------------------------
 
     def _estimate_distance(self, pixel_width, object_class):
@@ -286,61 +344,59 @@ class VisionService:
     def _capture_loop(
         self, cam_index, frame_lock, cam_id_log, event_name, apply_detection
     ):
-        """Loop utama untuk menangkap frame dari satu kamera."""
-        cap = None
-        print(
-            f"[{cam_id_log}] Memulai loop untuk kamera index {cam_index} (AI: {apply_detection})..."
-        )
+        """
+        Loop capture yang sudah diperbaiki menggunakan ThreadedCamera.
+        """
+        print(f"[{cam_id_log}] Memulai loop kamera (Mode: Threaded Real-Time)...")
 
-        LOCAL_FEED_WIDTH = 320
-        LOCAL_FEED_HEIGHT = 240
-        
-        # --- [OPTIMASI DELAY] Counter untuk skip frame GUI ---
+        # --- [MODIFIKASI: Gunakan ThreadedCamera] ---
+        # Kita coba buka kamera menggunakan wrapper ThreadedCamera
+        # Catatan: ThreadedCamera internalnya sudah memanggil cv2.VideoCapture
+        cap = None
+        try:
+            # Cek dulu apakah index valid dengan cara biasa sebentar
+            temp = cv2.VideoCapture(cam_index)
+            if temp.isOpened():
+                temp.release()
+                # JIKA ADA, BARU JALANKAN THREADNYA
+                cap = ThreadedCamera(cam_index)
+                print(
+                    f"[{cam_id_log}] ThreadedCamera berhasil dimulai pada index {cam_index}"
+                )
+            else:
+                print(f"[{cam_id_log}] Gagal membuka kamera index {cam_index}")
+                return
+        except Exception as e:
+            print(f"[{cam_id_log}] Error inisialisasi kamera: {e}")
+            return
+        # --------------------------------------------
+
+        # Settingan GUI
+        GUI_SKIP_RATE = 5
         frame_counter = 0
-        GUI_SKIP_RATE = 3  # Kirim ke GUI setiap 3 frame sekali (Navigasi tetap real-time)
-        # -----------------------------------------------------
 
         while self.running:
-            frame = None
-            try:
-                if cap is None or not cap.isOpened():
-                    backends = [cv2.CAP_ANY, cv2.CAP_V4L2, cv2.CAP_GSTREAMER]
-                    for backend in backends:
-                        cap = cv2.VideoCapture(cam_index, backend)
-                        if cap.isOpened():
-                            print(
-                                f"[{cam_id_log}] Kamera berhasil dibuka (Backend: {backend})."
-                            )
-                            break
-                    if cap is None or not cap.isOpened():
-                        eventlet.sleep(5)
-                        continue
+            # --- [MODIFIKASI: Baca dari Buffer Thread] ---
+            # Ini akan instan (0 delay) karena mengambil frame terbaru dari memori
+            ret, frame = cap.read()
+            # ---------------------------------------------
 
-                ret, frame = cap.read()
+            if not ret or frame is None:
+                # Jika frame kosong, tunggu sebentar lalu coba lagi
+                eventlet.sleep(0.1)
+                continue
 
-                if not ret or frame is None:
-                    if cap.isOpened():
-                        cap.release()
-                    cap = None
-                    eventlet.sleep(1)
-                    continue
+            with self.settings_lock:
+                should_emit_to_gui = self.gui_is_listening
 
-                with self.settings_lock:
-                    should_emit_to_gui = self.gui_is_listening
+            with self.asv_handler.state_lock:
+                is_auto = self.asv_handler.current_state.control_mode == "AUTO"
 
-                with self.asv_handler.state_lock:
-                    is_auto = self.asv_handler.current_state.control_mode == "AUTO"
-
-                # 1. PROSES AI / NAVIGASI (WAJIB JALAN SETIAP FRAME)
-                # Agar respons kapal instan dan tidak delay
-                if apply_detection:
-                    try:
-                        processed_frame_ai = self.process_and_control(frame, is_auto)
-                    except Exception as e:
-                        print(f"[{cam_id_log}] Error dalam process_and_control: {e}")
-                        traceback.print_exc()
-                        eventlet.sleep(1)
-                        continue
+            # 1. PROSES AI (Inference)
+            if apply_detection:
+                try:
+                    # Proses frame (AI)
+                    processed_frame_ai = self.process_and_control(frame, is_auto)
 
                     with frame_lock:
                         VisionService._latest_processed_frame_cam1 = (
@@ -349,49 +405,46 @@ class VisionService:
                         VisionService._latest_processed_frame = (
                             VisionService._latest_processed_frame_cam1
                         )
+
                     frame_to_emit = processed_frame_ai
-                else:
-                    with frame_lock:
-                        VisionService._latest_raw_frame_cam2 = frame.copy()
-                    frame_to_emit = frame
+                except Exception as e:
+                    print(f"[{cam_id_log}] Error AI: {e}")
+                    traceback.print_exc()
+                    eventlet.sleep(0.1)
+                    continue
+            else:
+                # Kamera 2 (Tanpa AI)
+                with frame_lock:
+                    VisionService._latest_raw_frame_cam2 = frame.copy()
+                frame_to_emit = frame
 
-                # 2. KIRIM KE GUI (SKIP BEBERAPA FRAME)
-                # Ini mengurangi beban CPU (encode base64) & Network drastis
-                frame_counter += 1
-                if should_emit_to_gui and (frame_counter % GUI_SKIP_RATE == 0):
-                    try:
-                        # Resize lebih kecil untuk GUI agar ringan (opsional)
-                        gui_frame = cv2.resize(frame_to_emit, (640, 480))
-                    except:
-                        gui_frame = frame_to_emit
+            # 2. KIRIM KE GUI (Rate Limited)
+            frame_counter += 1
+            if should_emit_to_gui and (frame_counter % GUI_SKIP_RATE == 0):
+                try:
+                    # Resize kecil khusus untuk streaming agar ringan
+                    gui_frame = cv2.resize(frame_to_emit, (320, 240))
 
-                    # Kompresi JPEG Quality diturunkan sedikit (60 -> 50)
+                    # Kompresi rendah (Quality 35) agar cepat dikirim via WiFi
                     ret_encode, buffer = cv2.imencode(
-                        ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 50]
+                        ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 35]
                     )
 
                     if ret_encode:
-                        try:
-                            b64_bytes = base64.b64encode(buffer)
-                            b64_string = b64_bytes.decode('utf-8')
-                            # Emit non-blocking
-                            self.socketio.emit(event_name, b64_string)
-                        except Exception as e:
-                            print(f"[{cam_id_log}] Gagal emit frame: {e}")
+                        b64_string = base64.b64encode(buffer).decode("utf-8")
+                        self.socketio.emit(event_name, b64_string)
+                        # Yield sebentar ke network
+                        eventlet.sleep(0)
+                except Exception as e:
+                    pass
 
-                # Sleep sangat singkat agar CPU tidak 100%
-                eventlet.sleep(0.001) 
+            # Yield wajib untuk Eventlet
+            eventlet.sleep(0.001)
 
-            except Exception as e:
-                print(f"[{cam_id_log}] Error loop: {e}")
-                if cap and cap.isOpened():
-                    cap.release()
-                    cap = None
-                eventlet.sleep(5)
-
-        if cap and cap.isOpened():
-            cap.release()
-        print(f"[{cam_id_log}] Loop dihentikan.")
+        # Cleanup saat stop
+        if cap:
+            cap.stop()
+        print(f"[{cam_id_log}] Loop berhenti.")
 
     def trigger_manual_capture(self, capture_type: str):
         """
@@ -484,11 +537,15 @@ class VisionService:
         annotated_frame = frame.copy()
 
         try:
-            # Eksekusi Model di thread pool agar tidak memblokir Eventlet utama
+            # --- [OPTIMASI: Resize Manual Sebelum Inference] ---
+            # Kita resize input agar data yang dikirim ke thread lebih kecil/ringan
+            frame_resized = cv2.resize(frame, (320, 320))
+            # ---------------------------------------------------
+
             results = eventlet.tpool.execute(
                 self.model.predict,
-                source=frame,
-                imgsz=640,
+                source=frame_resized,  # <--- Gunakan frame yang sudah di-resize
+                imgsz=320,  # Ukuran Engine TensorRT
                 conf=self.conf_thres,
                 iou=self.iou_thres,
                 verbose=False,
@@ -619,7 +676,7 @@ class VisionService:
     # --- [PERBAIKAN: FIX STUCK MODE A] ---
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
         """Handles autonomous navigation based on object detections."""
-        
+
         # 1. CEK COOLDOWN TERLEBIH DAHULU
         # Ini wajib dijalankan setiap frame, ada deteksi atau tidak.
         # Jika sudah lama (misal 2 detik) tidak melihat buoy valid, matikan mode Vision.
@@ -676,7 +733,7 @@ class VisionService:
                     payload_obs,
                 )
                 return
-    # -------------------------------------
+        # -------------------------------------
 
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})

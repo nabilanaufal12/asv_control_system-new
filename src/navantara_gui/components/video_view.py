@@ -51,7 +51,7 @@ class VideoView(QWidget):
 
         self.label_video_1 = QLabel("Stream nonaktif.")
         self._style_label(self.label_video_1)
-        
+
         self.label_video_2 = QLabel("Stream nonaktif.")
         self._style_label(self.label_video_2)
 
@@ -93,15 +93,18 @@ class VideoView(QWidget):
             # --- KASUS 1: Data adalah NumPy Array (OpenCV Image) ---
             # Ini yang dikirim oleh api_client.py Anda sekarang
             if isinstance(frame_data, np.ndarray):
-                if frame_data.size == 0: return
-                
+                if frame_data.size == 0:
+                    return
+
                 # Convert BGR (OpenCV) ke RGB (Qt)
                 rgb_image = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
                 h, w, ch = rgb_image.shape
                 bytes_per_line = ch * w
-                
+
                 # Buat QImage dari data pixel raw
-                q_img = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+                q_img = QImage(
+                    rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888
+                )
 
             # --- KASUS 2: Data adalah String (Base64) ---
             elif isinstance(frame_data, str):
@@ -117,9 +120,7 @@ class VideoView(QWidget):
                 # Scaling gambar agar pas di label tanpa merusak rasio
                 pixmap = QPixmap.fromImage(q_img)
                 scaled_pix = pixmap.scaled(
-                    label_widget.size(), 
-                    Qt.KeepAspectRatio, 
-                    Qt.SmoothTransformation
+                    label_widget.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
                 label_widget.setPixmap(scaled_pix)
 
@@ -144,5 +145,7 @@ class VideoView(QWidget):
 
     def update_ui_controls(self, is_running):
         self.start_stop_button.setText("Stop Stream" if is_running else "Start Stream")
-        self.start_stop_button.setIcon(self.pause_icon if is_running else self.play_icon)
+        self.start_stop_button.setIcon(
+            self.pause_icon if is_running else self.play_icon
+        )
         self.invert_button.setEnabled(is_running)
