@@ -4,12 +4,8 @@ import os
 import eventlet
 import glob
 
-# --- [OPTIMASI 3] ---
 from dataclasses import asdict
 
-# --- [AKHIR OPTIMASI 3] ---
-
-# --- TAMBAHAN IMPORT ---
 from flask import (
     Flask,
     g,
@@ -20,9 +16,7 @@ from flask import (
     stream_with_context,
     request,
 )
-from flask_cors import CORS  # <--- 2. TAMBAHKAN IMPORT BARU INI
-
-# -----------------------
+from flask_cors import CORS
 
 from navantara_backend.extensions import socketio
 from navantara_backend.core.asv_handler import AsvHandler
@@ -35,36 +29,54 @@ def create_app():
     Membuat dan mengkonfigurasi instance aplikasi Flask (Application Factory).
     """
 
-    # --- MODIFIKASI: Perbaikan Path Absolut ---
-    # Dapatkan path absolut ke direktori 'main.py' ini
-    # (e.g., /home/navantara/navantara/src/navantara_backend)
     backend_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # Dapatkan path ke direktori 'src' (satu level di atas backend_dir)
-    # (e.g., /home/navantara/navantara/src)
     src_dir = os.path.dirname(backend_dir)
-
-    # Tentukan path ke folder 'navantara_web'
-    # (e.g., /home/navantara/navantara/src/navantara_web)
     web_folder_path = os.path.join(src_dir, "navantara_web")
 
-    # Gunakan path yang benar dan absolut untuk template_folder dan static_folder
     app = Flask(
         __name__, template_folder=web_folder_path, static_folder=web_folder_path
     )
 
-    CORS(app)  # <--- 3. INISIALISASI CORS DI SINI
+    CORS(app)
+
+    # --- [FIX KRITIS CORS: Preflight & Anti-Cache] ---
+    @app.before_request
+    def handle_options_request():
+        # [FIX 1: Handle OPTIONS Preflight Check]
+        if request.method == "OPTIONS":
+            response = current_app.make_default_options_response()
+            # Izinkan semua Origin untuk preflight
+            response.headers.add("Access-Control-Allow-Origin", "*")
+            response.headers.add(
+                "Access-Control-Allow-Headers",
+                "Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With",
+            )
+            response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            return response
+
+    @app.after_request
+    def add_cors_headers(response):
+        # [FIX 2: Tambahkan Header ke Semua Respons (GET/POST/SSE)]
+        # Memaksa agar file:// origin (WebEngine) diizinkan mengakses API ini
+        if "Access-Control-Allow-Origin" not in response.headers:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+
+        # Tambahkan header Anti-Cache (Penting untuk SSE/Ajax)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+    # ------------------------------------------------
 
     print(f"[Server] Web template_folder diatur ke: {web_folder_path}")
     print(f"[Server] Web static_folder diatur ke: {web_folder_path}")
-    # --- AKHIR MODIFIKASI ---
 
     # Muat konfigurasi
     try:
-        # Path config relatif dari 'main.py'
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(script_dir, "..", "..", "config", "config.json")
-        config_path = os.path.normpath(config_path)  # Membersihkan path (../..)
+        config_path = os.path.normpath(config_path)
 
         with open(config_path, "r") as f:
             app.config["ASV_CONFIG"] = json.load(f)
@@ -82,6 +94,7 @@ def create_app():
 
     @app.before_request
     def before_request():
+        # [CATATAN]: Handle OPTIONS request sudah dilakukan di hook terpisah di atas.
         g.asv_handler = current_app.asv_handler
         g.vision_service = current_app.vision_service
 
@@ -91,26 +104,28 @@ def create_app():
     # --- TAMBAHAN: Route untuk menyajikan monitor1.html ---
     @app.route("/")
     def index():
-        # Mengirim file monitor1.html dari template_folder
         return send_from_directory(app.template_folder, "monitor1.html")
 
     # --------------------------------------------------------
 
-    # --- TAMBAHKAN KODE BARU ANDA DI SINI ---
     @app.route("/local")
     def monitor_local():
-        # Ini akan menyajikan file 'monitor_local.html'
         return send_from_directory(app.template_folder, "monitor_local.html")
 
     # --------------------------------------------------------
 
-    # === TAMBAHKAN KODE BARU INI UNTUK HALAMAN DEBUG ===
     @app.route("/debug")
     def debug_telemetry():
-        # Ini akan menyajikan file 'debug_telemetry.html'
         return send_from_directory(app.template_folder, "debug_telemetry.html")
 
-    # === AKHIR KODE BARU ===
+    # === [FIX AKHIR] Rute untuk menyajikan halaman MapView dari HTTP ===
+    @app.route("/map_page")
+    def serve_map_page():
+        # Mengirim file index.html dari template_folder
+        # Ini penting agar Origin peta menjadi http://127.0.0.1:5000
+        return send_from_directory(app.template_folder, "index.html")
+
+    # === AKHIR FIX AKHIR ===
 
     # --- MODIFIKASI: RUTE BARU UNTUK MENYAJIKAN GAMBAR GALERI ---
     @app.route("/captures/<path:filename>")
@@ -118,10 +133,7 @@ def create_app():
         """
         Menyajikan file gambar statis dari direktori logs/captures.
         """
-        # os.getcwd() adalah root proyek (tempat run_backend_headless.py dijalankan)
         captures_dir = os.path.join(os.getcwd(), "logs", "captures")
-
-        # send_from_directory akan menangani keamanan path
         return send_from_directory(captures_dir, filename)
 
     # --- AKHIR MODIFIKASI ---
@@ -136,22 +148,12 @@ def create_app():
             state_data = current_app.asv_handler.current_state
 
             with current_app.asv_handler.state_lock:
-                # --- [OPTIMASI 3] ---
-                # Ubah objek dataclass menjadi dict untuk JSON
                 data_copy = asdict(state_data)
-                # --- [AKHIR OPTIMASI 3] ---
 
-            # Buat respons JSON
             response = jsonify(data_copy)
 
-            # --- TAMBAHAN UNTUK ANTI-CACHE ---
-            # Memberi tahu browser untuk tidak menyimpan cache
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-            # --- AKHIR TAMBAHAN ---
-
-            return response  # <--- Mengembalikan respons yang sudah dimodifikasi
+            # Header Anti-Cache sudah diurus oleh @app.after_request
+            return response
 
         except Exception as e:
             return (
@@ -166,11 +168,10 @@ def create_app():
     def manual_capture():
         """
         Endpoint API untuk memicu pengambilan gambar manual.
-        Menerima JSON: {"type": "surface"} atau {"type": "underwater"}
         """
         try:
             data = request.json
-            capture_type = data.get("type")  # 'surface' or 'underwater'
+            capture_type = data.get("type")
 
             if capture_type not in ["surface", "underwater"]:
                 return (
@@ -178,14 +179,12 @@ def create_app():
                     400,
                 )
 
-            # Panggil fungsi baru di vision_service
-            # Ini akan mengambil foto, menambah overlay, dan menyimpannya
             result = current_app.vision_service.trigger_manual_capture(capture_type)
 
             if result.get("status") == "success":
                 return jsonify(result), 200
             else:
-                return jsonify(result), 500  # Server error jika gagal
+                return jsonify(result), 500
 
         except Exception as e:
             print(f"[API Capture] Error: {e}")
@@ -200,22 +199,11 @@ def create_app():
         Endpoint API HTTP untuk mengambil daftar file gambar galeri sebagai JSON.
         """
         try:
-            # os.getcwd() adalah root proyek (tempat run_backend_headless.py dijalankan)
             captures_dir = os.path.join(os.getcwd(), "logs", "captures")
-
-            # Cari semua file .jpg di folder itu
             search_path = os.path.join(captures_dir, "*.jpg")
-
-            # Gunakan glob untuk mendapatkan daftar file penuh
             full_paths = glob.glob(search_path)
-
-            # Ambil hanya nama filenya saja (bukan path lengkap)
             filenames = [os.path.basename(f) for f in full_paths]
-
-            # Urutkan berdasarkan nama (opsional, tapi rapi)
             filenames.sort()
-
-            # Kembalikan daftar sebagai JSON
             return jsonify(filenames)
 
         except Exception as e:
@@ -236,29 +224,19 @@ def create_app():
             """Generator untuk stream data."""
             try:
                 while True:
-                    # Ambil data telemetri terbaru dari asv_handler
-                    # Ini adalah cara thread-safe (greenlet-safe)
                     with current_app.asv_handler.state_lock:
-                        # --- [OPTIMASI 3] ---
-                        # Ubah objek dataclass menjadi dict untuk JSON
                         data = asdict(current_app.asv_handler.current_state)
-                        # --- [AKHIR OPTIMASI 3] ---
 
-                    # Format data sebagai JSON
                     json_data = json.dumps(data)
 
-                    # Kirim data dalam format SSE: "data: ...\n\n"
                     yield f"data: {json_data}\n\n"
 
-                    # Kirim data 10 kali per detik (sesuai loop utama asv_handler)
                     eventlet.sleep(0.1)
-            except Exception as e:
-                # Tangani jika klien terputus
-                print(f"[SSE Stream] Klien terputus: {e}")
+            except Exception:
+                pass
             finally:
                 print("[SSE Stream] Menghentikan stream telemetri.")
 
-        # Kembalikan Response streaming
         return Response(
             stream_with_context(telemetry_stream()), content_type="text/event-stream"
         )
@@ -266,6 +244,7 @@ def create_app():
     # --- AKHIR DARI ENDPOINT BARU ---
 
     # Inisialisasi SocketIO
+    # [PENTING] Set cors_allowed_origins='*' untuk kompatibilitas WebEngine/file://
     socketio.init_app(app, async_mode="eventlet", cors_allowed_origins="*")
 
     # Jalankan loop layanan sebagai greenlet

@@ -1,6 +1,8 @@
 // js/main.js
 
-const SERVER_IP = "http://192.168.2.146:5000";
+// --- KONFIGURASI IP ---
+// Gunakan 127.0.0.1 agar cocok dengan backend yang berjalan di mode aman (localhost).
+const SERVER_IP = "http://192.168.1.20:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -20,6 +22,7 @@ let lastKnownGps = { lat: 0, lng: 0 };
 
 // --- [OPTIMASI: REVERSE KEY MAPPING] ---
 // Mapping balik dari Short Key ke Long Key (sesuai Backend)
+// Ini PENTING agar GUI tidak error membaca data dari backend yang sudah di-minify
 const REVERSE_KEY_MAP = {
     "lat": "latitude",
     "lon": "longitude",
@@ -73,6 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   try {
+    // Koordinat Default (Danau UMM / Lokasi Lomba)
     const initialCoords = [0.916, 104.444]; 
     map = L.map("map-canvas").setView(initialCoords, 17);
 

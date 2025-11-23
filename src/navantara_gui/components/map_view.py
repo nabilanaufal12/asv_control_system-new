@@ -1,29 +1,32 @@
 # src/navantara_gui/components/map_view.py
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-import PyQt5.QtCore as QtCore  # [FIX] Pindahkan import ke atas untuk fix E402
-import os
+from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtCore import QUrl
 import json
 
 
 class MapView(QWidget):
-    def __init__(self):
+    def __init__(self, config=None):
         super().__init__()
+        self.config = config
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.web_view = QWebEngineView()
         self.layout.addWidget(self.web_view)
 
-        # Load HTML Map
-        curr_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(curr_dir, "../../../src/navantara_web/index.html")
+        # Ambil IP dan Port dari config (yang seharusnya 127.0.0.1:5000)
+        backend_cfg = self.config.get("backend_connection", {})
+        host = backend_cfg.get("ip_address", "127.0.0.1")
+        port = backend_cfg.get("port", 5000)
 
-        if os.path.exists(html_path):
-            self.web_view.load(QtCore.QUrl.fromLocalFile(html_path))
-        else:
-            self.web_view.setHtml("<h3>Map File Not Found</h3>")
+        # [FIX KRITIS FINAL] Load the HTML via Flask URL (Same-Origin)
+        # Ini adalah satu-satunya cara untuk mengatasi blokir WebEngine/file://
+        flask_url = QUrl(f"http://{host}:{port}/map_page")
 
-    def update_telemetry(self, data):
+        self.web_view.load(flask_url)
+        print(f"[MapView] Memuat peta dari URL Flask: {flask_url.toString()}")
+
+    def update_data(self, data):
         """
         Kirim update posisi ke JavaScript di dalam WebView.
         """
@@ -38,5 +41,12 @@ class MapView(QWidget):
         wps = data.get("wps", data.get("waypoints"))
         if wps:
             wps_json = json.dumps(wps)
+            script_wp = f"if (typeof updateWaypoints === 'function') {{ updateWaypoints({wps_json}); }}"
+            self.web_view.page().runJavaScript(script_wp)
+
+    def update_waypoints(self, waypoints):
+        """Slot khusus jika dipanggil langsung dari WaypointsPanel"""
+        if waypoints:
+            wps_json = json.dumps(waypoints)
             script_wp = f"if (typeof updateWaypoints === 'function') {{ updateWaypoints({wps_json}); }}"
             self.web_view.page().runJavaScript(script_wp)

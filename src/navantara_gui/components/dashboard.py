@@ -1,5 +1,5 @@
 # src/navantara_gui/components/dashboard.py
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -7,12 +7,13 @@ from PyQt5.QtWidgets import (
     QLabel,
     QFrame,
 )
-from PyQt5.QtCore import Qt
+from PySide6.QtCore import Qt
 
 
 class Dashboard(QWidget):
-    def __init__(self):
+    def __init__(self, config=None):
         super().__init__()
+        self.config = config
         self.init_ui()
 
     def init_ui(self):
@@ -96,7 +97,7 @@ class Dashboard(QWidget):
         line.setStyleSheet("background-color: #444;")
         return line
 
-    def update_telemetry(self, data):
+    def update_data(self, data):
         """
         Update GUI dengan data telemetri.
         Mendukung key 'SHORT' (Optimized) dan 'LONG' (Legacy).

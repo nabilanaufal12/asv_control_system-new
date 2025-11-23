@@ -7,7 +7,7 @@ import logging
 # Monkey patch harus dieksekusi sebelum impor lainnya
 eventlet.monkey_patch()
 
-# Konfigurasi logging (Level WARNING agar tidak terlalu berisik)
+# Konfigurasi logging
 logging.basicConfig(
     level=logging.WARNING,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -28,18 +28,22 @@ from navantara_backend.extensions import socketio  # noqa: E402
 app = create_app()
 
 if __name__ == "__main__":
-    logging.info("🚀 Menjalankan Backend Server ASV dalam Mode Otonom/Headless...")
+    logging.info("🚀 Menjalankan Backend Server ASV (SECURE LOCAL MODE)...")
 
-    # --- [PERBAIKAN: AMBIL DARI CONFIG.JSON] ---
-    # Ambil konfigurasi yang sudah dimuat oleh create_app()
+    # Ambil konfigurasi
     config = app.config.get("ASV_CONFIG", {})
     backend_config = config.get("backend_connection", {})
 
-    # Gunakan 0.0.0.0 sebagai default host
-    host = backend_config.get("ip_address", "0.0.0.0")
+    # --- [KEAMANAN: UBAH DEFAULT KE LOCALHOST] ---
+    # Jangan gunakan 0.0.0.0 kecuali Anda ingin akses remote dari laptop lain.
+    # 127.0.0.1 memastikan hanya aplikasi lokal (GUI di Jetson) yang bisa akses.
+    host = backend_config.get("ip_address", "127.0.0.1")
+
     # Gunakan 5000 sebagai default port
     port = int(backend_config.get("port", 5000))
-    # --- [AKHIR PERBAIKAN] ---
+    # ---------------------------------------------
 
-    print(f"Server akan berjalan di http://{host}:{port}")
+    print(f"Server aman berjalan di http://{host}:{port}")
+    print("Akses dari luar (WiFi/LAN) diblokir secara default.")
+
     socketio.run(app, host=host, port=port, debug=False)
