@@ -10,6 +10,7 @@ import os
 import eventlet.tpool
 import logging
 import sys
+import base64
 from pathlib import Path
 from dataclasses import asdict
 
@@ -293,12 +294,16 @@ class VisionService:
 
         LOCAL_FEED_WIDTH = 320
         LOCAL_FEED_HEIGHT = 240
+        
+        # --- [OPTIMASI DELAY] Counter untuk skip frame GUI ---
+        frame_counter = 0
+        GUI_SKIP_RATE = 3  # Kirim ke GUI setiap 3 frame sekali (Navigasi tetap real-time)
+        # -----------------------------------------------------
 
         while self.running:
             frame = None
             try:
                 if cap is None or not cap.isOpened():
-                    # print(f"[{cam_id_log}] Mencoba membuka kamera index {cam_index}...")
                     backends = [cv2.CAP_ANY, cv2.CAP_V4L2, cv2.CAP_GSTREAMER]
                     for backend in backends:
                         cap = cv2.VideoCapture(cam_index, backend)
@@ -326,6 +331,8 @@ class VisionService:
                 with self.asv_handler.state_lock:
                     is_auto = self.asv_handler.current_state.control_mode == "AUTO"
 
+                # 1. PROSES AI / NAVIGASI (WAJIB JALAN SETIAP FRAME)
+                # Agar respons kapal instan dan tidak delay
                 if apply_detection:
                     try:
                         processed_frame_ai = self.process_and_control(frame, is_auto)
@@ -348,24 +355,32 @@ class VisionService:
                         VisionService._latest_raw_frame_cam2 = frame.copy()
                     frame_to_emit = frame
 
-                if should_emit_to_gui:
+                # 2. KIRIM KE GUI (SKIP BEBERAPA FRAME)
+                # Ini mengurangi beban CPU (encode base64) & Network drastis
+                frame_counter += 1
+                if should_emit_to_gui and (frame_counter % GUI_SKIP_RATE == 0):
                     try:
+                        # Resize lebih kecil untuk GUI agar ringan (opsional)
                         gui_frame = cv2.resize(frame_to_emit, (640, 480))
                     except:
                         gui_frame = frame_to_emit
 
+                    # Kompresi JPEG Quality diturunkan sedikit (60 -> 50)
                     ret_encode, buffer = cv2.imencode(
-                        ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 60]
+                        ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 50]
                     )
 
                     if ret_encode:
-                        self.socketio.emit(event_name, buffer.tobytes())
+                        try:
+                            b64_bytes = base64.b64encode(buffer)
+                            b64_string = b64_bytes.decode('utf-8')
+                            # Emit non-blocking
+                            self.socketio.emit(event_name, b64_string)
+                        except Exception as e:
+                            print(f"[{cam_id_log}] Gagal emit frame: {e}")
 
-                if self.show_local_feed:
-                    # (Logic untuk menampilkan feed lokal, disederhanakan untuk brevity)
-                    pass
-
-                eventlet.sleep(0.02)
+                # Sleep sangat singkat agar CPU tidak 100%
+                eventlet.sleep(0.001) 
 
             except Exception as e:
                 print(f"[{cam_id_log}] Error loop: {e}")
