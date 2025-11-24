@@ -80,12 +80,12 @@ class WaypointsPanel(QGroupBox):
         button_layout.addWidget(self.delete_button)
 
         # --- [MODIFIKASI 3: UI Misi Foto Diperbarui] ---
-        photo_mission_box = QGroupBox("Misi Fotografi Otomatis")
+        photo_mission_box = QGroupBox("Misi Fotografi (Segmen)")  # Ganti Judul
         photo_mission_layout = QVBoxLayout()
 
         photo_form_layout = QFormLayout()
-        self.wp_target1_input = QLineEdit()  # Ubah nama jadi target1
-        self.wp_target2_input = QLineEdit()  # Tambah target2
+        self.wp_target1_input = QLineEdit()
+        self.wp_target2_input = QLineEdit()
         self.photo_count_input = QLineEdit()
 
         int_validator = QIntValidator(self)
@@ -93,15 +93,19 @@ class WaypointsPanel(QGroupBox):
         self.wp_target2_input.setValidator(int_validator)
         self.photo_count_input.setValidator(int_validator)
 
-        self.wp_target1_input.setPlaceholderText("Indeks WP 1 (opsional)")
-        self.wp_target2_input.setPlaceholderText("Indeks WP 2 (opsional)")
-        self.photo_count_input.setPlaceholderText("Jml Foto per Lokasi")
+        # [UBAH PLACEHOLDER]
+        self.wp_target1_input.setPlaceholderText("Start Index (Contoh: 1)")
+        self.wp_target2_input.setPlaceholderText("Stop Index (Contoh: 3)")
+        self.photo_count_input.setPlaceholderText("Max Total Foto")
 
-        photo_form_layout.addRow("Target WP 1:", self.wp_target1_input)
-        photo_form_layout.addRow("Target WP 2:", self.wp_target2_input)
-        photo_form_layout.addRow("Jumlah Foto:", self.photo_count_input)
+        # [UBAH LABEL]
+        photo_form_layout.addRow("Start WP Index:", self.wp_target1_input)
+        photo_form_layout.addRow("Stop WP Index:", self.wp_target2_input)
+        photo_form_layout.addRow("Max Foto:", self.photo_count_input)
 
-        self.set_photo_mission_button = QPushButton("Set Photo Mission")
+        self.set_photo_mission_button = QPushButton(
+            "Set Segment Mission"
+        )  # Ganti Label Tombol
         self.set_photo_mission_button.setStyleSheet(
             "background-color: #DAA520; color: white; font-weight: bold;"
         )
@@ -249,32 +253,41 @@ class WaypointsPanel(QGroupBox):
     # --- [MODIFIKASI 6: Fungsi handler Misi Foto Diperbarui] ---
     @Slot()
     def _on_set_photo_mission(self):
-        """Mengirim perintah untuk mengatur misi fotografi otomatis (dual target)."""
+        """Mengirim perintah untuk mengatur misi fotografi otomatis berbasis segmen."""
         wp1_text = self.wp_target1_input.text()
         wp2_text = self.wp_target2_input.text()
         count_text = self.photo_count_input.text()
 
-        # Minimal harus ada satu target WP dan jumlah foto
-        if (not wp1_text and not wp2_text) or not count_text:
-            print("[WaypointsPanel] Error: Isi minimal satu Target WP dan Jumlah Foto.")
+        # Validasi harus lengkap
+        if not wp1_text or not wp2_text or not count_text:
+            print(
+                "[WaypointsPanel] Error: Harap isi Start Index, Stop Index, dan Jumlah Foto."
+            )
             return
 
         try:
-            # Konversi ke int, gunakan -1 jika kosong
-            wp1 = int(wp1_text) if wp1_text else -1
-            wp2 = int(wp2_text) if wp2_text else -1
+            # Konversi ke int
+            wp1 = int(wp1_text)  # Start
+            wp2 = int(wp2_text)  # Stop
             count = int(count_text)
 
             if count <= 0:
                 print("[WaypointsPanel] Error: Jumlah Foto harus > 0.")
                 return
 
-            # Kirim payload baru
+            if wp1 >= wp2:
+                print(
+                    "[WaypointsPanel] Warning: Start Index sebaiknya lebih kecil dari Stop Index."
+                )
+
+            # Kirim payload (format tetap sama, interpretasi backend yang berubah)
             payload = {"wp1": wp1, "wp2": wp2, "count": count}
             self.send_photo_mission.emit(payload)
-            print(f"[WaypointsPanel] Sinyal send_photo_mission dipancarkan: {payload}")
+            print(
+                f"[WaypointsPanel] Misi Segmen dikirim: Start={wp1}, Stop={wp2}, Max={count}"
+            )
 
         except ValueError:
-            print("[WaypointsPanel] Error: Input tidak valid (pastikan angka).")
+            print("[WaypointsPanel] Error: Input harus berupa angka bulat.")
 
     # --- [AKHIR MODIFIKASI 6] ---

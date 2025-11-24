@@ -630,8 +630,6 @@ class VisionService:
 
         # --- Logic Navigasi & Misi (Unchanged) ---
         validated_detections = []
-        green_boxes_detected = []
-        blue_boxes_detected = []
 
         for det in detections:
             # Logic warna buoy tetap dijalankan sebagai validasi lapis kedua
@@ -658,54 +656,57 @@ class VisionService:
                 validated_detections, orig_w, current_state_nav
             )
 
-        # Misi fotografi
-        green_boxes_detected = [
-            d for d in validated_detections if d.get("class") == "green_box"
-        ]
-        blue_boxes_detected = [
-            d for d in validated_detections if d.get("class") == "blue_box"
-        ]
+        # --- [MULAI LOGIKA BARU: MISI FOTO SEGMEN] ---
+        # Langsung masuk ke logika segmen tanpa mendefinisikan green_boxes/blue_boxes
+        current_time = time.time()
 
-        if green_boxes_detected or blue_boxes_detected:
-            current_time = time.time()
+        with self.asv_handler.state_lock:
+            # Ambil state navigasi
+            current_wp = self.asv_handler.current_state.nav_target_wp_index
 
-            with self.asv_handler.state_lock:
-                current_wp = self.asv_handler.current_state.nav_target_wp_index
-                target1 = self.asv_handler.current_state.photo_mission_target_wp1
-                target2 = self.asv_handler.current_state.photo_mission_target_wp2
-                qty_req = self.asv_handler.current_state.photo_mission_qty_requested
+            # Ambil parameter misi
+            start_wp = self.asv_handler.current_state.photo_mission_target_wp1
+            stop_wp = self.asv_handler.current_state.photo_mission_target_wp2
+            qty_req = self.asv_handler.current_state.photo_mission_qty_requested
 
-                taken1 = self.asv_handler.current_state.photo_mission_qty_taken_1
-                taken2 = self.asv_handler.current_state.photo_mission_qty_taken_2
+            # Gunakan counter 1 sebagai counter utama
+            taken_total = self.asv_handler.current_state.photo_mission_qty_taken_1
 
-                cooldown_ready = (
-                    current_time - self.last_auto_photo_time
-                    > self.photo_mission_cooldown_sec
+            # Cek Cooldown
+            cooldown_ready = (
+                current_time - self.last_auto_photo_time
+                > self.photo_mission_cooldown_sec
+            )
+
+            # [KONDISI PEMICU SEGMEN]
+            mission_active = start_wp != -1 and stop_wp != -1
+            in_segment = (start_wp <= current_wp) and (current_wp < stop_wp)
+
+            should_take_photo = (
+                mission_active
+                and in_segment
+                and cooldown_ready
+                and (taken_total < qty_req)
+            )
+
+            if should_take_photo:
+                current_state_photo = self.asv_handler.current_state
+
+                # Trigger Capture (Paksa Surface Mode)
+                self.handle_photography_mission(
+                    frame,  # Frame asli resolusi tinggi
+                    [],
+                    [],  # List deteksi kosong (karena kita mode buta/interval)
+                    current_state_photo,
+                    force_surface=True,
                 )
 
-                active_target = None
-                if target1 != -1 and current_wp == target1 and taken1 < qty_req:
-                    active_target = 1
-                elif target2 != -1 and current_wp == target2 and taken2 < qty_req:
-                    active_target = 2
-
-                if active_target and cooldown_ready:
-                    # Trigger Photo
-                    current_state_photo = self.asv_handler.current_state
-                    # PENTING: Gunakan frame ASLI (frame) agar foto resolusi tinggi
-                    self.handle_photography_mission(
-                        frame,
-                        green_boxes_detected,
-                        blue_boxes_detected,
-                        current_state_photo,
-                    )
-
-                    if active_target == 1:
-                        self.asv_handler.current_state.photo_mission_qty_taken_1 += 1
-                    else:
-                        self.asv_handler.current_state.photo_mission_qty_taken_2 += 1
-
-                    self.last_auto_photo_time = current_time
+                # Update Counter & Timer
+                self.asv_handler.current_state.photo_mission_qty_taken_1 += 1
+                self.last_auto_photo_time = current_time
+                print(
+                    f"[Mission] Auto Capture ({taken_total + 1}/{qty_req}) di WP Segmen {current_wp}"
+                )
 
         return annotated_frame
 
@@ -777,7 +778,7 @@ class VisionService:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
     def handle_photography_mission(
-        self, frame_cam1, green_boxes, blue_boxes, current_state
+        self, frame_cam1, green_boxes, blue_boxes, current_state, force_surface=False
     ):
         """Mengambil snapshot dengan overlay."""
         frame_to_use = None
@@ -785,10 +786,11 @@ class VisionService:
         filename_prefix = None
         image_count = 0
 
-        if green_boxes:
+        # Logika Prioritas: Force Surface -> Green Box -> Blue Box
+        if force_surface or green_boxes:
             frame_to_use = frame_cam1
-            mission_name = "Surface Imaging"
-            filename_prefix = "surface"
+            mission_name = "Surface Mission (Auto)"
+            filename_prefix = "surface_auto"
             image_count = self.surface_image_count
             self.surface_image_count += 1
         elif blue_boxes:
@@ -797,8 +799,8 @@ class VisionService:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
                 else:
                     return
-            mission_name = "Underwater Imaging"
-            filename_prefix = "underwater"
+            mission_name = "Underwater Mission"
+            filename_prefix = "underwater_auto"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
 

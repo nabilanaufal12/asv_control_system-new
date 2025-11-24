@@ -75,7 +75,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 9999.0  # coba 9999.0
+    nav_dist_to_wp: float = 0.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -764,16 +764,21 @@ class AsvHandler:
             count = int(payload.get("count", 0))
 
             with self.state_lock:
-                self.current_state.photo_mission_target_wp1 = wp1
-                self.current_state.photo_mission_target_wp2 = wp2
+                self.current_state.photo_mission_target_wp1 = wp1  # Start Index
+                self.current_state.photo_mission_target_wp2 = wp2  # Stop Index
                 self.current_state.photo_mission_qty_requested = count
-                self.current_state.photo_mission_qty_taken_1 = 0
-                self.current_state.photo_mission_qty_taken_2 = 0
+                # Reset counter
+                self.current_state.photo_mission_qty_taken_1 = (
+                    0  # Kita pakai ini sebagai counter utama
+                )
+                self.current_state.photo_mission_qty_taken_2 = (
+                    0  # Tidak dipakai di mode segmen
+                )
 
             logging.info(
-                f"[AsvHandler] Misi Foto diatur: WP1={wp1}, WP2={wp2}, Jml={count}/lokasi"
+                f"[AsvHandler] Misi Segmen Foto diatur: Start WP={wp1}, Stop WP={wp2}, Max={count} foto."
             )
-            self.logger.log_event(f"Misi Foto: WP {wp1}&{wp2}, {count}x foto.")
+            self.logger.log_event(f"Misi Foto Segmen: {wp1}-{wp2}, max {count}.")
 
         except Exception as e:
             logging.warning(
