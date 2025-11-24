@@ -3,139 +3,230 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QGridLayout,
+    QGroupBox,
     QLabel,
+    QGridLayout,
     QFrame,
 )
-from PySide6.QtCore import Qt
+
+# [FIX] Baris import Qt dihapus karena tidak digunakan di implementasi baru
+# from PySide6.QtCore import Qt
+
+
+class NavigationStatusMonitor(QGroupBox):
+    """
+    Widget ringkas dengan layout Grid 2 Kolom untuk memantau
+    6 metrik vital operasi ASV.
+    """
+
+    def __init__(self):
+        super().__init__("Quick Status Monitor")
+
+        # Gunakan Grid Layout:
+        # Kolom 0: Label Kiri, Kolom 1: Nilai Kiri
+        # Kolom 2: Label Kanan, Kolom 3: Nilai Kanan
+        self.layout = QGridLayout()
+        self.layout.setVerticalSpacing(5)
+        self.layout.setHorizontalSpacing(15)
+
+        # --- Baris 1 ---
+        # Kiri: Mode Kendali
+        self.lbl_mode = QLabel("Mode:")
+        self.val_mode = QLabel("UNKNOWN")
+        self.val_mode.setStyleSheet("font-weight: bold; font-size: 14px;")
+
+        # Kanan: GPS Sats
+        self.lbl_sats = QLabel("GPS Sats:")
+        self.val_sats = QLabel("0")
+
+        # --- Baris 2 ---
+        # Kiri: Target WP
+        self.lbl_wp_idx = QLabel("Target WP:")
+        self.val_wp_idx = QLabel("-")
+
+        # Kanan: Jarak WP
+        self.lbl_wp_dist = QLabel("Jarak WP:")
+        self.val_wp_dist = QLabel("0.0 m")
+
+        # --- Baris 3 ---
+        # Kiri: Error Heading
+        self.lbl_err_hdg = QLabel("Error Hdg:")
+        self.val_err_hdg = QLabel("0.0°")
+        self.val_err_hdg.setStyleSheet("font-weight: bold;")
+
+        # Kanan: Vision Status
+        self.lbl_vision = QLabel("Vision AI:")
+        self.val_vision = QLabel("OFF")
+        self.val_vision.setStyleSheet("color: gray;")
+
+        # Menambahkan ke Layout Grid (row, col)
+        # Kolom Kiri (0, 1)
+        self.layout.addWidget(self.lbl_mode, 0, 0)
+        self.layout.addWidget(self.val_mode, 0, 1)
+
+        self.layout.addWidget(self.lbl_wp_idx, 1, 0)
+        self.layout.addWidget(self.val_wp_idx, 1, 1)
+
+        self.layout.addWidget(self.lbl_err_hdg, 2, 0)
+        self.layout.addWidget(self.val_err_hdg, 2, 1)
+
+        # Separator vertikal
+        line = QFrame()
+        line.setFrameShape(QFrame.VLine)
+        line.setFrameShadow(QFrame.Sunken)
+        self.layout.addWidget(line, 0, 2, 3, 1)  # Span 3 baris
+
+        # Kolom Kanan (3, 4) -- index 2 dipakai separator
+        self.layout.addWidget(self.lbl_sats, 0, 3)
+        self.layout.addWidget(self.val_sats, 0, 4)
+
+        self.layout.addWidget(self.lbl_wp_dist, 1, 3)
+        self.layout.addWidget(self.val_wp_dist, 1, 4)
+
+        self.layout.addWidget(self.lbl_vision, 2, 3)
+        self.layout.addWidget(self.val_vision, 2, 4)
+
+        self.setLayout(self.layout)
+
+    def update_status(self, data):
+        """
+        Memperbarui UI dengan logika fallback untuk key minification.
+        """
+        # 1. MODE KENDALI
+        mode = data.get("control_mode", data.get("mode", "MANUAL"))
+        self.val_mode.setText(str(mode).upper())
+
+        if mode == "AUTO":
+            self.val_mode.setStyleSheet(
+                "font-weight: bold; color: #2ecc71; font-size: 14px;"
+            )
+        elif mode == "MANUAL":
+            self.val_mode.setStyleSheet(
+                "font-weight: bold; color: #e67e22; font-size: 14px;"
+            )
+        else:
+            self.val_mode.setStyleSheet(
+                "font-weight: bold; color: red; font-size: 14px;"
+            )
+
+        # 2. GPS SATS
+        sats = data.get("nav_gps_sats", data.get("sat", 0))
+        self.val_sats.setText(str(sats))
+        if int(sats) < 4:
+            self.val_sats.setStyleSheet("color: red")
+        else:
+            self.val_sats.setStyleSheet("color: white")
+
+        # 3. TARGET WP
+        wp_idx = data.get("nav_target_wp_index", data.get("wp_idx", "-"))
+        self.val_wp_idx.setText(f"#{wp_idx}")
+
+        # 4. JARAK WP
+        dist = data.get("nav_dist_to_wp", data.get("wp_dst", 0.0))
+        self.val_wp_dist.setText(f"{float(dist):.1f} m")
+
+        # 5. ERROR HEADING
+        err = data.get("nav_heading_error", data.get("err_hdg", 0.0))
+        self.val_err_hdg.setText(f"{float(err):.1f}°")
+
+        if abs(float(err)) > 20.0:
+            self.val_err_hdg.setStyleSheet("font-weight: bold; color: #e74c3c;")
+        else:
+            self.val_err_hdg.setStyleSheet("font-weight: bold; color: #3498db;")
+
+        # 6. VISION ACTIVE
+        vis_data = data.get("vision_target", data.get("vis", {}))
+        is_vis_active = vis_data.get("active", False)
+
+        if is_vis_active:
+            self.val_vision.setText("ACTIVE")
+            self.val_vision.setStyleSheet("font-weight: bold; color: #2ecc71;")
+        else:
+            self.val_vision.setText("IDLE")
+            self.val_vision.setStyleSheet("color: gray;")
+
+
+class SensorDisplay(QGroupBox):
+    """
+    [COMPONENT LAMA] Menampilkan data sensor mentah (Compass, GPS, Speed).
+    """
+
+    def __init__(self):
+        super().__init__("Sensor Data")
+        layout = QVBoxLayout()
+
+        # Baris Heading
+        row1 = QHBoxLayout()
+        self.val_heading = QLabel("0.0°")
+        self.val_heading.setStyleSheet("font-size: 16px; font-weight: bold;")
+        row1.addWidget(QLabel("Heading:"))
+        row1.addWidget(self.val_heading)
+        layout.addLayout(row1)
+
+        # Baris Koordinat
+        self.val_lat = QLabel("0.0")
+        self.val_lon = QLabel("0.0")
+        layout.addWidget(QLabel("Latitude:"))
+        layout.addWidget(self.val_lat)
+        layout.addWidget(QLabel("Longitude:"))
+        layout.addWidget(self.val_lon)
+
+        # Baris Speed
+        row_spd = QHBoxLayout()
+        self.val_speed = QLabel("0.0 km/h")
+        row_spd.addWidget(QLabel("Speed:"))
+        row_spd.addWidget(self.val_speed)
+        layout.addLayout(row_spd)
+
+        self.setLayout(layout)
+
+    def update_sensor(self, data):
+        hdg = data.get("heading", data.get("hdg", 0.0))
+        lat = data.get("latitude", data.get("lat", 0.0))
+        lon = data.get("longitude", data.get("lon", 0.0))
+        spd = data.get("speed", data.get("sog", 0.0))
+
+        self.val_heading.setText(f"{float(hdg):.1f}°")
+        self.val_lat.setText(f"{float(lat):.6f}")
+        self.val_lon.setText(f"{float(lon):.6f}")
+        self.val_speed.setText(f"{float(spd):.1f} km/h")
 
 
 class Dashboard(QWidget):
-    def __init__(self, config=None):
+    """
+    Panel utama Dashboard yang menggabungkan SensorDisplay (Lama)
+    dan NavigationStatusMonitor (Baru).
+    """
+
+    def __init__(self, config):
         super().__init__()
         self.config = config
-        self.init_ui()
 
-    def init_ui(self):
-        main_layout = QVBoxLayout(self)
+        # Layout Utama Dashboard
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(5, 5, 5, 5)
+        self.main_layout.setSpacing(10)
 
-        # --- Status Cards ---
-        status_layout = QHBoxLayout()
-        self.status_card = self.create_card("Status", "DISCONNECTED")
-        self.mode_card = self.create_card("Mode", "MANUAL")
-        self.battery_card = self.create_card("Battery", "0.0 V")
-        self.gps_card = self.create_card("GPS Sats", "0")
+        # 1. Widget Sensor (Lama/Existing)
+        self.sensor_display = SensorDisplay()
+        self.main_layout.addWidget(self.sensor_display)
 
-        status_layout.addWidget(self.status_card)
-        status_layout.addWidget(self.mode_card)
-        status_layout.addWidget(self.battery_card)
-        status_layout.addWidget(self.gps_card)
-        main_layout.addLayout(status_layout)
+        # 2. Widget Monitoring Cepat (BARU)
+        self.status_monitor = NavigationStatusMonitor()
+        self.main_layout.addWidget(self.status_monitor)
 
-        # --- Navigation Info ---
-        nav_grid = QGridLayout()
-
-        self.lat_label = self.create_info_label("Latitude", "0.000000")
-        self.lon_label = self.create_info_label("Longitude", "0.000000")
-        self.heading_label = self.create_info_label("Heading", "0.0°")
-        self.speed_label = self.create_info_label("Speed", "0.0 knots")
-
-        self.wp_idx_label = self.create_info_label("Next WP", "-")
-        self.dist_label = self.create_info_label("Dist to WP", "0.0 m")
-        self.brg_label = self.create_info_label("Tgt Bearing", "0.0°")
-        self.err_label = self.create_info_label("Hdg Error", "0.0°")
-
-        nav_grid.addWidget(self.lat_label, 0, 0)
-        nav_grid.addWidget(self.lon_label, 0, 1)
-        nav_grid.addWidget(self.heading_label, 1, 0)
-        nav_grid.addWidget(self.speed_label, 1, 1)
-
-        nav_grid.addWidget(self.create_separator(), 2, 0, 1, 2)
-
-        nav_grid.addWidget(self.wp_idx_label, 3, 0)
-        nav_grid.addWidget(self.dist_label, 3, 1)
-        nav_grid.addWidget(self.brg_label, 4, 0)
-        nav_grid.addWidget(self.err_label, 4, 1)
-
-        main_layout.addLayout(nav_grid)
-        main_layout.addStretch()
-
-    def create_card(self, title, value):
-        frame = QFrame()
-        frame.setStyleSheet(
-            "background-color: #2d2d2d; border-radius: 5px; padding: 5px;"
-        )
-        layout = QVBoxLayout(frame)
-        title_lbl = QLabel(title)
-        title_lbl.setStyleSheet("color: #aaaaaa; font-size: 10px;")
-        val_lbl = QLabel(value)
-        val_lbl.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
-        val_lbl.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title_lbl)
-        layout.addWidget(val_lbl)
-        frame.value_label = val_lbl
-        return frame
-
-    def create_info_label(self, title, value):
-        widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        t = QLabel(f"{title}:")
-        t.setStyleSheet("color: #aaaaaa;")
-        v = QLabel(value)
-        v.setStyleSheet("color: white; font-weight: bold;")
-        v.setAlignment(Qt.AlignRight)
-        layout.addWidget(t)
-        layout.addWidget(v)
-        widget.value_label = v
-        return widget
-
-    def create_separator(self):
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        line.setStyleSheet("background-color: #444;")
-        return line
+        # Spacer agar widget terdorong ke atas
+        self.main_layout.addStretch()
 
     def update_data(self, data):
         """
-        Update GUI dengan data telemetri.
-        Mendukung key 'SHORT' (Optimized) dan 'LONG' (Legacy).
+        Menerima data telemetri (full atau minified) dari MainWindow/ApiClient.
         """
+        if not data:
+            return
 
-        # 1. Helper untuk ambil data (Coba Short Key dulu, lalu Long Key, lalu Default)
-        def get_val(short_k, long_k, default):
-            return data.get(short_k, data.get(long_k, default))
+        # Update Sensor Display Lama
+        self.sensor_display.update_sensor(data)
 
-        # 2. Ekstrak Data
-        lat = get_val("lat", "latitude", 0.0)
-        lon = get_val("lon", "longitude", 0.0)
-        hdg = get_val("hdg", "heading", 0.0)
-        spd = get_val("sog", "speed", 0.0)
-        bat = get_val("bat", "battery_voltage", 0.0)
-        sats = get_val("sat", "nav_gps_sats", 0)
-
-        status = get_val("sts", "status", "DISCONNECTED")
-        mode = get_val("mode", "control_mode", "MANUAL")
-
-        # Waypoint Info
-        wp_idx = get_val("wp_idx", "nav_target_wp_index", 0)
-        wp_dst = get_val("wp_dst", "nav_dist_to_wp", 0.0)
-        tgt_brg = get_val("tgt_brg", "nav_target_bearing", 0.0)
-        err_hdg = get_val("err_hdg", "nav_heading_error", 0.0)
-
-        # 3. Update UI Labels
-        self.status_card.value_label.setText(str(status))
-        self.mode_card.value_label.setText(str(mode))
-        self.battery_card.value_label.setText(f"{float(bat):.1f} V")
-        self.gps_card.value_label.setText(str(sats))
-
-        self.lat_label.value_label.setText(f"{float(lat):.6f}")
-        self.lon_label.value_label.setText(f"{float(lon):.6f}")
-        self.heading_label.value_label.setText(f"{float(hdg):.1f}°")
-        self.speed_label.value_label.setText(f"{float(spd):.1f} kn")
-
-        self.wp_idx_label.value_label.setText(str(wp_idx))
-        self.dist_label.value_label.setText(f"{float(wp_dst):.1f} m")
-        self.brg_label.value_label.setText(f"{float(tgt_brg):.0f}°")
-        self.err_label.value_label.setText(f"{float(err_hdg):.1f}°")
+        # Update Status Monitor Baru
+        self.status_monitor.update_status(data)
