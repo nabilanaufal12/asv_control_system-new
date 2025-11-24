@@ -199,6 +199,12 @@ class MainWindow(QMainWindow):
             lambda p: self.api_client.send_command("UPDATE_VISION_SERVO", p)
         )
 
+        self.settings_panel.vision_distance_updated.connect(
+            lambda d: self.api_client.send_command(
+                "UPDATE_VISION_DISTANCE", {"distance": d}
+            )
+        )
+
         self.control_panel.manual_button_clicked.connect(
             lambda: self.set_mode("MANUAL")
         )

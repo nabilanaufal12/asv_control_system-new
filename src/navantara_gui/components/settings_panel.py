@@ -35,14 +35,15 @@ class SettingsPanel(QGroupBox):
     # [BARU] Sinyal untuk update kecepatan AI Vision
     vision_speed_updated = Signal(int)
     vision_servo_updated = Signal(dict)
+    vision_distance_updated = Signal(float)
 
     def __init__(self, config, title="Settings"):
         super().__init__(title)
         self.config = config
         main_layout = QVBoxLayout()
 
-        # --- [BARU] BAGIAN KONTROL KECEPATAN & SERVO AI ---
-        ai_control_group = QGroupBox("AI Vision Control (PWM/Angle)")
+        # --- [MODIFIKASI] BAGIAN KONTROL AI ---
+        ai_control_group = QGroupBox("AI Vision Control")
         ai_layout = QVBoxLayout()
 
         # 1. Slider Kecepatan (Existing)
@@ -54,31 +55,42 @@ class SettingsPanel(QGroupBox):
         speed_layout.addWidget(self.lbl_ai_speed)
         speed_layout.addWidget(self.slider_ai_speed)
 
-        # 2. Input Servo Kiri & Kanan (BARU)
+        # 2. Input Servo Kiri & Kanan (Existing)
         servo_layout = QHBoxLayout()
-
-        # Servo Kiri (Default 45)
         self.spin_left = QSpinBox()
         self.spin_left.setRange(0, 90)
         self.spin_left.setValue(45)
         self.spin_left.setPrefix("Left: ")
         self.spin_left.setSuffix("°")
 
-        # Servo Kanan (Default 135)
         self.spin_right = QSpinBox()
         self.spin_right.setRange(90, 180)
         self.spin_right.setValue(135)
         self.spin_right.setPrefix("Right: ")
         self.spin_right.setSuffix("°")
 
-        servo_layout.addWidget(QLabel("Avoidance Angle:"))
+        servo_layout.addWidget(QLabel("Avoid Angle:"))
         servo_layout.addWidget(self.spin_left)
         servo_layout.addWidget(self.spin_right)
 
+        # 3. [BARU] Input Jarak Obstacle (cm)
+        dist_layout = QHBoxLayout()
+        self.spin_obs_dist = QSpinBox()
+        self.spin_obs_dist.setRange(0, 500)  # 0 - 5 meter
+        self.spin_obs_dist.setValue(160)  # Default 160 cm
+        self.spin_obs_dist.setSingleStep(10)
+        self.spin_obs_dist.setPrefix("Trigger Dist: ")
+        self.spin_obs_dist.setSuffix(" cm")
+
+        dist_layout.addWidget(QLabel("AI Activation:"))
+        dist_layout.addWidget(self.spin_obs_dist)
+
+        # Tambahkan ke layout group
         ai_layout.addLayout(speed_layout)
         ai_layout.addLayout(servo_layout)
-        ai_control_group.setLayout(ai_layout)
+        ai_layout.addLayout(dist_layout)  # <-- Tambahkan baris baru
 
+        ai_control_group.setLayout(ai_layout)
         main_layout.addWidget(ai_control_group)
 
         self.tab_widget = QTabWidget()
@@ -117,6 +129,7 @@ class SettingsPanel(QGroupBox):
         self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
         self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
+        self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
 
     def _on_ai_speed_changed(self, value):
         self.lbl_ai_speed.setText(f"PWM Motor: {value}")
@@ -125,3 +138,7 @@ class SettingsPanel(QGroupBox):
     def _on_ai_servo_changed(self):
         payload = {"left": self.spin_left.value(), "right": self.spin_right.value()}
         self.vision_servo_updated.emit(payload)
+
+    def _on_obs_dist_changed(self, value):
+        # Emit sinyal dengan nilai float (cm)
+        self.vision_distance_updated.emit(float(value))

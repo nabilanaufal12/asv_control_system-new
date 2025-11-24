@@ -517,6 +517,27 @@ class VisionService:
         except Exception as e:
             return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
 
+    def set_obstacle_distance(self, payload):
+        """
+        Mengubah jarak aktivasi penghindaran rintangan secara real-time.
+        Payload: {'distance': float}
+        """
+        try:
+            new_dist = float(payload.get("distance", 160.0))
+
+            # Batasi nilai agar masuk akal (misal 0 - 1000 cm)
+            new_dist = max(0.0, min(1000.0, new_dist))
+
+            with self.settings_lock:
+                self.obstacle_activation_distance = new_dist
+
+            print(f"[VisionService] Jarak pemicu obstacle diupdate ke: {new_dist} cm")
+
+        except ValueError:
+            print(
+                f"[VisionService] Error: Nilai jarak tidak valid di payload: {payload}"
+            )
+
     # --- [REFACTOR: ULTRALYTICS INFERENCE + LABEL MAPPING] ---
     def process_and_control(self, frame, is_mode_auto):
         """

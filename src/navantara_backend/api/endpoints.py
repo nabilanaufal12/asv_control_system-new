@@ -217,6 +217,14 @@ def handle_socket_command(json_data):
             print(f"[API] Mengupdate sudut Servo AI: {payload}")
             current_app.asv_handler.process_command(command, payload)
 
+        elif command == "UPDATE_VISION_DISTANCE":
+            print(f"[API] Mengupdate Jarak Deteksi AI: {payload}")
+            # Panggil method baru di VisionService
+            if hasattr(current_app, "vision_service"):
+                current_app.vision_service.set_obstacle_distance(payload)
+            else:
+                print("[API] Error: Vision Service tidak tersedia.")
+
         # 3. Perintah Lainnya (Navigasi, dll)
         else:
             current_app.asv_handler.process_command(command, payload)
