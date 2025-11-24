@@ -15,6 +15,7 @@ from dataclasses import asdict
 
 # --- [MIGRASI: Import Ultralytics] ---
 from ultralytics import YOLO
+
 # -------------------------------------
 
 from navantara_backend.vision.overlay_utils import (
@@ -536,29 +537,29 @@ class VisionService:
             return frame
 
         detections = []
-        
+
         # 1. Siapkan Canvas Asli untuk Digambar (HD/Asli)
         # Gunakan frame asli sebagai base, jangan frame resize
         annotated_frame = frame.copy()
-        
+
         # Ambil dimensi asli untuk scaling balik
         orig_h, orig_w = frame.shape[:2]
-        
+
         # Ukuran target input model (sesuai engine TensorRT/YOLO)
         target_size = 320
 
         try:
             # 2. Resize HANYA untuk input AI (Optimasi Speed)
             frame_resized = cv2.resize(frame, (target_size, target_size))
-            
+
             # Hitung faktor skala
             scale_x = orig_w / target_size
             scale_y = orig_h / target_size
 
             results = eventlet.tpool.execute(
                 self.model.predict,
-                source=frame_resized,  
-                imgsz=target_size,  
+                source=frame_resized,
+                imgsz=target_size,
                 conf=self.conf_thres,
                 iou=self.iou_thres,
                 verbose=False,
@@ -573,7 +574,7 @@ class VisionService:
                     # Koordinat dalam skala 320x320
                     coords_small = box.xyxy[0].cpu().numpy().tolist()
                     x1_s, y1_s, x2_s, y2_s = coords_small
-                    
+
                     # Scaling balik ke koordinat asli
                     x1 = int(x1_s * scale_x)
                     y1 = int(y1_s * scale_y)
@@ -600,17 +601,26 @@ class VisionService:
                             "original_class": raw_cls_name,
                         }
                     )
-                    
+
                     # --- [GAMBAR MANUAL HD] ---
                     # Kita gambar manual karena result.plot() resolusinya kecil (320px)
-                    color = (0, 255, 0) # Default Hijau
-                    if "red" in final_cls_name: color = (0, 0, 255)
-                    elif "gate" in final_cls_name: color = (0, 255, 255)
-                    
+                    color = (0, 255, 0)  # Default Hijau
+                    if "red" in final_cls_name:
+                        color = (0, 0, 255)
+                    elif "gate" in final_cls_name:
+                        color = (0, 255, 255)
+
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                     label_text = f"{final_cls_name} {conf:.2f}"
-                    cv2.putText(annotated_frame, label_text, (x1, y1 - 10), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                    cv2.putText(
+                        annotated_frame,
+                        label_text,
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        color,
+                        2,
+                    )
                     # --------------------------
 
         except Exception as e:

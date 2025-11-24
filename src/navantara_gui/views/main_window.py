@@ -164,6 +164,12 @@ class MainWindow(QMainWindow):
 
         self.settings_panel.debug_command_sent.connect(self.api_client.send_command)
 
+        self.settings_panel.vision_speed_updated.connect(
+            lambda val: self.api_client.send_command(
+                "UPDATE_VISION_SPEED", {"pwm": val}
+            )
+        )
+
         # --- PERUBAHAN UTAMA: Hubungkan sinyal dari ControlPanel ke fungsi logika ---
         self.control_panel.manual_button_clicked.connect(
             lambda: self.set_mode("MANUAL")

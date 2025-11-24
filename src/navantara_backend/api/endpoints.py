@@ -201,18 +201,21 @@ def handle_socket_command(json_data):
     try:
         # 1. Perintah Khusus untuk Fitur Baru (Manual Capture)
         if command == "MANUAL_CAPTURE":
-            capture_type = payload.get("type")  # "surface" atau "underwater"
+            capture_type = payload.get("type")
             if capture_type:
                 print(f"[API] Memanggil trigger_manual_capture untuk: {capture_type}")
-                # Panggil fungsi di vision_service (tanpa menyimpan result yang tidak dipakai)
                 current_app.vision_service.trigger_manual_capture(capture_type)
             else:
                 print("[API] Perintah MANUAL_CAPTURE diterima, tapi 'type' tidak ada.")
 
-        # 2. Perintah Lainnya (Navigasi, dll)
+        # 2. [BARU] Update Kecepatan Vision
+        elif command == "UPDATE_VISION_SPEED":
+            print(f"[API] Mengupdate kecepatan AI Vision: {payload}")
+            current_app.asv_handler.process_command(command, payload)
+
+        # 3. Perintah Lainnya (Navigasi, dll)
         else:
             current_app.asv_handler.process_command(command, payload)
-            # Cek apakah vision_service memiliki 'process_command'
             if hasattr(current_app.vision_service, "process_command"):
                 current_app.vision_service.process_command(command, payload)
 

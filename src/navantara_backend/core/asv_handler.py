@@ -102,6 +102,7 @@ class AsvState:
     photo_mission_qty_requested: int = 0
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
+    vision_auto_motor_cmd: int = 1500
 
 
 class AsvHandler:
@@ -429,6 +430,7 @@ class AsvHandler:
                             self.current_state.recovering_from_avoidance = False
                             self.current_state.is_avoiding = True
                             self.current_state.gate_context["last_gate_config"] = None
+                            current_ai_pwm = self.current_state.vision_auto_motor_cmd
 
                         obj_class = vision_target_obj_class
                         servo_cmd = servo_default
@@ -449,7 +451,7 @@ class AsvHandler:
                                 servo_cmd = angle_left  # 45
                                 desc = "Red->45 (NRM)"
 
-                        pwm_cmd = motor_base + 100
+                        pwm_cmd = current_ai_pwm
 
                         if nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
@@ -459,14 +461,12 @@ class AsvHandler:
                         elif esp_status == "WP_COMPLETE" or status == "WP_COMPLETE":
                             command_to_send = "W\n"
                             logging.info(
-                                "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W untuk melanjutkan waypoint"
+                                "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W"
                             )
                         else:
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
                             logging.info(
-                                f"[LOGIC DEBUG] ArenaRaw: '{active_arena}' -> Is_B: {is_arena_b} | "
-                                f"WP: {current_effective_wp} -> Trig: {is_wp_triggered} | "
-                                f"FINAL_INV: {final_inversion_state} | Action: {desc}"
+                                f"[LOGIC DEBUG] AI ACTIVE | Speed: {int(pwm_cmd)} | Action: {desc}"
                             )
 
                     elif resume_waypoint_on_clear:
@@ -536,6 +536,7 @@ class AsvHandler:
             "NAV_RETURN": self._handle_initiate_rth,
             "UPDATE_PID": self._handle_update_pid,
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
+            "UPDATE_VISION_SPEED": self._handle_update_vision_speed,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "INVERSE_SERVO": self._handle_inverse_servo,
             "SET_INVERSION": self._handle_set_inversion,
@@ -548,6 +549,19 @@ class AsvHandler:
             logging.warning(
                 f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'"
             )
+
+    def _handle_update_vision_speed(self, payload):
+        try:
+            pwm_val = int(payload.get("pwm", 1500))
+            # Batasi safety range di sisi backend juga
+            pwm_val = max(1300, min(1800, pwm_val))
+
+            with self.state_lock:
+                self.current_state.vision_auto_motor_cmd = pwm_val
+
+            logging.info(f"[AsvHandler] Kecepatan AI Vision diupdate ke PWM: {pwm_val}")
+        except ValueError:
+            logging.warning("[AsvHandler] Payload PWM tidak valid untuk vision speed")
 
     def _handle_set_inversion(self, payload):
         with self.state_lock:
