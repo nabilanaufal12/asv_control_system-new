@@ -376,7 +376,6 @@ class AsvHandler:
 
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
-                motor_base = actuator_config.get("motor_pwm_auto_base", 1300)
 
                 angle_left = 45
                 angle_right = 135
