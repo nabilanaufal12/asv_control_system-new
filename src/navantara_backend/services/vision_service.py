@@ -164,8 +164,8 @@ class VisionService:
             # Path relatif ke folder src/navantara_backend/vision/
             vision_dir = Path(__file__).parent.parent / "vision"
 
-            engine_path = vision_dir / "best.engine"
-            pt_path = vision_dir / "best.pt"
+            engine_path = vision_dir / "best100.engine"
+            pt_path = vision_dir / "best100.pt"
 
             model_path = None
             task_msg = ""
@@ -541,39 +541,22 @@ class VisionService:
     # --- [REFACTOR: ULTRALYTICS INFERENCE + LABEL MAPPING] ---
     def process_and_control(self, frame, is_mode_auto):
         """
-        Memproses frame menggunakan YOLOv11 dengan Skala Ulang Koordinat.
-        Fitur Utama:
-        1. Resize input hanya untuk AI (Inference).
-        2. Tampilan output dan navigasi menggunakan resolusi asli (HD).
-        3. Koordinat bounding box di-scale back agar akurat.
+        OPTIMIZED: Navigasi diprioritaskan sebelum Visualisasi.
         """
-
         if not is_mode_auto:
             return frame
 
-        if self.model is None:
-            return frame
-
-        if frame is None:
+        if self.model is None or frame is None:
             return frame
 
         detections = []
-
-        # 1. Siapkan Canvas Asli untuk Digambar (HD/Asli)
-        # Gunakan frame asli sebagai base, jangan frame resize
         annotated_frame = frame.copy()
-
-        # Ambil dimensi asli untuk scaling balik
         orig_h, orig_w = frame.shape[:2]
-
-        # Ukuran target input model (sesuai engine TensorRT/YOLO)
-        target_size = 320
+        target_size = 640  # Ukuran input model YOLOv11
 
         try:
-            # 2. Resize HANYA untuk input AI (Optimasi Speed)
+            # 1. INFERENCE (AI Processing)
             frame_resized = cv2.resize(frame, (target_size, target_size))
-
-            # Hitung faktor skala
             scale_x = orig_w / target_size
             scale_y = orig_h / target_size
 
@@ -585,30 +568,23 @@ class VisionService:
                 iou=self.iou_thres,
                 verbose=False,
             )
-
             result = results[0]
 
-            # 3. Parsing Boxes Manual & Scaling Balik
+            # 2. DATA EXTRACTION (Cepat)
+            # Hanya ekstrak koordinat dan class, JANGAN GAMBAR DULU.
             boxes = result.boxes
             if boxes is not None:
                 for box in boxes:
-                    # Koordinat dalam skala 320x320
                     coords_small = box.xyxy[0].cpu().numpy().tolist()
-                    x1_s, y1_s, x2_s, y2_s = coords_small
+                    x1 = int(coords_small[0] * scale_x)
+                    y1 = int(coords_small[1] * scale_y)
+                    x2 = int(coords_small[2] * scale_x)
+                    y2 = int(coords_small[3] * scale_y)
 
-                    # Scaling balik ke koordinat asli
-                    x1 = int(x1_s * scale_x)
-                    y1 = int(y1_s * scale_y)
-                    x2 = int(x2_s * scale_x)
-                    y2 = int(y2_s * scale_y)
-
-                    conf = float(box.conf[0].cpu().numpy())
                     cls_id = int(box.cls[0].cpu().numpy())
                     raw_cls_name = result.names[cls_id]
-
-                    # --- [LABEL MAPPING LOGIC] ---
                     final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
-                    # -----------------------------
+                    conf = float(box.conf[0].cpu().numpy())
 
                     center_x = int((x1 + x2) / 2)
                     center_y = int((y1 + y2) / 2)
@@ -623,26 +599,60 @@ class VisionService:
                         }
                     )
 
-                    # --- [GAMBAR MANUAL HD] ---
-                    # Kita gambar manual karena result.plot() resolusinya kecil (320px)
-                    color = (0, 255, 0)  # Default Hijau
-                    if "red" in final_cls_name:
-                        color = (0, 0, 255)
-                    elif "gate" in final_cls_name:
-                        color = (0, 255, 255)
+            # 3. CONTROL LOGIC (PRIORITAS UTAMA)
+            # Eksekusi keputusan navigasi SEKARANG JUGA sebelum CPU sibuk menggambar.
+            # Validasi warna buoy juga sebaiknya dilakukan di sini jika mempengaruhi keputusan
+            validated_detections_for_nav = []
+            for det in detections:
+                if "buoy" in det["class"]:
+                    # Validasi warna cepat
+                    det["class"] = self._validate_buoy_color(frame, det)
 
-                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-                    label_text = f"{final_cls_name} {conf:.2f}"
-                    cv2.putText(
-                        annotated_frame,
-                        label_text,
-                        (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        color,
-                        2,
+                    # Hitung jarak
+                    pixel_width = det["xyxy"][2] - det["xyxy"][0]
+                    det["distance_cm"] = self._estimate_distance(
+                        pixel_width, det.get("class")
                     )
-                    # --------------------------
+                validated_detections_for_nav.append(det)
+
+            if is_mode_auto:
+                with self.asv_handler.state_lock:
+                    current_state_nav = self.asv_handler.current_state
+
+                # [ZERO LATENCY TRIGGER]
+                # Kirim perintah ke ESP32
+                self.handle_autonomous_navigation(
+                    validated_detections_for_nav, orig_w, current_state_nav
+                )
+
+            # 4. VISUALIZATION (PRIORITAS RENDAH - UI ONLY)
+            # Lakukan penggambaran setelah perintah kontrol dikirim
+            for det in validated_detections_for_nav:
+                x1, y1, x2, y2 = det["xyxy"]
+                cls_name = det["class"]
+                conf = det["confidence"]
+
+                color = (0, 255, 0)
+                if "red" in cls_name:
+                    color = (0, 0, 255)
+                elif "gate" in cls_name:
+                    color = (0, 255, 255)
+
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(
+                    annotated_frame,
+                    f"{cls_name} {conf:.2f}",
+                    (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    2,
+                )
+
+            # Draw distance info (Visual Only)
+            annotated_frame = self._draw_distance_info(
+                annotated_frame, validated_detections_for_nav
+            )
 
         except Exception as e:
             logging.error(f"[Vision] Inference error: {str(e)}")
