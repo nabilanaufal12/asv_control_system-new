@@ -49,7 +49,10 @@ class MainWindow(QMainWindow):
 
         self.current_latitude = 0.0
         self.current_longitude = 0.0
-        self.current_control_mode = "MANUAL"
+
+        # [FIX 1] Set default internal mode ke AUTO agar konsisten dengan Backend
+        self.current_control_mode = "AUTO"
+
         self.is_rc_override = False  # Lacak status override RC
 
         self.header = Header(config=self.config)
@@ -73,7 +76,9 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.connect_signals()
 
-        self.set_mode("MANUAL")  # Atur mode awal saat start
+        # [FIX 2] Panggil set_mode("AUTO") saat startup
+        # Ini akan memperbarui tombol di ControlPanel dan mengirim perintah ke Backend
+        self.set_mode("AUTO")
 
         print("Memulai koneksi klien API ke server...")
         self.api_client.connect_to_server()

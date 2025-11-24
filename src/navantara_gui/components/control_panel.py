@@ -1,135 +1,205 @@
-# gui/components/control_panel.py
-# --- VERSI FINAL: Disederhanakan, semua logika dipindah ke MainWindow ---
-
-from PySide6.QtWidgets import QVBoxLayout, QGroupBox, QPushButton, QGridLayout
+# src/navantara_gui/components/control_panel.py
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QGroupBox,
+    QButtonGroup,
+)
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QIcon
+import os
 
 
-class ControlPanel(QGroupBox):
-    # Sinyal yang sudah ada
+class ControlPanel(QWidget):
     manual_button_clicked = Signal()
     auto_button_clicked = Signal()
-    emergency_stop_clicked = Signal()
-    navigation_command = Signal(str)
-
-    # --- [MODIFIKASI DIMULAI] ---
-    # Sinyal BARU untuk capture
     capture_surface_clicked = Signal()
     capture_underwater_clicked = Signal()
-    # --- [MODIFIKASI SELESAI] ---
 
-    def __init__(self, config, title="Vehicle Control"):
-        super().__init__(title)
-
+    def __init__(self, config):
+        super().__init__()
         self.config = config
-        main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
+        self.key_buttons = {}  # Simpan referensi tombol WASD
+        self.setup_ui()
 
-        button_font = QFont()
-        button_font.setPointSize(9)
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
 
-        # --- Box 1: Mode ---
-        mode_box = QGroupBox("Mode")
-        mode_layout = QVBoxLayout()
+        # --- Mode Selection ---
+        mode_group = QGroupBox("Vehicle Control")
+        mode_layout = QHBoxLayout()
+
+        self.mode_btn_group = QButtonGroup(self)
+        self.mode_btn_group.setExclusive(True)
 
         self.manual_mode_btn = QPushButton("MANUAL")
         self.manual_mode_btn.setCheckable(True)
-        self.manual_mode_btn.setFont(button_font)
+        # [FIX] Default checked diubah ke False
+        self.manual_mode_btn.setChecked(False)
 
         self.auto_mode_btn = QPushButton("AUTO")
         self.auto_mode_btn.setCheckable(True)
-        self.auto_mode_btn.setFont(button_font)
+        # [FIX] Default checked diubah ke True
+        self.auto_mode_btn.setChecked(True)
 
-        # Hubungkan klik tombol ke sinyal baru
-        self.manual_mode_btn.clicked.connect(self.manual_button_clicked.emit)
-        self.auto_mode_btn.clicked.connect(self.auto_button_clicked.emit)
-
-        self.emergency_stop_btn = QPushButton("EMERGENCY\nSTOP")
-        self.emergency_stop_btn.setStyleSheet(
-            "background-color: #D32F2F; color: white; font-weight: bold;"
+        # Styling tombol mode
+        self.manual_mode_btn.setStyleSheet(
+            """
+            QPushButton:checked { background-color: #e67e22; color: white; font-weight: bold; }
+            QPushButton { padding: 10px; }
+        """
         )
-        self.emergency_stop_btn.setFont(button_font)
-        self.emergency_stop_btn.clicked.connect(self.emergency_stop_clicked.emit)
+        self.auto_mode_btn.setStyleSheet(
+            """
+            QPushButton:checked { background-color: #2ecc71; color: white; font-weight: bold; }
+            QPushButton { padding: 10px; }
+        """
+        )
+
+        self.mode_btn_group.addButton(self.manual_mode_btn)
+        self.mode_btn_group.addButton(self.auto_mode_btn)
 
         mode_layout.addWidget(self.manual_mode_btn)
         mode_layout.addWidget(self.auto_mode_btn)
-        mode_layout.addWidget(self.emergency_stop_btn)
-        mode_box.setLayout(mode_layout)
+        mode_group.setLayout(mode_layout)
+        layout.addWidget(mode_group)
 
-        # --- Box 2: Navigation ---
-        navigation_box = QGroupBox("Navigation")
-        navigation_layout = QVBoxLayout()
-        self.start_mission_btn = QPushButton("Start\nMission")
-        self.start_mission_btn.setFont(button_font)
-        self.pause_mission_btn = QPushButton("Pause\nMission")
-        self.pause_mission_btn.setFont(button_font)
-        self.return_home_btn = QPushButton("Return\nHome")
-        self.return_home_btn.setFont(button_font)
+        # --- Manual Controls (WASD) ---
+        wasd_group = QGroupBox("Manual Drive")
+        wasd_layout = QVBoxLayout()
 
-        self.start_mission_btn.clicked.connect(
-            lambda: self.navigation_command.emit("START")
+        # Baris W
+        row_w = QHBoxLayout()
+        self.btn_w = self.create_key_button("W")
+        row_w.addStretch()
+        row_w.addWidget(self.btn_w)
+        row_w.addStretch()
+
+        # Baris ASD
+        row_asd = QHBoxLayout()
+        self.btn_a = self.create_key_button("A")
+        self.btn_s = self.create_key_button("S")
+        self.btn_d = self.create_key_button("D")
+
+        row_asd.addWidget(self.btn_a)
+        row_asd.addWidget(self.btn_s)
+        row_asd.addWidget(self.btn_d)
+
+        wasd_layout.addLayout(row_w)
+        wasd_layout.addLayout(row_asd)
+        wasd_group.setLayout(wasd_layout)
+        layout.addWidget(wasd_group)
+
+        # Simpan referensi untuk update visual nanti
+        self.key_buttons["W"] = self.btn_w
+        self.key_buttons["A"] = self.btn_a
+        self.key_buttons["S"] = self.btn_s
+        self.key_buttons["D"] = self.btn_d
+
+        # --- Mission Control ---
+        mission_group = QGroupBox("Mission Control")
+        mission_layout = QVBoxLayout()
+
+        self.start_mission_btn = QPushButton(" Start Mission")
+        self.start_mission_btn.setIcon(QIcon(self._get_icon_path("play-circle.svg")))
+        self.start_mission_btn.setStyleSheet(
+            "background-color: #27ae60; color: white; padding: 8px;"
         )
-        self.pause_mission_btn.clicked.connect(
-            lambda: self.navigation_command.emit("PAUSE")
+
+        self.pause_mission_btn = QPushButton(" Pause / Hold")
+        self.pause_mission_btn.setIcon(QIcon(self._get_icon_path("pause-circle.svg")))
+        self.pause_mission_btn.setStyleSheet(
+            "background-color: #f1c40f; color: black; padding: 8px;"
         )
-        self.return_home_btn.clicked.connect(
-            lambda: self.navigation_command.emit("RETURN")
+
+        self.return_home_btn = QPushButton(" Return to Home")
+        self.return_home_btn.setStyleSheet(
+            "background-color: #c0392b; color: white; padding: 8px;"
         )
-        navigation_layout.addWidget(self.start_mission_btn)
-        navigation_layout.addWidget(self.pause_mission_btn)
-        navigation_layout.addWidget(self.return_home_btn)
-        navigation_box.setLayout(navigation_layout)
 
-        # --- Box 3: Manual Capture (BARU) ---
-        capture_box = QGroupBox("Manual Capture")
-        capture_layout = QVBoxLayout()
+        mission_layout.addWidget(self.start_mission_btn)
+        mission_layout.addWidget(self.pause_mission_btn)
+        mission_layout.addWidget(self.return_home_btn)
+        mission_group.setLayout(mission_layout)
+        layout.addWidget(mission_group)
 
-        self.capture_surface_btn = QPushButton("Capture Surface (CAM 1)")
-        self.capture_surface_btn.setFont(button_font)
+        # --- [BARU] Camera Capture Controls ---
+        capture_group = QGroupBox("Camera Capture")
+        capture_layout = QHBoxLayout()
 
-        self.capture_underwater_btn = QPushButton("Capture Underwater (CAM 2)")
-        self.capture_underwater_btn.setFont(button_font)
+        self.btn_capture_surface = QPushButton("Surface")
+        self.btn_capture_surface.setStyleSheet("padding: 6px;")
 
-        # Hubungkan Tombol ke Sinyal Baru
-        self.capture_surface_btn.clicked.connect(self.capture_surface_clicked.emit)
-        self.capture_underwater_btn.clicked.connect(
+        self.btn_capture_underwater = QPushButton("Underwater")
+        self.btn_capture_underwater.setStyleSheet("padding: 6px;")
+
+        capture_layout.addWidget(self.btn_capture_surface)
+        capture_layout.addWidget(self.btn_capture_underwater)
+        capture_group.setLayout(capture_layout)
+
+        layout.addWidget(capture_group)
+        # ---------------------------------------
+
+        layout.addStretch()
+
+        # Koneksi Sinyal
+        self.manual_mode_btn.clicked.connect(self.manual_button_clicked.emit)
+        self.auto_mode_btn.clicked.connect(self.auto_button_clicked.emit)
+
+        self.btn_capture_surface.clicked.connect(self.capture_surface_clicked.emit)
+        self.btn_capture_underwater.clicked.connect(
             self.capture_underwater_clicked.emit
         )
 
-        capture_layout.addWidget(self.capture_surface_btn)
-        capture_layout.addWidget(self.capture_underwater_btn)
-        capture_box.setLayout(capture_layout)
-
-        # --- Box 4: Manual Control (WASD) ---
-        manual_control_box = QGroupBox("Manual Control (WASD)")
-        keyboard_layout = QGridLayout()
-        key_style = "padding: 8px; font-weight: bold; font-size: 12px;"
-        self.key_buttons = {
-            "W": QPushButton("W (↑)"),
-            "A": QPushButton("A (←)"),
-            "S": QPushButton("S (↓)"),
-            "D": QPushButton("D (→)"),
-        }
-        for button in self.key_buttons.values():
-            button.setStyleSheet(key_style)
-            # Logika press/release akan ditangani oleh MainWindow
-
-        keyboard_layout.addWidget(self.key_buttons["W"], 0, 1)
-        keyboard_layout.addWidget(self.key_buttons["A"], 1, 0)
-        keyboard_layout.addWidget(self.key_buttons["S"], 1, 1)
-        keyboard_layout.addWidget(self.key_buttons["D"], 1, 2)
-        manual_control_box.setLayout(keyboard_layout)
-
-        # --- Tambahkan semua box ke layout utama ---
-        main_layout.addWidget(mode_box)
-        main_layout.addWidget(navigation_box)
-        main_layout.addWidget(capture_box)  # <- Tambahkan box baru di sini
-        main_layout.addWidget(manual_control_box)
-        main_layout.addStretch()
-        self.setLayout(main_layout)
+    def create_key_button(self, text):
+        btn = QPushButton(text)
+        btn.setFixedSize(50, 50)
+        btn.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #ecf0f1;
+                border: 2px solid #bdc3c7;
+                border-radius: 5px;
+                font-weight: bold;
+                font-size: 16px;
+            }
+            QPushButton:pressed {
+                background-color: #3498db;
+                color: white;
+                border-color: #2980b9;
+            }
+        """
+        )
+        return btn
 
     def update_key_press_status(self, key_char, is_pressed):
-        key_char = key_char.upper()
-        if key_char in self.key_buttons:
-            self.key_buttons[key_char].setDown(is_pressed)
+        """Update visual tombol saat keyboard ditekan."""
+        btn = self.key_buttons.get(key_char)
+        if btn:
+            if is_pressed:
+                btn.setStyleSheet(
+                    """
+                    background-color: #3498db;
+                    color: white;
+                    border: 2px solid #2980b9;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    font-size: 16px;
+                """
+                )
+            else:
+                btn.setStyleSheet(
+                    """
+                    background-color: #ecf0f1;
+                    border: 2px solid #bdc3c7;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    font-size: 16px;
+                """
+                )
+
+    def _get_icon_path(self, filename):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base_dir, "..", "assets", filename)
