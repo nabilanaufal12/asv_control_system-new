@@ -213,6 +213,10 @@ def handle_socket_command(json_data):
             print(f"[API] Mengupdate kecepatan AI Vision: {payload}")
             current_app.asv_handler.process_command(command, payload)
 
+        elif command == "UPDATE_VISION_SERVO":
+            print(f"[API] Mengupdate sudut Servo AI: {payload}")
+            current_app.asv_handler.process_command(command, payload)
+
         # 3. Perintah Lainnya (Navigasi, dll)
         else:
             current_app.asv_handler.process_command(command, payload)

@@ -190,6 +190,10 @@ class MainWindow(QMainWindow):
             )
         )
 
+        self.settings_panel.vision_servo_updated.connect(
+            lambda p: self.api_client.send_command("UPDATE_VISION_SERVO", p)
+        )
+
         self.control_panel.manual_button_clicked.connect(
             lambda: self.set_mode("MANUAL")
         )

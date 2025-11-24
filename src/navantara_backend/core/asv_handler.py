@@ -103,6 +103,8 @@ class AsvState:
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
     vision_auto_motor_cmd: int = 1500
+    vision_servo_left_cmd: int = 45
+    vision_servo_right_cmd: int = 135
 
 
 class AsvHandler:
@@ -377,9 +379,6 @@ class AsvHandler:
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
 
-                angle_left = 45
-                angle_right = 135
-
                 is_arena_b = False
                 if active_arena:
                     normalized_arena = (
@@ -430,6 +429,12 @@ class AsvHandler:
                             self.current_state.is_avoiding = True
                             self.current_state.gate_context["last_gate_config"] = None
                             current_ai_pwm = self.current_state.vision_auto_motor_cmd
+                            current_angle_left = (
+                                self.current_state.vision_servo_left_cmd
+                            )
+                            current_angle_right = (
+                                self.current_state.vision_servo_right_cmd
+                            )
 
                         obj_class = vision_target_obj_class
                         servo_cmd = servo_default
@@ -437,18 +442,18 @@ class AsvHandler:
 
                         if final_inversion_state:
                             if obj_class == "green_buoy":
-                                servo_cmd = angle_left  # 45
-                                desc = "Green->45 (INV)"
+                                servo_cmd = current_angle_left  # Gunakan variabel
+                                desc = f"Green->{current_angle_left} (INV)"
                             elif obj_class == "red_buoy":
-                                servo_cmd = angle_right  # 135
-                                desc = "Red->135 (INV)"
+                                servo_cmd = current_angle_right  # Gunakan variabel
+                                desc = f"Red->{current_angle_right} (INV)"
                         else:
                             if obj_class == "green_buoy":
-                                servo_cmd = angle_right  # 135
-                                desc = "Green->135 (NRM)"
+                                servo_cmd = current_angle_right  # Gunakan variabel
+                                desc = f"Green->{current_angle_right} (NRM)"
                             elif obj_class == "red_buoy":
-                                servo_cmd = angle_left  # 45
-                                desc = "Red->45 (NRM)"
+                                servo_cmd = current_angle_left  # Gunakan variabel
+                                desc = f"Red->{current_angle_left} (NRM)"
 
                         pwm_cmd = current_ai_pwm
 
@@ -536,6 +541,7 @@ class AsvHandler:
             "UPDATE_PID": self._handle_update_pid,
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
             "UPDATE_VISION_SPEED": self._handle_update_vision_speed,
+            "UPDATE_VISION_SERVO": self._handle_update_vision_servo,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "INVERSE_SERVO": self._handle_inverse_servo,
             "SET_INVERSION": self._handle_set_inversion,
@@ -548,6 +554,25 @@ class AsvHandler:
             logging.warning(
                 f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'"
             )
+
+    def _handle_update_vision_servo(self, payload):
+        try:
+            left_val = int(payload.get("left", 45))
+            right_val = int(payload.get("right", 135))
+
+            # Validasi range sederhana
+            left_val = max(0, min(90, left_val))
+            right_val = max(90, min(180, right_val))
+
+            with self.state_lock:
+                self.current_state.vision_servo_left_cmd = left_val
+                self.current_state.vision_servo_right_cmd = right_val
+
+            logging.info(
+                f"[AsvHandler] Servo Vision Updated -> Left: {left_val}, Right: {right_val}"
+            )
+        except ValueError:
+            logging.warning("[AsvHandler] Payload servo tidak valid")
 
     def _handle_update_vision_speed(self, payload):
         try:

@@ -1,5 +1,13 @@
 # src/navantara_gui/components/settings_panel.py
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTabWidget, QLabel, QSlider
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QVBoxLayout,
+    QTabWidget,
+    QLabel,
+    QSlider,
+    QHBoxLayout,
+    QSpinBox,
+)
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
 
@@ -26,34 +34,52 @@ class SettingsPanel(QGroupBox):
 
     # [BARU] Sinyal untuk update kecepatan AI Vision
     vision_speed_updated = Signal(int)
+    vision_servo_updated = Signal(dict)
 
     def __init__(self, config, title="Settings"):
         super().__init__(title)
-
         self.config = config
-
         main_layout = QVBoxLayout()
 
-        # --- [BARU] BAGIAN KONTROL KECEPATAN AI ---
-        ai_speed_group = QGroupBox("AI Vision Speed Control")
+        # --- [BARU] BAGIAN KONTROL KECEPATAN & SERVO AI ---
+        ai_control_group = QGroupBox("AI Vision Control (PWM/Angle)")
         ai_layout = QVBoxLayout()
 
-        self.lbl_ai_speed = QLabel("AI PWM: 1500 (Default)")
-        self.lbl_ai_speed.setAlignment(Qt.AlignCenter)
-
+        # 1. Slider Kecepatan (Existing)
+        speed_layout = QHBoxLayout()
+        self.lbl_ai_speed = QLabel("PWM Motor: 1500")
         self.slider_ai_speed = QSlider(Qt.Horizontal)
         self.slider_ai_speed.setRange(1300, 1800)
         self.slider_ai_speed.setValue(1500)
-        self.slider_ai_speed.setTickPosition(QSlider.TicksBelow)
-        self.slider_ai_speed.setTickInterval(50)
+        speed_layout.addWidget(self.lbl_ai_speed)
+        speed_layout.addWidget(self.slider_ai_speed)
 
-        ai_layout.addWidget(self.lbl_ai_speed)
-        ai_layout.addWidget(self.slider_ai_speed)
-        ai_speed_group.setLayout(ai_layout)
+        # 2. Input Servo Kiri & Kanan (BARU)
+        servo_layout = QHBoxLayout()
 
-        # Tambahkan ke layout utama sebelum tab widget
-        main_layout.addWidget(ai_speed_group)
-        # ------------------------------------------
+        # Servo Kiri (Default 45)
+        self.spin_left = QSpinBox()
+        self.spin_left.setRange(0, 90)
+        self.spin_left.setValue(45)
+        self.spin_left.setPrefix("Left: ")
+        self.spin_left.setSuffix("°")
+
+        # Servo Kanan (Default 135)
+        self.spin_right = QSpinBox()
+        self.spin_right.setRange(90, 180)
+        self.spin_right.setValue(135)
+        self.spin_right.setPrefix("Right: ")
+        self.spin_right.setSuffix("°")
+
+        servo_layout.addWidget(QLabel("Avoidance Angle:"))
+        servo_layout.addWidget(self.spin_left)
+        servo_layout.addWidget(self.spin_right)
+
+        ai_layout.addLayout(speed_layout)
+        ai_layout.addLayout(servo_layout)
+        ai_control_group.setLayout(ai_layout)
+
+        main_layout.addWidget(ai_control_group)
 
         self.tab_widget = QTabWidget()
 
@@ -89,7 +115,13 @@ class SettingsPanel(QGroupBox):
 
         # [BARU] Koneksi slider AI Speed
         self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
+        self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
+        self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
 
     def _on_ai_speed_changed(self, value):
-        self.lbl_ai_speed.setText(f"AI PWM: {value}")
+        self.lbl_ai_speed.setText(f"PWM Motor: {value}")
         self.vision_speed_updated.emit(value)
+
+    def _on_ai_servo_changed(self):
+        payload = {"left": self.spin_left.value(), "right": self.spin_right.value()}
+        self.vision_servo_updated.emit(payload)
