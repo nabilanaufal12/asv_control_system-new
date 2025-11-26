@@ -254,33 +254,36 @@ class SerialHandler:
         with self.serial_lock:
             if self.serial_port:
                 try:
-                    # 1. Baca SEMUA data yang tersedia di buffer serial OS
-                    if self.serial_port.in_waiting > 0:
-                        data_in = self.serial_port.read(self.serial_port.in_waiting)
+                    # 1. Cek apakah ada data di buffer OS
+                    # Menggunakan in_waiting adalah kunci non-blocking
+                    waiting = self.serial_port.in_waiting
+                    if waiting > 0:
+                        # Baca semua yang ada, jangan baca per-byte
+                        data_in = self.serial_port.read(waiting)
                         self.read_buffer += data_in
 
-                    # 2. Cari pemisah baris (newline) di buffer internal kita
+                    # 2. Cari newline
                     newline_pos = self.read_buffer.find(b"\n")
 
                     if newline_pos != -1:
-                        # 3. Jika newline ditemukan, kita punya satu baris lengkap
-                        # Ambil baris lengkap (sebelum newline)
+                        # Ambil baris lengkap
                         line = self.read_buffer[:newline_pos]
-
-                        # Simpan sisa data (setelah newline) untuk panggilan berikutnya
+                        # Buang data yang sudah diambil dari buffer
                         self.read_buffer = self.read_buffer[newline_pos + 1 :]
 
-                        # 4. Kembalikan baris yang sudah bersih (decode dan strip)
+                        # Decode dan return
                         return line.decode("utf-8", errors="ignore").strip()
-                    else:
-                        # 5. Jika tidak ada newline, kita masih menunggu data
-                        # Kembalikan None agar tidak memblokir
-                        return None
+
+                    # Jika buffer internal terlalu besar (misal sampah), bersihkan
+                    if len(self.read_buffer) > 4096:
+                        self.read_buffer = b""
+
+                    return None
 
                 except serial.SerialException as e:
-                    print(f"[Serial] Error membaca data: {e}. Memutuskan koneksi.")
+                    print(f"[Serial] Error membaca data: {e}")
                     self.disconnect()
                 except Exception as e:
-                    print(f"[Serial] Error tidak terduga saat membaca: {e}")
+                    print(f"[Serial] Error tak terduga: {e}")
                     self.disconnect()
         return None

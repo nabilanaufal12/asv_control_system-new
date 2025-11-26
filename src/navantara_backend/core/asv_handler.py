@@ -242,24 +242,44 @@ class AsvHandler:
     # ... (Sisa kode di bawah ini sama persis dengan sebelumnya)
 
     def _read_from_serial_loop(self):
+        """
+        Loop pembacaan serial yang dioptimalkan untuk latency rendah (Burst Read).
+        """
         while self.running:
-            line = self.serial_handler.read_line()
-            if line:
-                logging.info(f"[Serial RAW] {line}")
+            # 1. Loop internal: Baca dan proses SEMUA baris yang tersedia di buffer
+            #    tanpa melakukan sleep di antaranya. Ini mengosongkan antrian secepat kilat.
+            data_processed_in_burst = False
+
+            while True:
+                line = self.serial_handler.read_line()
+                if not line:
+                    break  # Buffer kosong, keluar dari burst loop
+
+                data_processed_in_burst = True
+
+                # Proses data secepat mungkin
+                # Logging RAW bisa dimatikan jika beban CPU terlalu tinggi
+                # logging.info(f"[Serial RAW] {line}")
+
                 try:
                     data = json.loads(line)
-                    logging.debug(
-                        f"[Serial PARSED] mode={data.get('mode')} status={data.get('status')}"
-                    )
+                    # Langsung update state (tanpa antrian tambahan)
                     self._parse_json_telemetry(data)
                 except json.JSONDecodeError:
-                    if line.strip():
-                        logging.debug(
-                            f"[Serial] Menerima data mentah (Bukan JSON): {line}"
-                        )
+                    pass
                 except Exception as e:
-                    logging.warning(f"[Serial] Error parsing: {e}, Data: {line}")
-            self.socketio.sleep(0.01)
+                    logging.warning(f"[Serial] Error parsing: {e}")
+
+            # 2. Manajemen Sleep Cerdas
+            if data_processed_in_burst:
+                # Jika kita baru saja memproses data, ada kemungkinan data baru
+                # segera datang. Yield sangat singkat (0) agar OS tetap responsif
+                # tapi prioritas tinggi.
+                self.socketio.sleep(0)
+            else:
+                # Jika tidak ada data, tidur sangat sebentar (1ms) untuk hemat CPU.
+                # Mengurangi dari 0.01 (10ms) ke 0.001 (1ms) meningkatkan poll rate ke 1000Hz
+                self.socketio.sleep(0.001)
 
     def _parse_json_telemetry(self, data):
         try:
