@@ -1,15 +1,16 @@
 # src/navantara_gui/main_gui.py
-# --- VERSI FINAL: Dengan path config yang diperbaiki ---
+# --- VERSI FINAL: FIX E402 ---
 
 import sys
 import os
 import json
 import warnings
 
+# [FIX] Pindahkan import PySide6 ke atas (sebelum kode warnings)
+from PySide6.QtWidgets import QApplication
+
 # Mengabaikan FutureWarning yang tidak relevan dari library lain
 warnings.simplefilter(action="ignore", category=FutureWarning)
-
-from PySide6.QtWidgets import QApplication
 
 # --- Blok ini memperbaiki path agar impor dari folder lain berhasil ---
 try:
@@ -23,8 +24,8 @@ except NameError:
     sys.path.insert(0, ".")
 
 # --- Impor setelah path diperbaiki ---
-# Menggunakan import absolut dari nama paket
-from navantara_gui.views.main_window import MainWindow
+# Gunakan # noqa: E402 karena import ini WAJIB berada setelah manipulasi sys.path
+from navantara_gui.views.main_window import MainWindow  # noqa: E402
 
 
 # --- FUNGSI BARU UNTUK MENJALANKAN APLIKASI ---
@@ -36,13 +37,11 @@ def run():
 
     config = {}
     try:
-        # --- PERBAIKAN UTAMA DI SINI ---
         # Menemukan path root proyek secara dinamis dari lokasi file ini
         gui_dir = os.path.dirname(os.path.abspath(__file__))
         # Dari 'src/navantara_gui', kita naik DUA tingkat untuk mencapai root proyek
         project_root = os.path.dirname(os.path.dirname(gui_dir))
         config_path = os.path.join(project_root, "config", "config.json")
-        # --- AKHIR PERBAIKAN ---
 
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -67,7 +66,6 @@ def run():
     sys.exit(app.exec())
 
 
-# --- Titik masuk utama aplikasi (sekarang hanya memanggil run) ---
-# Blok ini hanya akan berjalan jika Anda mengeksekusi file ini secara langsung
+# --- Titik masuk utama aplikasi ---
 if __name__ == "__main__":
     run()

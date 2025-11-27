@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 import os
+import base64
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
@@ -17,106 +18,125 @@ from PySide6.QtGui import QImage, QPixmap, QIcon
 
 class VideoView(QWidget):
     """
-    Widget yang menampilkan dua feed video dan mengontrol HANYA
-    pengiriman stream ke GUI, bukan mematikan kamera di backend.
+    Widget video yang 'Smart': Bisa menerima data berupa Base64 String,
+    Raw Bytes, ataupun NumPy Array (OpenCV Image).
     """
-    # Sinyal untuk memberitahu MainWindow untuk memulai/menghentikan PENGIRIMAN stream
+
     toggle_camera_requested = Signal(bool)
     inversion_changed = Signal(bool)
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
 
-        self.is_camera_running = False # Awalnya, GUI tidak menerima stream
+        self.is_camera_running = False
 
-        # --- PERUBAHAN TEKS 1: Tombol sekarang mengontrol "Stream" ---
+        # --- UI SETUP ---
         self.start_stop_button = QPushButton("Start Stream")
         self.invert_button = QPushButton("Invert Logic")
         self.invert_button.setCheckable(True)
         self.invert_button.setEnabled(False)
 
-        # Coba muat ikon
         try:
             assets_path = os.path.join(os.path.dirname(__file__), "..", "assets")
             self.play_icon = QIcon(os.path.join(assets_path, "play-circle.svg"))
             self.pause_icon = QIcon(os.path.join(assets_path, "pause-circle.svg"))
             self.start_stop_button.setIcon(self.play_icon)
-        except Exception as e:
-            print(f"Peringatan: Gagal memuat ikon play/pause. Error: {e}")
+        except Exception:
+            pass
 
-        # Tata letak tombol
         control_layout = QHBoxLayout()
         control_layout.addStretch()
         control_layout.addWidget(self.invert_button)
         control_layout.addWidget(self.start_stop_button)
 
-        # --- PERUBAHAN TEKS 2: Label video sekarang lebih deskriptif ---
-        self.label_video_1 = QLabel(
-            "Stream nonaktif.\nTekan 'Start Stream' untuk menampilkan video."
-        )
-        self.label_video_1.setAlignment(Qt.AlignCenter)
-        self.label_video_1.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.label_video_1.setStyleSheet(
-            "background-color: black; color: white; font-size: 16px;"
-        )
+        self.label_video_1 = QLabel("Stream nonaktif.")
+        self._style_label(self.label_video_1)
 
         self.label_video_2 = QLabel("Stream nonaktif.")
-        self.label_video_2.setAlignment(Qt.AlignCenter)
-        self.label_video_2.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.label_video_2.setStyleSheet(
-            "background-color: black; color: white; font-size: 16px;"
-        )
+        self._style_label(self.label_video_2)
 
-        # Splitter untuk memisahkan dua video
         video_splitter = QSplitter(Qt.Horizontal)
         video_splitter.addWidget(self.label_video_1)
         video_splitter.addWidget(self.label_video_2)
 
-        # Tata letak utama
-        layout_utama = QVBoxLayout(self)
-        layout_utama.addLayout(control_layout)
-        layout_utama.addWidget(video_splitter, 1)
-        self.setLayout(layout_utama)
+        layout = QVBoxLayout(self)
+        layout.addLayout(control_layout)
+        layout.addWidget(video_splitter, 1)
+        self.setLayout(layout)
 
-        # Hubungkan sinyal tombol
         self.start_stop_button.clicked.connect(self.toggle_camera_stream)
         self.invert_button.clicked.connect(self.on_inversion_toggled)
 
-    @Slot(np.ndarray)
-    def update_frame_1(self, frame):
-        self._display_frame(frame, self.label_video_1)
+    def _style_label(self, label):
+        label.setAlignment(Qt.AlignCenter)
+        label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        label.setStyleSheet("background-color: black; color: white; font-size: 16px;")
 
-    @Slot(np.ndarray)
-    def update_frame_2(self, frame):
-        self._display_frame(frame, self.label_video_2)
+    @Slot(object)
+    def update_frame_1(self, frame_data):
+        self._display_frame(frame_data, self.label_video_1)
 
-    def _display_frame(self, frame, label_widget):
+    @Slot(object)
+    def update_frame_2(self, frame_data):
+        self._display_frame(frame_data, self.label_video_2)
+
+    def _display_frame(self, frame_data, label_widget):
+        """
+        Fungsi pintar untuk menampilkan frame dari berbagai format data.
+        """
+        if frame_data is None:
+            return
+
         try:
-            rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w, ch = rgb_image.shape
-            bytes_per_line = ch * w
-            qt_image = QImage(
-                rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888
-            )
-            pixmap = QPixmap.fromImage(qt_image)
-            label_widget.setPixmap(
-                pixmap.scaled(
+            q_img = None
+
+            # --- KASUS 1: Data adalah NumPy Array (OpenCV Image) ---
+            # Ini yang dikirim oleh api_client.py Anda sekarang
+            if isinstance(frame_data, np.ndarray):
+                if frame_data.size == 0:
+                    return
+
+                # Convert BGR (OpenCV) ke RGB (Qt)
+                rgb_image = cv2.cvtColor(frame_data, cv2.COLOR_BGR2RGB)
+                h, w, ch = rgb_image.shape
+                bytes_per_line = ch * w
+
+                # Buat QImage dari data pixel raw
+                q_img = QImage(
+                    rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888
+                )
+
+            # --- KASUS 2: Data adalah String (Base64) ---
+            elif isinstance(frame_data, str):
+                img_bytes = base64.b64decode(frame_data)
+                q_img = QImage.fromData(img_bytes)
+
+            # --- KASUS 3: Data adalah Bytes (Raw JPEG) ---
+            elif isinstance(frame_data, (bytes, bytearray)):
+                q_img = QImage.fromData(frame_data)
+
+            # --- TAMPILKAN KE LABEL ---
+            if q_img and not q_img.isNull():
+                # Scaling gambar agar pas di label tanpa merusak rasio
+                pixmap = QPixmap.fromImage(q_img)
+                scaled_pix = pixmap.scaled(
                     label_widget.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
                 )
-            )
-        except Exception as e:
-            print(f"GUI Error: Gagal menampilkan frame: {e}")
+                label_widget.setPixmap(scaled_pix)
+
+        except Exception:
+            # Supaya log tidak penuh spam error, kita print sekali saja jika perlu
+            # print(f"GUI Error (_display_frame): {e}")
+            pass
 
     def toggle_camera_stream(self):
-        """Mengubah status streaming dan memancarkan sinyal ke MainWindow."""
         self.is_camera_running = not self.is_camera_running
         self.toggle_camera_requested.emit(self.is_camera_running)
         self.update_ui_controls(self.is_camera_running)
 
-        # --- PERUBAHAN TEKS 3: Pesan saat stream dijeda ---
         if not self.is_camera_running:
-            self.label_video_1.setText("Stream dijeda.\nBackend tetap memproses gambar.")
-            self.label_video_1.setPixmap(QPixmap()) # Hapus gambar terakhir
+            self.label_video_1.setText("Stream dijeda.")
+            self.label_video_1.setPixmap(QPixmap())
             self.label_video_2.setText("Stream dijeda.")
             self.label_video_2.setPixmap(QPixmap())
 
@@ -124,11 +144,7 @@ class VideoView(QWidget):
         self.inversion_changed.emit(self.invert_button.isChecked())
 
     def update_ui_controls(self, is_running):
-        """Memperbarui tampilan tombol berdasarkan status streaming."""
-        # --- PERUBAHAN TEKS 4: Teks tombol diubah menjadi "Stream" ---
-        self.start_stop_button.setText(
-            "Stop Stream" if is_running else "Start Stream"
-        )
+        self.start_stop_button.setText("Stop Stream" if is_running else "Start Stream")
         self.start_stop_button.setIcon(
             self.pause_icon if is_running else self.play_icon
         )

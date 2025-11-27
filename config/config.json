@@ -2,12 +2,16 @@
   "general": {
     "use_simulation": false
   },
+  "system_settings": {
+    "use_dynamic_handler": false
+  },
   "backend_connection": {
-    "ip_address": "127.0.0.1",
+    "ip_address": "0.0.0.0",
     "port": 5000
   },
   "serial_connection": {
-    "default_baud_rate": 115200,
+    "serial_port": "AUTO",
+    "default_baud_rate": 230400,
     "auto_connect_descriptors": [
       "Silicon Labs",
       "CH340",
@@ -26,17 +30,17 @@
       "kd": 0.05
     },
     "avoidance_pid": {
-    "kp": 0.4,
-    "kd": 0.3
+      "kp": 0.4,
+      "kd": 0.3
     }
   },
   "actuators": {
     "servo_min_angle": 45,
     "servo_default_angle": 90,
     "servo_max_angle": 135,
-    "motor_pwm_stop": 1500,
+    "motor_pwm_stop": 1000,
     "motor_pwm_manual_power": 150,
-    "motor_pwm_auto_base": 1650,
+    "motor_pwm_auto_base": 1300,
     "motor_pwm_auto_reduction": 100
   },
   "camera_detection": {
@@ -65,16 +69,21 @@
     "obstacle_cost_gain": 1.5
   },
   "vision": {
-    "device": "cpu",
+    "device": "gpu",
     "conf_threshold": 0.2,
     "iou_threshold": 0.5,
     "debug": true,
-    "camera_index_1": 2,
-    "camera_index_2": 0,
-    "known_classes": ["red_buoy", "green_buoy", "green_box", "blue_box"],
+    "camera_index_1": 0,
+    "camera_index_2": 2,
+    "known_classes": [
+      "red_buoy",
+      "green_buoy",
+      "green_box",
+      "blue_box"
+    ],
     "poi_confidence_threshold": 0.65,
     "poi_validation_frames": 5,
-    "obstacle_activation_distance_cm": 120.0
+    "obstacle_activation_distance_cm": 150.0
   },
   "api_urls": {
     "firebase_url": "https://asv-2025-default-rtdb.asia-southeast1.firebasedatabase.app/monitor.json",
