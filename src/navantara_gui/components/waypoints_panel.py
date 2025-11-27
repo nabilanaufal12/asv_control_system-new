@@ -1,5 +1,5 @@
 # gui/components/waypoints_panel.py
-# --- VERSI FINAL: Dengan sinyal dan slot untuk "Add Current Pos" ---
+# --- VERSI MODIFIKASI: Mengirim arena ID bersama waypoints AND Tambahan Misi Foto ---
 
 from PySide6.QtWidgets import (
     QGroupBox,
@@ -12,19 +12,32 @@ from PySide6.QtWidgets import (
     QFormLayout,
 )
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtGui import QDoubleValidator
+
+# --- [MODIFIKASI 1: Tambahkan QIntValidator] ---
+from PySide6.QtGui import QDoubleValidator, QIntValidator
+
+# --- [AKHIR MODIFIKASI 1] ---
 
 
 class WaypointsPanel(QGroupBox):
-    send_waypoints = Signal(list)
-    # --- SINYAL BARU: Minta posisi saat ini dari MainWindow ---
+    # --- MODIFIKASI 1 (dari file asli): Ubah tipe sinyal ke dict ---
+    send_waypoints = Signal(
+        dict
+    )  # Sekarang mengirim {'waypoints': [...], 'arena': 'A'/'B'}
+    # ---------------------------------------------
     add_current_pos_requested = Signal()
     waypoints_updated = Signal(list)
     load_mission_requested = Signal(str)
+    # --- [MODIFIKASI 2: Tambahkan sinyal Misi Foto] ---
+    send_photo_mission = Signal(dict)
+    # --- [AKHIR MODIFIKASI 2] ---
 
     def __init__(self, config, title="Waypoints"):
         super().__init__(title)
         self.config = config
+        # --- MODIFIKASI 2 (dari file asli): Tambahkan variabel untuk menyimpan arena aktif ---
+        self.current_arena = None  # Awalnya belum ada arena yang dipilih
+        # -----------------------------------------------------------------
         main_layout = QVBoxLayout()
 
         mission_box = QGroupBox("Predefined Missions")
@@ -39,7 +52,6 @@ class WaypointsPanel(QGroupBox):
         self.lat_input = QLineEdit()
         self.lon_input = QLineEdit()
 
-        # Ambil pengaturan placeholder dari config
         gui_settings = self.config.get("gui_settings", {})
         placeholders = gui_settings.get("placeholders", {})
         lat_placeholder = placeholders.get("latitude", "e.g., -6.9175")
@@ -67,39 +79,88 @@ class WaypointsPanel(QGroupBox):
         button_layout.addWidget(self.add_current_pos_button)
         button_layout.addWidget(self.delete_button)
 
+        # --- [MODIFIKASI 3: UI Misi Foto Diperbarui] ---
+        photo_mission_box = QGroupBox("Misi Fotografi (Segmen)")  # Ganti Judul
+        photo_mission_layout = QVBoxLayout()
+
+        photo_form_layout = QFormLayout()
+        self.wp_target1_input = QLineEdit()
+        self.wp_target2_input = QLineEdit()
+        self.photo_count_input = QLineEdit()
+
+        int_validator = QIntValidator(self)
+        self.wp_target1_input.setValidator(int_validator)
+        self.wp_target2_input.setValidator(int_validator)
+        self.photo_count_input.setValidator(int_validator)
+
+        # [UBAH PLACEHOLDER]
+        self.wp_target1_input.setPlaceholderText("Start Index (Contoh: 1)")
+        self.wp_target2_input.setPlaceholderText("Stop Index (Contoh: 3)")
+        self.photo_count_input.setPlaceholderText("Max Total Foto")
+
+        # [UBAH LABEL]
+        photo_form_layout.addRow("Start WP Index:", self.wp_target1_input)
+        photo_form_layout.addRow("Stop WP Index:", self.wp_target2_input)
+        photo_form_layout.addRow("Max Foto:", self.photo_count_input)
+
+        self.set_photo_mission_button = QPushButton(
+            "Set Segment Mission"
+        )  # Ganti Label Tombol
+        self.set_photo_mission_button.setStyleSheet(
+            "background-color: #DAA520; color: white; font-weight: bold;"
+        )
+
+        photo_mission_layout.addLayout(photo_form_layout)
+        photo_mission_layout.addWidget(self.set_photo_mission_button)
+        photo_mission_box.setLayout(photo_mission_layout)
+        # --- [AKHIR MODIFIKASI 3] ---
+
         send_layout = QHBoxLayout()
-        self.send_all_button = QPushButton("Send All")
+        self.send_all_button = QPushButton("Send All Waypoints")
         self.send_all_button.setStyleSheet(
             "background-color: #2a82da; color: white; font-weight: bold;"
         )
         send_layout.addStretch()
         send_layout.addWidget(self.send_all_button)
 
+        # --- [MODIFIKASI 4: Tambahkan widget ke layout utama] ---
         main_layout.addWidget(mission_box)
         main_layout.addLayout(input_form_layout)
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
+        main_layout.addWidget(photo_mission_box)  # <-- BARU
         main_layout.addLayout(send_layout)
+        # --- [AKHIR MODIFIKASI 4] ---
         self.setLayout(main_layout)
 
         # Hubungkan sinyal tombol
-        self.load_a_button.clicked.connect(
-            lambda: self.load_mission_requested.emit("A")
-        )
-        self.load_b_button.clicked.connect(
-            lambda: self.load_mission_requested.emit("B")
-        )
+        # --- MODIFIKASI 3 (dari file asli): Update arena saat tombol load ditekan ---
+        self.load_a_button.clicked.connect(lambda: self._on_load_mission("A"))
+        self.load_b_button.clicked.connect(lambda: self._on_load_mission("B"))
+        # ---------------------------------------------------------
         self.add_manual_button.clicked.connect(self.add_manual_waypoint)
-        # --- PERUBAHAN 1: Hubungkan tombol ke sinyal baru ---
         self.add_current_pos_button.clicked.connect(self.add_current_pos_requested.emit)
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
+        # --- [MODIFIKASI 5: Hubungkan sinyal tombol baru] ---
+        self.set_photo_mission_button.clicked.connect(self._on_set_photo_mission)
+        # --- [AKHIR MODIFIKASI 5] ---
+
+    # --- MODIFIKASI 4 (dari file asli): Fungsi baru untuk menangani load mission ---
+    def _on_load_mission(self, arena_id):
+        self.current_arena = arena_id  # Simpan arena yang di-load
+        self.load_mission_requested.emit(arena_id)  # Minta MainWindow memuat data
+
+    # -------------------------------------------------------------
 
     @Slot(list)
     def load_waypoints_to_list(self, waypoints):
         """Menghapus daftar saat ini dan mengisinya dengan waypoint baru."""
+        # Arena sudah di-set oleh _on_load_mission
         self.waypoints_list.clear()
         for wp in waypoints:
+            # Fungsi ini sekarang akan menerima list kosong dan tidak melakukan apa-apa,
+            # yang mana sudah benar.
             waypoint_text = f"Lat: {wp['lat']:.6f}, Lon: {wp['lon']:.6f}"
             self.waypoints_list.addItem(waypoint_text)
         self._emit_updated_waypoints()
@@ -108,17 +169,15 @@ class WaypointsPanel(QGroupBox):
         current_waypoints = self._get_all_waypoints_from_list()
         self.waypoints_updated.emit(current_waypoints)
 
-    # --- PERUBAHAN 2: SLOT BARU untuk menerima posisi dan menambahkannya ke daftar ---
     @Slot(float, float)
     def add_waypoint_from_pos(self, lat, lon):
         """Menerima koordinat dan menambahkannya sebagai item baru di QListWidget."""
-        # Tambahkan pengecekan agar tidak menambahkan waypoint jika data GPS belum valid
         if lat is not None and lon is not None and lat != 0.0:
             waypoint_text = f"Lat: {lat:.6f}, Lon: {lon:.6f}"
             self.waypoints_list.addItem(waypoint_text)
             self._emit_updated_waypoints()
         else:
-            print("[GUI] Gagal menambah waypoint: Posisi saat ini tidak valid atau belum diterima.")
+            print("[GUI] Gagal menambah waypoint: Posisi saat ini tidak valid.")
 
     def add_manual_waypoint(self):
         lat_text = self.lat_input.text().replace(",", ".")
@@ -132,8 +191,11 @@ class WaypointsPanel(QGroupBox):
                 self.lat_input.clear()
                 self.lon_input.clear()
                 self._emit_updated_waypoints()
+                # --- MODIFIKASI 5 (dari file asli): Reset arena jika menambah manual? (Opsional) ---
+                self.current_arena = None  # Atau set ke 'MANUAL'?
+                # -----------------------------------------------------------------
             except ValueError:
-                print("Error: Input waypoint tidak valid.")
+                print("[GUI] Error: Input waypoint manual tidak valid.")
 
     def delete_waypoint(self):
         selected_items = self.waypoints_list.selectedItems()
@@ -153,12 +215,79 @@ class WaypointsPanel(QGroupBox):
                 lon = float(parts[1].split(":")[1])
                 all_waypoints.append({"lat": lat, "lon": lon})
             except (ValueError, IndexError):
-                print(f"Gagal mem-parsing item waypoint: {item_text}")
+                print(f"[GUI] Gagal mem-parsing item waypoint: {item_text}")
         return all_waypoints
 
+    # --- [MODIFIKASI UTAMA DI SINI] ---
     def send_all_waypoints(self):
         all_waypoints = self._get_all_waypoints_from_list()
-        if all_waypoints:
-            self.send_waypoints.emit(all_waypoints)
+
+        # --- [PERBAIKAN] ---
+        # HAPUS 'if not all_waypoints:' check.
+        # Kita SEKARANG mengizinkan pengiriman list kosong,
+        # karena ini adalah cara kita mengatur arena/peta.
+        # if not all_waypoints:
+        #     print("[WaypointsPanel] Tidak ada waypoint untuk dikirim.")
+        #     return # <-- INI ADALAH BUG-NYA
+        # --- [AKHIR PERBAIKAN] ---
+
+        if self.current_arena is None:
+            print(
+                "[WaypointsPanel] Peringatan: Tidak ada arena (A/B) yang dipilih/di-load."
+            )
+            # Anda bisa memutuskan untuk mengirim None, atau default ke 'A', atau tidak mengirim sama sekali
+            current_arena_to_send = "A"  # Default ke A jika belum diset
         else:
-            print("[WaypointsPanel] Tidak ada waypoint untuk dikirim.")
+            current_arena_to_send = self.current_arena
+
+        payload = {"waypoints": all_waypoints, "arena": current_arena_to_send}
+        self.send_waypoints.emit(payload)
+
+        # Log yang lebih baik
+        print(
+            f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {len(all_waypoints)} waypoints, Arena: {current_arena_to_send}"
+        )
+
+    # --- [AKHIR MODIFIKASI UTAMA] ---
+
+    # --- [MODIFIKASI 6: Fungsi handler Misi Foto Diperbarui] ---
+    @Slot()
+    def _on_set_photo_mission(self):
+        """Mengirim perintah untuk mengatur misi fotografi otomatis berbasis segmen."""
+        wp1_text = self.wp_target1_input.text()
+        wp2_text = self.wp_target2_input.text()
+        count_text = self.photo_count_input.text()
+
+        # Validasi harus lengkap
+        if not wp1_text or not wp2_text or not count_text:
+            print(
+                "[WaypointsPanel] Error: Harap isi Start Index, Stop Index, dan Jumlah Foto."
+            )
+            return
+
+        try:
+            # Konversi ke int
+            wp1 = int(wp1_text)  # Start
+            wp2 = int(wp2_text)  # Stop
+            count = int(count_text)
+
+            if count <= 0:
+                print("[WaypointsPanel] Error: Jumlah Foto harus > 0.")
+                return
+
+            if wp1 >= wp2:
+                print(
+                    "[WaypointsPanel] Warning: Start Index sebaiknya lebih kecil dari Stop Index."
+                )
+
+            # Kirim payload (format tetap sama, interpretasi backend yang berubah)
+            payload = {"wp1": wp1, "wp2": wp2, "count": count}
+            self.send_photo_mission.emit(payload)
+            print(
+                f"[WaypointsPanel] Misi Segmen dikirim: Start={wp1}, Stop={wp2}, Max={count}"
+            )
+
+        except ValueError:
+            print("[WaypointsPanel] Error: Input harus berupa angka bulat.")
+
+    # --- [AKHIR MODIFIKASI 6] ---

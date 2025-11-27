@@ -1,6 +1,14 @@
 # src/navantara_gui/components/settings_panel.py
-from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QTabWidget
-from PySide6.QtCore import Signal
+from PySide6.QtWidgets import (
+    QGroupBox,
+    QVBoxLayout,
+    QTabWidget,
+    QLabel,
+    QSlider,
+    QHBoxLayout,
+    QSpinBox,
+)
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
 
 # Impor semua komponen tab
@@ -24,12 +32,71 @@ class SettingsPanel(QGroupBox):
     debug_command_sent = Signal(str, object)
     manual_speed_changed = Signal(int)
 
+    # [BARU] Sinyal untuk update kecepatan AI Vision
+    vision_speed_updated = Signal(int)
+    vision_servo_updated = Signal(dict)
+
+    # [BARU] Sinyal untuk update jarak obstacle
+    vision_distance_updated = Signal(float)
+
     def __init__(self, config, title="Settings"):
         super().__init__(title)
-
         self.config = config
-
         main_layout = QVBoxLayout()
+
+        # --- [MODIFIKASI] BAGIAN KONTROL KECEPATAN & SERVO AI ---
+        ai_control_group = QGroupBox("AI Vision Control (PWM/Angle)")
+        ai_layout = QVBoxLayout()
+
+        # 1. Slider Kecepatan (DEFAULT BARU: 1300)
+        speed_layout = QHBoxLayout()
+        self.lbl_ai_speed = QLabel("PWM Motor: 1300")
+        self.slider_ai_speed = QSlider(Qt.Horizontal)
+        self.slider_ai_speed.setRange(1100, 1800)  # Range disesuaikan
+        self.slider_ai_speed.setValue(1300)  # Default disesuaikan
+        speed_layout.addWidget(self.lbl_ai_speed)
+        speed_layout.addWidget(self.slider_ai_speed)
+
+        # 2. Input Servo Kiri & Kanan (BARU)
+        servo_layout = QHBoxLayout()
+
+        # Servo Kiri (Default 45)
+        self.spin_left = QSpinBox()
+        self.spin_left.setRange(0, 90)
+        self.spin_left.setValue(45)
+        self.spin_left.setPrefix("Left: ")
+        self.spin_left.setSuffix("°")
+
+        # Servo Kanan (Default 135)
+        self.spin_right = QSpinBox()
+        self.spin_right.setRange(90, 180)
+        self.spin_right.setValue(135)
+        self.spin_right.setPrefix("Right: ")
+        self.spin_right.setSuffix("°")
+
+        servo_layout.addWidget(QLabel("Avoidance Angle:"))
+        servo_layout.addWidget(self.spin_left)
+        servo_layout.addWidget(self.spin_right)
+
+        # 3. [BARU] Input Jarak Obstacle (cm)
+        dist_layout = QHBoxLayout()
+        self.spin_obs_dist = QSpinBox()
+        self.spin_obs_dist.setRange(0, 500)  # 0 - 5 meter
+        self.spin_obs_dist.setValue(150)  # Default 150 cm (Request)
+        self.spin_obs_dist.setSingleStep(10)
+        self.spin_obs_dist.setPrefix("Trigger Dist: ")
+        self.spin_obs_dist.setSuffix(" cm")
+
+        dist_layout.addWidget(QLabel("AI Activation:"))
+        dist_layout.addWidget(self.spin_obs_dist)
+
+        ai_layout.addLayout(speed_layout)
+        ai_layout.addLayout(servo_layout)
+        ai_layout.addLayout(dist_layout)
+        ai_control_group.setLayout(ai_layout)
+
+        main_layout.addWidget(ai_control_group)
+
         self.tab_widget = QTabWidget()
 
         # Atur font agar lebih kecil dan rapi
@@ -56,10 +123,26 @@ class SettingsPanel(QGroupBox):
         self.setLayout(main_layout)
 
         # --- KONEKSI SINYAL INTERNAL ---
-        # Teruskan sinyal dari setiap tab ke sinyal milik SettingsPanel sendiri.
-        # Ini memungkinkan MainWindow untuk hanya terhubung ke SettingsPanel.
         self.pid_tab.pid_updated.connect(self.pid_updated.emit)
         self.servo_tab.servo_settings_updated.connect(self.servo_settings_updated.emit)
         self.connection_tab.connect_requested.connect(self.connect_requested.emit)
         self.debug_tab.debug_command_sent.connect(self.debug_command_sent.emit)
         self.thruster_tab.speed_changed.connect(self.manual_speed_changed.emit)
+
+        # [BARU] Koneksi slider AI Speed
+        self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
+        self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
+        self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
+        self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
+
+    def _on_ai_speed_changed(self, value):
+        self.lbl_ai_speed.setText(f"PWM Motor: {value}")
+        self.vision_speed_updated.emit(value)
+
+    def _on_ai_servo_changed(self):
+        payload = {"left": self.spin_left.value(), "right": self.spin_right.value()}
+        self.vision_servo_updated.emit(payload)
+
+    def _on_obs_dist_changed(self, value):
+        # Emit sinyal dengan nilai float (cm)
+        self.vision_distance_updated.emit(float(value))

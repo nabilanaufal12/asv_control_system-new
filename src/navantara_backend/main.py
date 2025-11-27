@@ -18,38 +18,36 @@ def create_app():
     """
     Membuat dan mengkonfigurasi instance aplikasi Flask (Application Factory).
     """
-    
+
     # --- MODIFIKASI: Perbaikan Path Absolut ---
     # Dapatkan path absolut ke direktori 'main.py' ini
     # (e.g., /home/navantara/navantara/src/navantara_backend)
     backend_dir = os.path.dirname(os.path.abspath(__file__))
-    
+
     # Dapatkan path ke direktori 'src' (satu level di atas backend_dir)
     # (e.g., /home/navantara/navantara/src)
     src_dir = os.path.dirname(backend_dir)
-    
+
     # Tentukan path ke folder 'navantara_web'
     # (e.g., /home/navantara/navantara/src/navantara_web)
     web_folder_path = os.path.join(src_dir, "navantara_web")
 
     # Gunakan path yang benar dan absolut untuk template_folder dan static_folder
-    app = Flask(__name__,
-            template_folder=web_folder_path,
-            static_folder=web_folder_path
-            )
-    
+    app = Flask(
+        __name__, template_folder=web_folder_path, static_folder=web_folder_path
+    )
+
     print(f"[Server] Web template_folder diatur ke: {web_folder_path}")
     print(f"[Server] Web static_folder diatur ke: {web_folder_path}")
     # --- AKHIR MODIFIKASI ---
-
 
     # Muat konfigurasi
     try:
         # Path config relatif dari 'main.py'
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(script_dir, "..", "..", "config", "config.json")
-        config_path = os.path.normpath(config_path) # Membersihkan path (../..)
-        
+        config_path = os.path.normpath(config_path)  # Membersihkan path (../..)
+
         with open(config_path, "r") as f:
             app.config["ASV_CONFIG"] = json.load(f)
         print(f"[Server] File 'config.json' berhasil dimuat dari: {config_path}")
@@ -85,6 +83,7 @@ def create_app():
     def monitor_local():
         # Ini akan menyajikan file 'monitor_local.html'
         return send_from_directory(app.template_folder, "monitor_local.html")
+
     # --------------------------------------------------------
 
     # Inisialisasi SocketIO
