@@ -75,7 +75,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 0.0  # coba 9999.0
+    nav_dist_to_wp: float = 9999.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -83,6 +83,8 @@ class AsvState:
     nav_gps_sats: int = 0
     manual_servo_cmd: int = 90
     manual_motor_cmd: int = 1500
+    inversion_trigger_wp: int = 5  # Wp 6
+    inverse_servo: bool = False
     active_arena: str = "Unknown"
     debug_waypoint_counter: int = 0
     use_dummy_counter: bool = False
@@ -96,7 +98,6 @@ class AsvState:
     last_avoidance_time: float = 0.0
     last_pixel_error: float = 0.0
     resume_waypoint_on_clear: bool = False
-    inverse_servo: bool = False
     photo_mission_target_wp1: int = -1
     photo_mission_target_wp2: int = -1
     photo_mission_qty_requested: int = 0
@@ -384,8 +385,6 @@ class AsvHandler:
                         "obstacle_class", ""
                     )
 
-                    active_arena = self.current_state.active_arena
-
                     resume_waypoint_on_clear = (
                         self.current_state.resume_waypoint_on_clear
                     )
@@ -393,34 +392,54 @@ class AsvHandler:
                     esp_status = self.current_state.esp_status
                     status = self.current_state.status
 
-                    use_dummy = self.current_state.use_dummy_counter
-                    debug_counter = self.current_state.debug_waypoint_counter
-
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
 
+                # -----------------------------------------------------------
+                # [FIX INVERSI SERVO] LOGIKA DETEKSI TRIGGER WAYPOINT
+                # -----------------------------------------------------------
+
+                # 1. Tentukan Index Waypoint Efektif (Real vs Dummy Debug)
+                with self.state_lock:
+                    if self.current_state.use_dummy_counter:
+                        current_effective_wp = self.current_state.debug_waypoint_counter
+                    else:
+                        current_effective_wp = self.current_state.current_waypoint_index
+
+                    # Ambil nilai trigger dari state (Default: 5 untuk WP 6)
+                    trigger_threshold = self.current_state.inversion_trigger_wp
+
+                    # Ambil info arena
+                    active_arena_val = str(self.current_state.active_arena)
+
+                # 2. Cek apakah trigger aktif
+                is_wp_triggered = current_effective_wp >= trigger_threshold
+
+                # 3. Deteksi Arena B (Default Inverted)
                 is_arena_b = False
-                if active_arena:
-                    normalized_arena = (
-                        str(active_arena).strip().lower().replace(" ", "_")
-                    )
-                    if "b" in normalized_arena and "a" not in normalized_arena:
+                if active_arena_val:
+                    clean_arena = active_arena_val.strip().lower().replace(" ", "_")
+                    if "b" in clean_arena and "a" not in clean_arena:
                         is_arena_b = True
-                    elif normalized_arena == "b":
+                    elif clean_arena == "b":
                         is_arena_b = True
-                    elif "arena_b" in normalized_arena:
+                    elif "arena_b" in clean_arena:
                         is_arena_b = True
 
-                trigger_wp_index = 4  # inversi di WP 5
-                current_effective_wp = (
-                    debug_counter if use_dummy else current_waypoint_index
-                )
-                is_wp_triggered = current_effective_wp >= trigger_wp_index
-
+                # 4. Logika XOR (Exclusive OR) untuk Inversi Akhir
                 final_inversion_state = is_arena_b ^ is_wp_triggered
 
+                # 5. Simpan State dan Log Perubahan
                 with self.state_lock:
+                    # Log jika state berubah agar mudah didebug
+                    if self.current_state.inverse_servo != final_inversion_state:
+                        logging.info(
+                            f"[Logic] Inversi Berubah: {final_inversion_state} "
+                            f"(ArenaB={is_arena_b}, WP={current_effective_wp}>={trigger_threshold})"
+                        )
+
                     self.current_state.inverse_servo = final_inversion_state
+                # -----------------------------------------------------------
 
                 command_to_send = None
 

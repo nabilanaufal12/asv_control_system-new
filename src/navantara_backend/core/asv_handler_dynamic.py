@@ -115,6 +115,7 @@ class AsvState:
     recovering_from_avoidance: bool = False
     resume_waypoint_on_clear: bool = False
     inverse_servo: bool = False
+    inversion_trigger_wp: int = 5
 
     # 4. Mission Parameters
     debug_waypoint_counter: int = 0
@@ -125,8 +126,8 @@ class AsvState:
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
 
-    # 5. Dynamic Tuning
-    vision_auto_motor_cmd: int = 1500
+    # 5. Dynamic Tuning [MODIFIKASI: Default 1300]
+    vision_auto_motor_cmd: int = 1300
     vision_servo_left_cmd: int = 45
     vision_servo_right_cmd: int = 135
 
@@ -246,7 +247,7 @@ class AsvHandler:
                 try:
                     data = json.loads(line)
                     self._parse_json_telemetry(data)
-                except:
+                except Exception:
                     pass
 
             if data_processed:
@@ -281,8 +282,6 @@ class AsvHandler:
 
         while self.running:
             try:
-                current_time = time.time()
-
                 # Snapshot State
                 with self.state_lock:
                     state = self.current_state
@@ -303,7 +302,9 @@ class AsvHandler:
                     resume_wp = state.resume_waypoint_on_clear
 
                     # Parameter Tuning
-                    base_pwm_ai = state.vision_auto_motor_cmd  # Nilai dari Slider GUI
+                    base_pwm_ai = (
+                        state.vision_auto_motor_cmd
+                    )  # Nilai dari Slider GUI (Default 1300)
 
                     # Config
                     actuator_config = self.config.get("actuators", {})
@@ -311,9 +312,43 @@ class AsvHandler:
                     servo_min = actuator_config.get("servo_min_angle", 45)
                     servo_max = actuator_config.get("servo_max_angle", 135)
 
-                    # Inversi & Arena (Arena B = Inverted)
-                    is_arena_b = "b" in str(state.active_arena).lower()
-                    is_inverted = is_arena_b
+                    # Inversi & Trigger
+                    active_arena_val = str(state.active_arena)
+
+                    # 1. Trigger Waypoint
+                    if state.use_dummy_counter:
+                        current_effective_wp = state.debug_waypoint_counter
+                    else:
+                        current_effective_wp = state.current_waypoint_index
+
+                    trigger_threshold = state.inversion_trigger_wp
+                    is_wp_triggered = current_effective_wp >= trigger_threshold
+
+                    # 2. Arena B Detection
+                    is_arena_b = False
+                    if active_arena_val:
+                        clean_arena = active_arena_val.strip().lower().replace(" ", "_")
+                        if "b" in clean_arena and "a" not in clean_arena:
+                            is_arena_b = True
+                        elif clean_arena == "b":
+                            is_arena_b = True
+                        elif "arena_b" in clean_arena:
+                            is_arena_b = True
+
+                    # 3. Final Inversion (XOR)
+                    final_inversion_state = is_arena_b ^ is_wp_triggered
+
+                    if state.inverse_servo != final_inversion_state:
+                        logging.info(
+                            f"[Logic] Inversi: {final_inversion_state} (ArenaB={is_arena_b}, WP={current_effective_wp})"
+                        )
+
+                    # (Update state inversion di akhir loop, atau gunakan variabel lokal ini)
+                    is_inverted = final_inversion_state
+
+                # Update inversion state ke object
+                with self.state_lock:
+                    self.current_state.inverse_servo = is_inverted
 
                 command_to_send = None
 
@@ -330,17 +365,14 @@ class AsvHandler:
                 # --- LAYER 2: AUTO MODE ---
                 elif control_mode == "AUTO":
 
-                    # === PRIORITAS 1: GATE TRAVERSAL (DENGAN PID/MAP) ===
+                    # === PRIORITAS 1: GATE TRAVERSAL ===
                     if gate_active:
                         with self.state_lock:
                             self.current_state.is_avoiding = True
                             self.current_state.recovering_from_avoidance = False
 
-                        # Kejar tengah gate
                         frame_center = gate_width / 2
                         pixel_error = gate_center - frame_center
-
-                        # Logika Map Value dari kode lama (Smooth)
                         correction = map_value(
                             pixel_error, -frame_center, frame_center, -35.0, 35.0
                         )
@@ -356,53 +388,40 @@ class AsvHandler:
                         )
 
                     # === PRIORITAS 2: DYNAMIC CONTEXTUAL AVOIDANCE ===
-                    # (Menggunakan logika 'kode lama' + integrasi dynamic PWM)
                     elif vision_active:
                         with self.state_lock:
                             self.current_state.is_avoiding = True
                             self.current_state.recovering_from_avoidance = False
 
-                        # 1. Tentukan Arah Hindar (Target X)
+                        # 1. Tentukan Arah Hindar
                         avoid_dir = "right"  # Default hindar kanan
-
                         if is_inverted:
-                            # Arena B (Logika Terbalik)
                             if "green" in vision_cls:
                                 avoid_dir = "left"
                             elif "red" in vision_cls:
                                 avoid_dir = "right"
                         else:
-                            # Arena A (Normal)
                             if "green" in vision_cls:
                                 avoid_dir = "right"
                             elif "red" in vision_cls:
                                 avoid_dir = "left"
 
-                        # Target di 20% kiri atau 80% kanan frame
                         target_x = (
                             (vision_frame_width * 0.2)
                             if avoid_dir == "left"
                             else (vision_frame_width * 0.8)
                         )
-
-                        # 2. Hitung Error & Koreksi (Proportional Control)
                         pixel_error = vision_center_x - target_x
-
-                        # Konversi error pixel ke derajat (Max koreksi 45 derajat)
                         correction_deg = (pixel_error / (vision_frame_width / 2)) * 45.0
 
-                        # 3. Hitung Servo
                         servo_cmd = int(
                             max(servo_min, min(servo_max, servo_def - correction_deg))
                         )
 
-                        # 4. Hitung PWM Dinamis (Fitur dari kode lama)
-                        # Semakin besar koreksi (belok tajam), semakin lambat motor
-                        # base_pwm_ai diambil dari slider GUI
-                        pwm_reduction = (
-                            abs(correction_deg) * 3
-                        )  # Faktor pengurangan (bisa di-tuning)
-                        pwm_cmd = int(max(1300, base_pwm_ai - pwm_reduction))
+                        # 4. Hitung PWM Dinamis
+                        # [MODIFIKASI: Floor diubah ke 1100 karena stop di 1000]
+                        pwm_reduction = abs(correction_deg) * 3
+                        pwm_cmd = int(max(1100, base_pwm_ai - pwm_reduction))
 
                         command_to_send = f"A,{servo_cmd},{pwm_cmd}\n"
                         logging.info(
@@ -508,11 +527,20 @@ class AsvHandler:
             self.serial_handler.connect(port, baud)
 
     def _handle_mode_change(self, payload):
-        mode = payload.get("mode", "MANUAL")
         with self.state_lock:
-            self.current_state.control_mode = mode
-        if mode == "MANUAL":
-            self.serial_handler.send_command("A,90,1500\n")
+            new_mode = payload.get("mode", "MANUAL")
+            self.current_state.control_mode = new_mode
+            self.logger.log_event(f"Mode kontrol GUI diubah ke: {new_mode}")
+
+        if new_mode == "MANUAL":
+            actuator_config = self.config.get("actuators", {})
+            pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
+            servo_def = actuator_config.get("servo_default_angle", 90)
+            command_str = f"A,{int(servo_def)},{int(pwm_stop)}\n"
+            logging.info(
+                f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
+            )
+            self.serial_handler.send_command(command_str)
 
     def _handle_manual_control(self, payload):
         keys = set(payload)
@@ -566,7 +594,7 @@ class AsvHandler:
                     payload.get("count", 0)
                 )
                 self.current_state.photo_mission_qty_taken_1 = 0
-        except:
+        except Exception:
             pass
 
     def stop(self):
