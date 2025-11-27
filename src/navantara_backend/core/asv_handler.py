@@ -411,7 +411,7 @@ class AsvHandler:
                     elif "arena_b" in normalized_arena:
                         is_arena_b = True
 
-                trigger_wp_index = 5  # inversi di WP 5
+                trigger_wp_index = 4  # inversi di WP 5
                 current_effective_wp = (
                     debug_counter if use_dummy else current_waypoint_index
                 )
