@@ -452,15 +452,16 @@ class VisionService:
     def trigger_manual_capture(self, capture_type: str):
         """
         Memicu pengambilan gambar (Surface/Underwater)
-        dengan overlay telemetri.
+        dengan overlay telemetri yang bersih.
         """
-        print(f"[Capture] Menerima trigger untuk: {capture_type}")
+        print(f"[Capture] Menerima trigger manual untuk: {capture_type}")
 
         frame_to_use = None
         mission_name = None
         filename_prefix = None
         image_count = 0
 
+        # Ambil state terbaru untuk overlay
         try:
             with self.asv_handler.state_lock:
                 current_state_dict = asdict(self.asv_handler.current_state)
@@ -468,33 +469,44 @@ class VisionService:
             print(f"[Capture] Gagal mendapatkan state ASV: {e}")
             return {"status": "error", "message": "Gagal mendapatkan state ASV."}
 
+        # --- LOGIKA SURFACE ---
         if capture_type == "surface":
             with VisionService._frame_lock_cam1:
                 if VisionService._latest_processed_frame_cam1 is not None:
                     frame_to_use = VisionService._latest_processed_frame_cam1.copy()
                 else:
-                    return {"status": "error", "message": "Frame CAM 1 tidak tersedia."}
+                    print("[Capture] Error: Frame CAM 1 belum tersedia (None).")
+                    return {"status": "error", "message": "Kamera Depan tidak siap."}
 
             mission_name = "Surface Imaging"
             filename_prefix = "surface"
             image_count = self.surface_image_count
             self.surface_image_count += 1
 
+        # --- LOGIKA UNDERWATER (PERBAIKAN) ---
         elif capture_type == "underwater":
+            # Pastikan mengambil dari Lock CAM 2
             with VisionService._frame_lock_cam2:
                 if VisionService._latest_raw_frame_cam2 is not None:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
                 else:
-                    return {"status": "error", "message": "Frame CAM 2 tidak tersedia."}
+                    # [DEBUG LOG] Sangat penting untuk mengetahui jika CAM 2 mati
+                    print(
+                        "[Capture] Error: Frame CAM 2 belum tersedia (None). Cek koneksi USB/Power."
+                    )
+                    return {"status": "error", "message": "Kamera Bawah tidak siap."}
 
             mission_name = "Underwater Imaging"
             filename_prefix = "underwater"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
+
         else:
             return {"status": "error", "message": "Tipe capture tidak valid."}
 
+        # --- PROSES OVERLAY & PENYIMPANAN ---
         try:
+            # Panggil overlay generator dengan nama misi yang sudah bersih
             overlay_data = create_overlay_from_html(
                 current_state_dict, mission_type=mission_name
             )
@@ -509,12 +521,15 @@ class VisionService:
         save_path = os.path.join(save_dir, filename)
 
         try:
-            ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            # Simpan dengan kualitas tinggi
+            ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 95])
             if ret:
                 with open(save_path, "wb") as f:
                     f.write(buffer)
+                print(f"[Capture] Berhasil disimpan: {save_path}")
                 return {"status": "success", "file": filename}
         except Exception as e:
+            print(f"[Capture] Gagal menulis file: {e}")
             return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
 
     def set_obstacle_distance(self, payload):
@@ -811,26 +826,39 @@ class VisionService:
     def handle_photography_mission(
         self, frame_cam1, green_boxes, blue_boxes, current_state, force_surface=False
     ):
-        """Mengambil snapshot dengan overlay."""
+        """
+        Mengambil snapshot otomatis.
+        Perbaikan: Teks '(Auto)' dihapus agar overlay bersih.
+        """
         frame_to_use = None
         mission_name = None
         filename_prefix = None
         image_count = 0
 
-        # Logika Prioritas: Force Surface -> Green Box -> Blue Box
+        # --- LOGIKA PEMILIHAN KAMERA ---
+        # Prioritas: 1. Force Surface, 2. Deteksi Green (Surface), 3. Deteksi Blue (Underwater)
+
         if force_surface or green_boxes:
+            # Mode Surface
             frame_to_use = frame_cam1
-            mission_name = "Surface Mission (Auto)"
+            # [FIX] Hapus kata "(Auto)" -> Gunakan nama standar
+            mission_name = "Surface Imaging"
             filename_prefix = "surface_auto"
             image_count = self.surface_image_count
             self.surface_image_count += 1
+
         elif blue_boxes:
+            # Mode Underwater (Otomatis terpicu jika ada Blue Buoy)
             with VisionService._frame_lock_cam2:
                 if VisionService._latest_raw_frame_cam2 is not None:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
                 else:
+                    # Jika CAM 2 mati, batalkan misi foto ini daripada crash/error
+                    print("[Mission] Gagal Auto-Capture Underwater: Frame CAM 2 None.")
                     return
-            mission_name = "Underwater Mission"
+
+            # [FIX] Gunakan nama standar
+            mission_name = "Underwater Imaging"
             filename_prefix = "underwater_auto"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
@@ -838,12 +866,14 @@ class VisionService:
         if frame_to_use is None:
             return
 
+        # --- SIMPAN FOTO ---
         try:
             overlay_data = create_overlay_from_html(
                 asdict(current_state), mission_type=mission_name
             )
             snapshot = apply_overlay(frame_to_use, overlay_data)
-        except Exception:
+        except Exception as e:
+            print(f"[Mission] Gagal Overlay Auto: {e}")
             snapshot = frame_to_use
 
         filename = f"{filename_prefix}_{image_count}.jpg"
@@ -852,7 +882,7 @@ class VisionService:
         save_path = os.path.join(save_dir, filename)
 
         cv2.imwrite(save_path, snapshot)
-        print(f"[Photography] Disimpan: {save_path}")
+        print(f"[Photography] Auto-Capture Disimpan: {save_path}")
 
     def validate_and_trigger_investigation(self, poi_data, frame, current_state):
         self.recent_detections.append(poi_data["class"])
