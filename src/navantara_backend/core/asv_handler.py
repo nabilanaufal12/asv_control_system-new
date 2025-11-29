@@ -103,9 +103,9 @@ class AsvState:
     photo_mission_qty_requested: int = 0
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
-    vision_auto_motor_cmd: int = 1500
-    vision_servo_left_cmd: int = 45
-    vision_servo_right_cmd: int = 135
+    vision_auto_motor_cmd: int = 1300
+    vision_servo_left_cmd: int = 70
+    vision_servo_right_cmd: int = 110
 
 
 class AsvHandler:
@@ -399,45 +399,52 @@ class AsvHandler:
                 # [FIX INVERSI SERVO] LOGIKA DETEKSI TRIGGER WAYPOINT
                 # -----------------------------------------------------------
 
-                # 1. Tentukan Index Waypoint Efektif (Real vs Dummy Debug)
-                with self.state_lock:
-                    if self.current_state.use_dummy_counter:
-                        current_effective_wp = self.current_state.debug_waypoint_counter
-                    else:
-                        current_effective_wp = self.current_state.current_waypoint_index
-
-                    # Ambil nilai trigger dari state (Default: 5 untuk WP 6)
-                    trigger_threshold = self.current_state.inversion_trigger_wp
-
-                    # Ambil info arena
-                    active_arena_val = str(self.current_state.active_arena)
-
-                # 2. Cek apakah trigger aktif
-                is_wp_triggered = current_effective_wp >= trigger_threshold
-
-                # 3. Deteksi Arena B (Default Inverted)
+                # 1. Normalisasi Status Arena (Handle None Type & Dirty Strings)
+                #    Tujuannya: Mendeteksi 'Arena B' dalam berbagai format input.
+                raw_arena_val = (
+                    str(self.current_state.active_arena or "").strip().upper()
+                )
                 is_arena_b = False
-                if active_arena_val:
-                    clean_arena = active_arena_val.strip().lower().replace(" ", "_")
-                    if "b" in clean_arena and "a" not in clean_arena:
-                        is_arena_b = True
-                    elif clean_arena == "b":
-                        is_arena_b = True
-                    elif "arena_b" in clean_arena:
-                        is_arena_b = True
+                if "B" in raw_arena_val and "A" not in raw_arena_val:
+                    is_arena_b = True
 
-                # 4. Logika XOR (Exclusive OR) untuk Inversi Akhir
+                # 2. Tentukan Index Waypoint Efektif (Real vs Debug)
+                if self.current_state.use_dummy_counter:
+                    current_effective_index = self.current_state.debug_waypoint_counter
+                else:
+                    current_effective_index = self.current_state.current_waypoint_index
+
+                # 3. Logika Trigger (Pastikan trigger_wp adalah 0-based index)
+                #    Contoh: User set WP 6 -> Di State disimpan 5.
+                #    Saat kapal menuju WP 6, current_index naik jadi 5.
+                #    5 >= 5 -> True (Trigger Aktif TEPAT saat menuju WP 6).
+                trigger_threshold_index = self.current_state.inversion_trigger_wp
+                is_wp_triggered = current_effective_index >= trigger_threshold_index
+
+                # 4. Kalkulasi XOR (Exclusive OR) untuk Final State
+                #    Logika:
+                #    - Arena A (False) ^ Belum Trigger (False) = False (Normal)
+                #    - Arena A (False) ^ Sudah Trigger (True)  = True  (Inverted)
+                #    - Arena B (True)  ^ Belum Trigger (False) = True  (Inverted Awal)
+                #    - Arena B (True)  ^ Sudah Trigger (True)  = False (Normal Kembali)
                 final_inversion_state = is_arena_b ^ is_wp_triggered
 
-                # 5. Simpan State dan Log Perubahan
+                # 5. Update State & Logging Cerdas (Hanya log jika berubah)
                 with self.state_lock:
-                    # Log jika state berubah agar mudah didebug
-                    if self.current_state.inverse_servo != final_inversion_state:
+                    prev_inversion = self.current_state.inverse_servo
+
+                    if prev_inversion != final_inversion_state:
+                        self.current_state.inverse_servo = final_inversion_state
+
+                        # Log detail untuk debugging
+                        arena_lbl = "B" if is_arena_b else "A"
+                        status_lbl = "INVERTED" if final_inversion_state else "NORMAL"
                         logging.info(
-                            f"[Logic] Inversi Berubah: {final_inversion_state} "
-                            f"(ArenaB={is_arena_b}, WP={current_effective_wp}>={trigger_threshold})"
+                            f"[Logic] INVERSION STATE CHANGE -> {status_lbl} "
+                            f"(Arena={arena_lbl}, WP_Idx={current_effective_index}, Trig_Idx={trigger_threshold_index})"
                         )
 
+                    # Pastikan state tersimpan meski tidak berubah (untuk konsistensi thread)
                     self.current_state.inverse_servo = final_inversion_state
                 # -----------------------------------------------------------
 

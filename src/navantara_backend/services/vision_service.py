@@ -142,7 +142,8 @@ class VisionService:
 
         # Atribut Cooldown Misi Foto
         self.photo_mission_cooldown_sec = 2.0
-        self.last_auto_photo_time = 0
+        self.last_auto_photo_time_surface = 0
+        self.last_auto_photo_time_underwater = 0
 
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get(
@@ -450,23 +451,16 @@ class VisionService:
         print(f"[{cam_id_log}] Loop berhenti.")
 
     def trigger_manual_capture(self, capture_type: str):
-        """
-        Memicu pengambilan gambar (Surface/Underwater)
-        dengan overlay telemetri yang bersih.
-        """
         print(f"[Capture] Menerima trigger manual untuk: {capture_type}")
-
         frame_to_use = None
         mission_name = None
         filename_prefix = None
         image_count = 0
 
-        # Ambil state terbaru untuk overlay
         try:
             with self.asv_handler.state_lock:
                 current_state_dict = asdict(self.asv_handler.current_state)
-        except Exception as e:
-            print(f"[Capture] Gagal mendapatkan state ASV: {e}")
+        except Exception:  # [FIX] Hapus 'as e' karena tidak digunakan
             return {"status": "error", "message": "Gagal mendapatkan state ASV."}
 
         # --- LOGIKA SURFACE ---
@@ -475,44 +469,32 @@ class VisionService:
                 if VisionService._latest_processed_frame_cam1 is not None:
                     frame_to_use = VisionService._latest_processed_frame_cam1.copy()
                 else:
-                    print("[Capture] Error: Frame CAM 1 belum tersedia (None).")
                     return {"status": "error", "message": "Kamera Depan tidak siap."}
-
             mission_name = "Surface Imaging"
             filename_prefix = "surface"
             image_count = self.surface_image_count
             self.surface_image_count += 1
 
-        # --- LOGIKA UNDERWATER (PERBAIKAN) ---
+        # --- LOGIKA UNDERWATER ---
         elif capture_type == "underwater":
-            # Pastikan mengambil dari Lock CAM 2
             with VisionService._frame_lock_cam2:
                 if VisionService._latest_raw_frame_cam2 is not None:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
                 else:
-                    # [DEBUG LOG] Sangat penting untuk mengetahui jika CAM 2 mati
-                    print(
-                        "[Capture] Error: Frame CAM 2 belum tersedia (None). Cek koneksi USB/Power."
-                    )
+                    print("[Capture] Error: Frame CAM 2 belum tersedia.")
                     return {"status": "error", "message": "Kamera Bawah tidak siap."}
-
             mission_name = "Underwater Imaging"
             filename_prefix = "underwater"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
-
         else:
             return {"status": "error", "message": "Tipe capture tidak valid."}
 
-        # --- PROSES OVERLAY & PENYIMPANAN ---
+        # Proses Overlay
         try:
-            # Panggil overlay generator dengan nama misi yang sudah bersih
-            overlay_data = create_overlay_from_html(
-                current_state_dict, mission_type=mission_name
-            )
+            overlay_data = create_overlay_from_html(current_state_dict, mission_type=mission_name)
             snapshot = apply_overlay(frame_to_use, overlay_data)
-        except Exception as e:
-            print(f"[Capture] Gagal membuat overlay: {e}")
+        except Exception:  # [FIX] Hapus 'as e' karena tidak digunakan
             snapshot = frame_to_use
 
         filename = f"{filename_prefix}_{image_count}.jpg"
@@ -521,7 +503,6 @@ class VisionService:
         save_path = os.path.join(save_dir, filename)
 
         try:
-            # Simpan dengan kualitas tinggi
             ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 95])
             if ret:
                 with open(save_path, "wb") as f:
@@ -529,7 +510,7 @@ class VisionService:
                 print(f"[Capture] Berhasil disimpan: {save_path}")
                 return {"status": "success", "file": filename}
         except Exception as e:
-            print(f"[Capture] Gagal menulis file: {e}")
+            # Di sini 'e' digunakan, jadi tetap pertahankan 'as e'
             return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
 
     def set_obstacle_distance(self, payload):
@@ -707,51 +688,66 @@ class VisionService:
         current_time = time.time()
 
         with self.asv_handler.state_lock:
-            # Ambil state navigasi
+            # Ambil State Navigasi
             current_wp = self.asv_handler.current_state.nav_target_wp_index
 
-            # Ambil parameter misi
+            # Ambil Konfigurasi Segmen & Kuota
             start_wp = self.asv_handler.current_state.photo_mission_target_wp1
             stop_wp = self.asv_handler.current_state.photo_mission_target_wp2
             qty_req = self.asv_handler.current_state.photo_mission_qty_requested
 
-            # Gunakan counter 1 sebagai counter utama
-            taken_total = self.asv_handler.current_state.photo_mission_qty_taken_1
+            # Ambil Counter Saat Ini
+            taken_1 = (
+                self.asv_handler.current_state.photo_mission_qty_taken_1
+            )  # Surface
+            taken_2 = (
+                self.asv_handler.current_state.photo_mission_qty_taken_2
+            )  # Underwater
 
-            # Cek Cooldown
-            cooldown_ready = (
-                current_time - self.last_auto_photo_time
-                > self.photo_mission_cooldown_sec
-            )
-
-            # [KONDISI PEMICU SEGMEN]
+            # Kondisi Dasar: Misi Aktif & Dalam Segmen
             mission_active = start_wp != -1 and stop_wp != -1
             in_segment = (start_wp <= current_wp) and (current_wp < stop_wp)
 
-            should_take_photo = (
-                mission_active
-                and in_segment
-                and cooldown_ready
-                and (taken_total < qty_req)
+            current_state_photo = self.asv_handler.current_state
+
+        if mission_active and in_segment:
+            # --- CEK 1: TRIGGER SURFACE (CAM1) ---
+            cooldown_surf_ok = (
+                current_time - self.last_auto_photo_time_surface
+                > self.photo_mission_cooldown_sec
             )
 
-            if should_take_photo:
-                current_state_photo = self.asv_handler.current_state
+            if (taken_1 < qty_req) and cooldown_surf_ok:
+                # Trigger Capture Mode Surface
+                self.handle_photography_mission(current_state_photo, mode="surface")
 
-                # Trigger Capture (Paksa Surface Mode)
-                self.handle_photography_mission(
-                    frame,  # Frame asli resolusi tinggi
-                    [],
-                    [],  # List deteksi kosong (karena kita mode buta/interval)
-                    current_state_photo,
-                    force_surface=True,
+                # Update State
+                with self.asv_handler.state_lock:
+                    self.asv_handler.current_state.photo_mission_qty_taken_1 += 1
+
+                self.last_auto_photo_time_surface = current_time
+                print(
+                    f"[Mission] Auto Surface ({taken_1 + 1}/{qty_req}) di WP {current_wp}"
                 )
 
-                # Update Counter & Timer
-                self.asv_handler.current_state.photo_mission_qty_taken_1 += 1
-                self.last_auto_photo_time = current_time
+            # --- CEK 2: TRIGGER UNDERWATER (CAM2) ---
+            # Berjalan independen dari Cek 1
+            cooldown_under_ok = (
+                current_time - self.last_auto_photo_time_underwater
+                > self.photo_mission_cooldown_sec
+            )
+
+            if (taken_2 < qty_req) and cooldown_under_ok:
+                # Trigger Capture Mode Underwater
+                self.handle_photography_mission(current_state_photo, mode="underwater")
+
+                # Update State
+                with self.asv_handler.state_lock:
+                    self.asv_handler.current_state.photo_mission_qty_taken_2 += 1
+
+                self.last_auto_photo_time_underwater = current_time
                 print(
-                    f"[Mission] Auto Capture ({taken_total + 1}/{qty_req}) di WP Segmen {current_wp}"
+                    f"[Mission] Auto Underwater ({taken_2 + 1}/{qty_req}) di WP {current_wp}"
                 )
 
         return annotated_frame
@@ -823,50 +819,51 @@ class VisionService:
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
-    def handle_photography_mission(
-        self, frame_cam1, green_boxes, blue_boxes, current_state, force_surface=False
-    ):
+    def handle_photography_mission(self, current_state, mode="surface"):
         """
-        Mengambil snapshot otomatis.
-        Perbaikan: Teks '(Auto)' dihapus agar overlay bersih.
+        Menangani pengambilan foto otomatis berdasarkan mode yang diminta.
+        Mode: "surface" (CAM1) atau "underwater" (CAM2).
         """
         frame_to_use = None
         mission_name = None
         filename_prefix = None
         image_count = 0
 
-        # --- LOGIKA PEMILIHAN KAMERA ---
-        # Prioritas: 1. Force Surface, 2. Deteksi Green (Surface), 3. Deteksi Blue (Underwater)
+        # --- SELEKSI FRAME & LOCK BERDASARKAN MODE ---
+        if mode == "surface":
+            # Ambil Frame CAM 1
+            with VisionService._frame_lock_cam1:
+                if VisionService._latest_processed_frame_cam1 is not None:
+                    frame_to_use = VisionService._latest_processed_frame_cam1.copy()
 
-        if force_surface or green_boxes:
-            # Mode Surface
-            frame_to_use = frame_cam1
-            # [FIX] Hapus kata "(Auto)" -> Gunakan nama standar
             mission_name = "Surface Imaging"
             filename_prefix = "surface_auto"
             image_count = self.surface_image_count
             self.surface_image_count += 1
 
-        elif blue_boxes:
-            # Mode Underwater (Otomatis terpicu jika ada Blue Buoy)
+        elif mode == "underwater":
+            # Ambil Frame CAM 2
             with VisionService._frame_lock_cam2:
                 if VisionService._latest_raw_frame_cam2 is not None:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
-                else:
-                    # Jika CAM 2 mati, batalkan misi foto ini daripada crash/error
-                    print("[Mission] Gagal Auto-Capture Underwater: Frame CAM 2 None.")
-                    return
 
-            # [FIX] Gunakan nama standar
+            if frame_to_use is None:
+                print("[Mission] Gagal Auto-Capture Underwater: Frame CAM 2 None.")
+                return
+
             mission_name = "Underwater Imaging"
             filename_prefix = "underwater_auto"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
 
+        else:
+            print(f"[Mission] Mode tidak dikenal: {mode}")
+            return
+
         if frame_to_use is None:
             return
 
-        # --- SIMPAN FOTO ---
+        # --- PROSES OVERLAY & SIMPAN ---
         try:
             overlay_data = create_overlay_from_html(
                 asdict(current_state), mission_type=mission_name
@@ -882,7 +879,7 @@ class VisionService:
         save_path = os.path.join(save_dir, filename)
 
         cv2.imwrite(save_path, snapshot)
-        print(f"[Photography] Auto-Capture Disimpan: {save_path}")
+        print(f"[Photography] Auto-Capture ({mode}) Disimpan: {save_path}")
 
     def validate_and_trigger_investigation(self, poi_data, frame, current_state):
         self.recent_detections.append(poi_data["class"])
