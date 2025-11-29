@@ -585,6 +585,7 @@ class AsvHandler:
             "INVERSE_SERVO": self._handle_inverse_servo,
             "SET_INVERSION": self._handle_set_inversion,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
+            "UPDATE_INVERSION_TRIGGER": self._handle_update_inversion_trigger,
         }
         handler = command_handlers.get(command)
         if handler:
@@ -752,9 +753,31 @@ class AsvHandler:
             )
             self.serial_handler.send_command(command_str)
 
+    # [BARU] Handler untuk mengubah titik trigger inversi secara dinamis
+    def _handle_update_inversion_trigger(self, payload):
+        try:
+            # Terima input 1-based dari GUI (misal: WP 6)
+            raw_wp_number = int(payload.get("index", 6))
+
+            # Konversi ke 0-based index untuk logika internal
+            # Contoh: User ingin trigger di WP 6, maka index target adalah 5
+            trigger_index = max(0, raw_wp_number - 1)
+
+            with self.state_lock:
+                self.current_state.inversion_trigger_wp = trigger_index
+
+            logging.info(
+                f"[AsvHandler] Inversion Trigger Updated: WP {raw_wp_number} (Index {trigger_index})"
+            )
+            self.logger.log_event(f"Trigger Inversi diubah ke Waypoint {raw_wp_number}")
+
+        except ValueError:
+            logging.warning("[AsvHandler] Payload inversion trigger tidak valid")
+
     def _handle_set_waypoints(self, payload):
         waypoints_data = payload.get("waypoints")
         raw_arena = payload.get("arena") or payload.get("arena_id")
+        custom_trigger = payload.get("inversion_trigger_wp")
 
         arena_id = "Unknown"
         if raw_arena:
@@ -773,6 +796,8 @@ class AsvHandler:
             self.current_state.waypoints = waypoints_data
             self.current_state.current_waypoint_index = 0
             self.current_state.active_arena = arena_id
+            if custom_trigger is not None:
+                self.current_state.inversion_trigger_wp = int(custom_trigger)
             self.logger.log_event(
                 f"Waypoints baru dimuat (Arena: {arena_id}). Jumlah: {len(waypoints_data)}"
             )
