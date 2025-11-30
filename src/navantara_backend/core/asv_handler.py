@@ -75,7 +75,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 9.0  # coba 9999.0
+    nav_dist_to_wp: float = 0.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -83,7 +83,7 @@ class AsvState:
     nav_gps_sats: int = 0
     manual_servo_cmd: int = 90
     manual_motor_cmd: int = 1500
-    inversion_trigger_wp: int = 5  # Wp 6
+    inversion_trigger_wp: int = 8  # Wp 6
     inverse_servo: bool = False
     active_arena: str = "Unknown"
     debug_waypoint_counter: int = 0
