@@ -26,16 +26,22 @@ from navantara_backend.vision.overlay_utils import (
 
 class ThreadedCamera:
     def __init__(self, src=0):
+        self.src = src
         self.capture = cv2.VideoCapture(src)
-        # Coba set hardware buffer (meski sering diabaikan driver, tetap kita coba)
+        # Set buffer size (opsional, tergantung driver)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        # Inisialisasi frame
-        self.status, self.frame = self.capture.read()
+        self.status = False
+        self.frame = None
         self.stopped = False
         self.lock = threading.Lock()
+        
+        # Cek apakah kamera benar-benar terbuka saat init
+        if self.capture.isOpened():
+            self.status, self.frame = self.capture.read()
+        else:
+            self.status = False
 
-        # Jalankan thread pembaca di background
         self.thread = threading.Thread(target=self.update, args=())
         self.thread.daemon = True
         self.thread.start()
@@ -44,35 +50,45 @@ class ThreadedCamera:
         while not self.stopped:
             try:
                 if not self.capture.isOpened():
-                    time.sleep(0.1)
+                    # Jika capture tertutup, set status False dan tunggu
+                    with self.lock:
+                        self.status = False
+                    time.sleep(0.5)
                     continue
 
-                # Baca frame terus menerus secepat mungkin
                 status, frame = self.capture.read()
 
-                # Hanya simpan frame terbaru (timpa yang lama)
                 with self.lock:
-                    if status:
-                        self.status = status
+                    if status and frame is not None and frame.size > 0:
+                        self.status = True
                         self.frame = frame
                     else:
                         self.status = False
-
-                # Tidur sangat sebentar agar CPU tidak 100%
+                
+                # Sleep sangat kecil untuk yield CPU
                 time.sleep(0.005)
-            except Exception:
-                # Tangkap error (termasuk saat shutdown) agar tidak noisy
-                break
+
+            except Exception as e:
+                print(f"[ThreadedCamera] Error in loop: {e}")
+                with self.lock:
+                    self.status = False
+                # Jangan break loop, coba recover di iterasi berikutnya atau biarkan caller mereset
+                time.sleep(0.1)
 
     def read(self):
-        # Kembalikan frame terakhir yang berhasil diambil
         with self.lock:
-            return self.status, self.frame.copy() if self.frame is not None else None
+            # Kembalikan None eksplisit jika status False
+            if not self.status:
+                return False, None
+            return True, self.frame.copy() if self.frame is not None else None
 
     def stop(self):
         self.stopped = True
-        self.thread.join()
-        self.capture.release()
+        if self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        
+        if self.capture.isOpened():
+            self.capture.release()
 
 
 class VisionService:
@@ -349,47 +365,90 @@ class VisionService:
         self, cam_index, frame_lock, cam_id_log, event_name, apply_detection
     ):
         """
-        Loop capture yang sudah diperbaiki menggunakan ThreadedCamera.
+        Loop capture dengan mekanisme SELF-HEALING (Auto Reconnect).
         """
-        print(f"[{cam_id_log}] Memulai loop kamera (Mode: Threaded Real-Time)...")
+        print(f"[{cam_id_log}] Memulai loop kamera (Mode: Robust Threaded)...")
 
-        # --- [MODIFIKASI: Gunakan ThreadedCamera] ---
-        # Kita coba buka kamera menggunakan wrapper ThreadedCamera
-        # Catatan: ThreadedCamera internalnya sudah memanggil cv2.VideoCapture
         cap = None
-        try:
-            # Cek dulu apakah index valid dengan cara biasa sebentar
-            temp = cv2.VideoCapture(cam_index)
-            if temp.isOpened():
+        consecutive_failures = 0
+        MAX_FAILURES = 10  # Batas toleransi kegagalan sebelum hard reset
+        RECONNECT_DELAY = 2.0  # Waktu tunggu (detik) sebelum inisialisasi ulang
+
+        # Fungsi helper untuk inisialisasi kamera
+        def init_camera(index):
+            try:
+                # Coba buka sebentar untuk tes
+                temp = cv2.VideoCapture(index)
+                if not temp.isOpened():
+                    print(f"[{cam_id_log}] Gagal membuka device {index} (Not Opened).")
+                    return None
                 temp.release()
-                # JIKA ADA, BARU JALANKAN THREADNYA
-                cap = ThreadedCamera(cam_index)
-                print(
-                    f"[{cam_id_log}] ThreadedCamera berhasil dimulai pada index {cam_index}"
-                )
-            else:
-                print(f"[{cam_id_log}] Gagal membuka kamera index {cam_index}")
-                return
-        except Exception as e:
-            print(f"[{cam_id_log}] Error inisialisasi kamera: {e}")
-            return
-        # --------------------------------------------
+                
+                # Inisialisasi ThreadedCamera
+                new_cap = ThreadedCamera(index)
+                print(f"[{cam_id_log}] Kamera berhasil diinisialisasi (Re-init).")
+                return new_cap
+            except Exception as e:
+                print(f"[{cam_id_log}] Exception saat init kamera: {e}")
+                return None
+
+        # Inisialisasi awal
+        cap = init_camera(cam_index)
 
         # Settingan GUI
         GUI_SKIP_RATE = 5
         frame_counter = 0
 
         while self.running:
-            # --- [MODIFIKASI: Baca dari Buffer Thread] ---
-            # Ini akan instan (0 delay) karena mengambil frame terbaru dari memori
-            ret, frame = cap.read()
-            # ---------------------------------------------
+            frame_valid = False
+            frame_to_process = None
 
-            if not ret or frame is None:
-                # Jika frame kosong, tunggu sebentar lalu coba lagi
+            # --- BLOK PEMBACAAN DENGAN WATCHDOG ---
+            if cap:
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    frame_valid = True
+                    consecutive_failures = 0  # Reset counter jika sukses
+                    frame_to_process = frame
+                else:
+                    frame_valid = False
+            else:
+                frame_valid = False
+
+            # --- LOGIKA RECOVERY (SELF HEALING) ---
+            if not frame_valid:
+                consecutive_failures += 1
+                if consecutive_failures % 10 == 0:
+                    print(f"[{cam_id_log}] Warning: Gagal membaca frame ({consecutive_failures}x).")
+                
+                # Jika kegagalan menembus ambang batas, lakukan HARD RESET
+                if consecutive_failures > MAX_FAILURES:
+                    print(f"[{cam_id_log}] KRITIS: Mencoba HARD RESET koneksi kamera...")
+                    
+                    # 1. Matikan instance lama
+                    if cap:
+                        try:
+                            cap.stop()
+                        except Exception:
+                            pass
+                        cap = None
+                    
+                    # 2. Tunggu Kernel release resource (PENTING)
+                    eventlet.sleep(RECONNECT_DELAY)
+                    
+                    # 3. Coba buat instance baru
+                    cap = init_camera(cam_index)
+                    
+                    # Reset counter agar tidak spam reset jika kamera benar-benar mati
+                    consecutive_failures = 0 
+                
+                # Sleep sebentar agar tidak membebani CPU saat error
                 eventlet.sleep(0.1)
                 continue
+            # --------------------------------------
 
+            # === JIKA FRAME VALID, LANJUTKAN PROSES ===
+            
             with self.settings_lock:
                 should_emit_to_gui = self.gui_is_listening
 
@@ -399,17 +458,10 @@ class VisionService:
             # 1. PROSES AI (Inference)
             if apply_detection:
                 try:
-                    # Proses frame (AI)
-                    processed_frame_ai = self.process_and_control(frame, is_auto)
-
+                    processed_frame_ai = self.process_and_control(frame_to_process, is_auto)
                     with frame_lock:
-                        VisionService._latest_processed_frame_cam1 = (
-                            processed_frame_ai.copy()
-                        )
-                        VisionService._latest_processed_frame = (
-                            VisionService._latest_processed_frame_cam1
-                        )
-
+                        VisionService._latest_processed_frame_cam1 = processed_frame_ai.copy()
+                        VisionService._latest_processed_frame = VisionService._latest_processed_frame_cam1
                     frame_to_emit = processed_frame_ai
                 except Exception as e:
                     print(f"[{cam_id_log}] Error AI: {e}")
@@ -419,33 +471,27 @@ class VisionService:
             else:
                 # Kamera 2 (Tanpa AI)
                 with frame_lock:
-                    VisionService._latest_raw_frame_cam2 = frame.copy()
-                frame_to_emit = frame
+                    VisionService._latest_raw_frame_cam2 = frame_to_process.copy()
+                frame_to_emit = frame_to_process
 
             # 2. KIRIM KE GUI (Rate Limited)
             frame_counter += 1
             if should_emit_to_gui and (frame_counter % GUI_SKIP_RATE == 0):
                 try:
-                    # Resize kecil khusus untuk streaming agar ringan
                     gui_frame = cv2.resize(frame_to_emit, (320, 240))
-
-                    # Kompresi rendah (Quality 35) agar cepat dikirim via WiFi
                     ret_encode, buffer = cv2.imencode(
                         ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 35]
                     )
-
                     if ret_encode:
                         b64_string = base64.b64encode(buffer).decode("utf-8")
                         self.socketio.emit(event_name, b64_string)
-                        # Yield sebentar ke network
                         eventlet.sleep(0)
                 except Exception:
                     pass
 
-            # Yield wajib untuk Eventlet
             eventlet.sleep(0.001)
 
-        # Cleanup saat stop
+        # Cleanup saat stop total
         if cap:
             cap.stop()
         print(f"[{cam_id_log}] Loop berhenti.")
