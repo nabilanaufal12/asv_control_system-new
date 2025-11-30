@@ -492,7 +492,9 @@ class VisionService:
 
         # Proses Overlay
         try:
-            overlay_data = create_overlay_from_html(current_state_dict, mission_type=mission_name)
+            overlay_data = create_overlay_from_html(
+                current_state_dict, mission_type=mission_name
+            )
             snapshot = apply_overlay(frame_to_use, overlay_data)
         except Exception:  # [FIX] Hapus 'as e' karena tidak digunakan
             snapshot = frame_to_use

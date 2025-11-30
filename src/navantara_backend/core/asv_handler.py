@@ -75,7 +75,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 99.0  # coba 9999.0
+    nav_dist_to_wp: float = 9.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -399,52 +399,48 @@ class AsvHandler:
                 # [FIX INVERSI SERVO] LOGIKA DETEKSI TRIGGER WAYPOINT
                 # -----------------------------------------------------------
 
-                # 1. Normalisasi Status Arena (Handle None Type & Dirty Strings)
-                #    Tujuannya: Mendeteksi 'Arena B' dalam berbagai format input.
+                # 1. Normalisasi Status Arena (Fix Bug "ARENA" contains "A")
                 raw_arena_val = (
                     str(self.current_state.active_arena or "").strip().upper()
                 )
                 is_arena_b = False
-                if "B" in raw_arena_val and "A" not in raw_arena_val:
+                # Cek apakah string diakhiri dengan B atau sama dengan B
+                if raw_arena_val == "B" or raw_arena_val.endswith("_B"):
                     is_arena_b = True
 
-                # 2. Tentukan Index Waypoint Efektif (Real vs Debug)
+                # 2. Tentukan Index Waypoint Efektif
                 if self.current_state.use_dummy_counter:
                     current_effective_index = self.current_state.debug_waypoint_counter
                 else:
                     current_effective_index = self.current_state.current_waypoint_index
 
-                # 3. Logika Trigger (Pastikan trigger_wp adalah 0-based index)
-                #    Contoh: User set WP 6 -> Di State disimpan 5.
-                #    Saat kapal menuju WP 6, current_index naik jadi 5.
-                #    5 >= 5 -> True (Trigger Aktif TEPAT saat menuju WP 6).
+                # 3. Logika Trigger Dinamis
+                # Menggunakan variabel state yang bisa diupdate GUI
                 trigger_threshold_index = self.current_state.inversion_trigger_wp
+
+                # Trigger aktif jika kita SEDANG MENUJU atau SUDAH LEWAT waypoint trigger
+                # Misal Trigger WP 6 (index 5). Saat current_index = 5, artinya kita OTW ke WP 6.
                 is_wp_triggered = current_effective_index >= trigger_threshold_index
 
-                # 4. Kalkulasi XOR (Exclusive OR) untuk Final State
-                #    Logika:
-                #    - Arena A (False) ^ Belum Trigger (False) = False (Normal)
-                #    - Arena A (False) ^ Sudah Trigger (True)  = True  (Inverted)
-                #    - Arena B (True)  ^ Belum Trigger (False) = True  (Inverted Awal)
-                #    - Arena B (True)  ^ Sudah Trigger (True)  = False (Normal Kembali)
+                # 4. Kalkulasi XOR (Exclusive OR)
+                # Arena A (0) ^ Triggered (0) = 0 (Normal)
+                # Arena A (0) ^ Triggered (1) = 1 (Inverted) -> Misal mau inversi di akhir lintasan A
+                # Arena B (1) ^ Triggered (0) = 1 (Inverted Awal)
+                # Arena B (1) ^ Triggered (1) = 0 (Normal Kembali)
                 final_inversion_state = is_arena_b ^ is_wp_triggered
 
-                # 5. Update State & Logging Cerdas (Hanya log jika berubah)
+                # 5. Update State
                 with self.state_lock:
                     prev_inversion = self.current_state.inverse_servo
-
                     if prev_inversion != final_inversion_state:
                         self.current_state.inverse_servo = final_inversion_state
 
-                        # Log detail untuk debugging
+                        mode_lbl = "INVERTED" if final_inversion_state else "NORMAL"
                         arena_lbl = "B" if is_arena_b else "A"
-                        status_lbl = "INVERTED" if final_inversion_state else "NORMAL"
                         logging.info(
-                            f"[Logic] INVERSION STATE CHANGE -> {status_lbl} "
-                            f"(Arena={arena_lbl}, WP_Idx={current_effective_index}, Trig_Idx={trigger_threshold_index})"
+                            f"[Logic Inversi] CHANGE -> {mode_lbl} (Arena={arena_lbl}, CurrWP={current_effective_index}, TrigWP={trigger_threshold_index+1})"
                         )
 
-                    # Pastikan state tersimpan meski tidak berubah (untuk konsistensi thread)
                     self.current_state.inverse_servo = final_inversion_state
                 # -----------------------------------------------------------
 
@@ -786,29 +782,44 @@ class AsvHandler:
         raw_arena = payload.get("arena") or payload.get("arena_id")
         custom_trigger = payload.get("inversion_trigger_wp")
 
-        arena_id = "Unknown"
+        # --- [FIX KRITIS DETEKSI ARENA] ---
+        # Masalah Lama: Kata "ARENA" mengandung huruf "A", jadi logika lama gagal.
+        arena_id = "Arena_A"  # Default
         if raw_arena:
             clean_arena = str(raw_arena).strip().upper().replace(" ", "_")
-            if "B" in clean_arena and "A" not in clean_arena:
+
+            # Logika deteksi yang lebih kuat
+            # Menangkap: "B", "ARENA_B", "LINTASAN_B", "ARENA B"
+            if (
+                clean_arena == "B"
+                or clean_arena.endswith("_B")
+                or "ARENA_B" in clean_arena
+            ):
                 arena_id = "Arena_B"
-            elif "A" in clean_arena:
-                arena_id = "Arena_A"
             else:
-                arena_id = clean_arena
+                arena_id = "Arena_A"
+        # ----------------------------------
 
         if not isinstance(waypoints_data, list):
             logging.warning("[AsvHandler] Gagal set waypoints: Data tidak valid.")
             return
+
         with self.state_lock:
             self.current_state.waypoints = waypoints_data
+            # Reset index selalu ke 0 saat load misi baru
             self.current_state.current_waypoint_index = 0
             self.current_state.active_arena = arena_id
+
+            # Jika GUI mengirim trigger khusus, pakai itu. Jika tidak, pertahankan yang ada.
             if custom_trigger is not None:
                 self.current_state.inversion_trigger_wp = int(custom_trigger)
+
             self.logger.log_event(
-                f"Waypoints baru dimuat (Arena: {arena_id}). Jumlah: {len(waypoints_data)}"
+                f"Waypoints dimuat (Arena: {arena_id}, Trigger Inversi WP: {self.current_state.inversion_trigger_wp + 1}). Jml: {len(waypoints_data)}"
             )
-            logging.info(f"[Setup] Arena set to: {arena_id} (Raw: {raw_arena})")
+            logging.info(
+                f"[Setup] Arena set to: {arena_id} (Raw: {raw_arena}) | Inversi Trigger Index: {self.current_state.inversion_trigger_wp}"
+            )
 
     def _handle_start_mission(self, payload):
         with self.state_lock:
