@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QAbstractItemView,
     QFormLayout,
-    QSpinBox  # [BARU] Untuk input angka trigger
+    QSpinBox,  # [BARU] Untuk input angka trigger
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator, QIntValidator
@@ -23,15 +23,15 @@ class WaypointsPanel(QGroupBox):
     waypoints_updated = Signal(list)
     load_mission_requested = Signal(str)
     send_photo_mission = Signal(dict)
-    
+
     # [BARU] Sinyal untuk update trigger inversi secara dinamis
-    update_inversion_trigger = Signal(dict) 
+    update_inversion_trigger = Signal(dict)
 
     def __init__(self, config, title="Waypoints"):
         super().__init__(title)
         self.config = config
         self.current_arena = None  # Menyimpan arena yang sedang aktif (A/B)
-        
+
         main_layout = QVBoxLayout()
 
         # --- 1. Predefined Missions ---
@@ -115,7 +115,7 @@ class WaypointsPanel(QGroupBox):
         self.trigger_wp_input.setRange(1, 100)
         self.trigger_wp_input.setValue(8)  # Default ke WP 6
         self.trigger_wp_input.setPrefix("Trigger Inv di WP: ")
-        
+
         self.set_trigger_btn = QPushButton("Set Trigger")
         self.set_trigger_btn.setStyleSheet(
             "background-color: #6A5ACD; color: white; font-weight: bold;"
@@ -142,19 +142,19 @@ class WaypointsPanel(QGroupBox):
         main_layout.addWidget(photo_mission_box)
         main_layout.addWidget(inversion_box)  # [BARU] Tambahkan ke layout
         main_layout.addLayout(send_layout)
-        
+
         self.setLayout(main_layout)
 
         # --- Koneksi Sinyal ---
         self.load_a_button.clicked.connect(lambda: self._on_load_mission("A"))
         self.load_b_button.clicked.connect(lambda: self._on_load_mission("B"))
-        
+
         self.add_manual_button.clicked.connect(self.add_manual_waypoint)
         self.add_current_pos_button.clicked.connect(self.add_current_pos_requested.emit)
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
         self.set_photo_mission_button.clicked.connect(self._on_set_photo_mission)
-        
+
         # [BARU] Koneksi tombol trigger inversi
         self.set_trigger_btn.clicked.connect(self._on_set_inversion_trigger)
 
@@ -196,7 +196,7 @@ class WaypointsPanel(QGroupBox):
                 self.lat_input.clear()
                 self.lon_input.clear()
                 self._emit_updated_waypoints()
-                self.current_arena = None 
+                self.current_arena = None
             except ValueError:
                 print("[GUI] Error: Input waypoint manual tidak valid.")
 
@@ -225,14 +225,18 @@ class WaypointsPanel(QGroupBox):
         all_waypoints = self._get_all_waypoints_from_list()
 
         if self.current_arena is None:
-            print("[WaypointsPanel] Peringatan: Tidak ada arena (A/B) yang dipilih/di-load.")
+            print(
+                "[WaypointsPanel] Peringatan: Tidak ada arena (A/B) yang dipilih/di-load."
+            )
             current_arena_to_send = "A"  # Default ke A
         else:
             current_arena_to_send = self.current_arena
 
         payload = {"waypoints": all_waypoints, "arena": current_arena_to_send}
         self.send_waypoints.emit(payload)
-        print(f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {len(all_waypoints)} waypoints, Arena: {current_arena_to_send}")
+        print(
+            f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {len(all_waypoints)} waypoints, Arena: {current_arena_to_send}"
+        )
 
     @Slot()
     def _on_set_photo_mission(self):
@@ -242,7 +246,9 @@ class WaypointsPanel(QGroupBox):
         count_text = self.photo_count_input.text()
 
         if not wp1_text or not wp2_text or not count_text:
-            print("[WaypointsPanel] Error: Harap isi Start Index, Stop Index, dan Jumlah Foto.")
+            print(
+                "[WaypointsPanel] Error: Harap isi Start Index, Stop Index, dan Jumlah Foto."
+            )
             return
 
         try:
@@ -256,7 +262,9 @@ class WaypointsPanel(QGroupBox):
 
             payload = {"wp1": wp1, "wp2": wp2, "count": count}
             self.send_photo_mission.emit(payload)
-            print(f"[WaypointsPanel] Misi Segmen dikirim: Start={wp1}, Stop={wp2}, Max={count}")
+            print(
+                f"[WaypointsPanel] Misi Segmen dikirim: Start={wp1}, Stop={wp2}, Max={count}"
+            )
 
         except ValueError:
             print("[WaypointsPanel] Error: Input harus berupa angka bulat.")
@@ -267,7 +275,7 @@ class WaypointsPanel(QGroupBox):
         """Handler untuk mengirim konfigurasi trigger inversi."""
         # Ambil nilai (1-based dari UI)
         wp_target = self.trigger_wp_input.value()
-        
+
         payload = {"index": wp_target}
         self.update_inversion_trigger.emit(payload)
         print(f"[WaypointsPanel] Request update trigger inversi ke WP {wp_target}")
