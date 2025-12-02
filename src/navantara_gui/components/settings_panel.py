@@ -34,7 +34,7 @@ class SettingsPanel(QGroupBox):
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
     # [HAPUS] Sinyal Trigger Inversi yang redundan
-    # inversion_trigger_updated = Signal(int) 
+    # inversion_trigger_updated = Signal(int)
 
     def __init__(self, config, title="Settings"):
         super().__init__(title)
@@ -87,8 +87,8 @@ class SettingsPanel(QGroupBox):
         # [HAPUS] Bagian Trigger Layout Redundan
         # trigger_layout = QHBoxLayout()
         # self.spin_inv_trigger = QSpinBox()
-        # self.spin_inv_trigger.setRange(1, 99) 
-        # self.spin_inv_trigger.setValue(6) 
+        # self.spin_inv_trigger.setRange(1, 99)
+        # self.spin_inv_trigger.setValue(6)
         # self.spin_inv_trigger.setPrefix("Start Invert at WP: ")
         # trigger_layout.addWidget(QLabel("Servo Inversion:"))
         # trigger_layout.addWidget(self.spin_inv_trigger)

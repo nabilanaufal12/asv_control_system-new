@@ -23,6 +23,7 @@
         justify-content: space-between;
         align-items: center;
         width: 100%;
+        margin-bottom: 10px;
       }
       .path-title {
         margin-left: auto;
@@ -51,7 +52,7 @@
       .capture-section .section-header {
         margin-bottom: 10px;
       }
-      #refresh-gallery-btn {
+      #refresh-gallery-btn, #refresh-csv-btn {
         padding: 5px 10px;
         font-size: 0.8rem;
         cursor: pointer;
@@ -60,7 +61,7 @@
         border: none;
         border-radius: 4px;
       }
-      #refresh-gallery-btn:hover {
+      #refresh-gallery-btn:hover, #refresh-csv-btn:hover {
         background-color: #2980b9;
       }
 
@@ -83,6 +84,61 @@
         border-radius: 4px;
         cursor: pointer;
       }
+
+      /* --- [BARU] STYLE UNTUK LOG CSV --- */
+      .log-section {
+        margin-top: 20px;
+        background: #fff;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      }
+      .log-grid {
+        max-height: 150px;
+        overflow-y: auto;
+        background-color: #ecf0f1;
+        border-radius: 5px;
+        padding: 10px;
+        box-sizing: border-box;
+      }
+      .csv-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .csv-item {
+        background-color: white;
+        margin-bottom: 5px;
+        padding: 8px 12px;
+        border-radius: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.9rem;
+        color: #2c3e50;
+        border: 1px solid #ddd;
+      }
+      .csv-item span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+      }
+      .download-link {
+        color: white;
+        background-color: #27ae60;
+        text-decoration: none;
+        font-size: 0.75rem;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 500;
+        transition: background 0.2s;
+      }
+      .download-link:hover {
+        background-color: #219150;
+      }
+      /* ---------------------------------- */
+
     </style>
   </head>
   <body>
@@ -226,6 +282,18 @@
                 </div>
               </div>
 
+            </section>
+
+            <section class="log-section">
+              <div class="section-header">
+                <h3>Log Telemetri (CSV)</h3>
+                <button id="refresh-csv-btn" onclick="fetchCsvLogList()">Refresh List</button>
+              </div>
+              <div class="log-grid" id="csv-log-container">
+                <ul id="csv-log-list" class="csv-list">
+                  <li class="csv-item" style="justify-content: center; color: #7f8c8d;">Memuat data log...</li>
+                </ul>
+              </div>
             </section>
             </div>
       </main>

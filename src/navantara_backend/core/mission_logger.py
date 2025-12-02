@@ -4,6 +4,7 @@ import threading
 import os
 from datetime import datetime
 
+
 class MissionLogger:
     def __init__(self, log_dir="mission_logs"):
         if not os.path.exists(log_dir):
@@ -18,12 +19,14 @@ class MissionLogger:
 
         # --- SETUP CSV DENGAN FORMAT SESUAI PERMINTAAN ---
         self.telemetry_file = open(self.telemetry_log_path, "w", newline="")
-        
+
         # Header kolom yang Anda minta
         self.fieldnames = ["Day", "Date", "Time", "GPS", "SOG", "COG", "HDG"]
-        
+
         # Menggunakan DictWriter agar penulisan lebih rapi dan aman
-        self.telemetry_writer = csv.DictWriter(self.telemetry_file, fieldnames=self.fieldnames)
+        self.telemetry_writer = csv.DictWriter(
+            self.telemetry_file, fieldnames=self.fieldnames
+        )
         self.telemetry_writer.writeheader()
 
     def log_telemetry(self, state_data):
@@ -33,7 +36,7 @@ class MissionLogger:
         with self._lock:
             try:
                 now = datetime.now()
-                
+
                 # Ambil data dari state (dengan nilai default 0 jika error/kosong)
                 lat = state_data.get("latitude", 0)
                 lon = state_data.get("longitude", 0)
@@ -43,18 +46,18 @@ class MissionLogger:
 
                 # Format data sesuai kolom
                 row_payload = {
-                    "Day": now.strftime("%A"),          # Nama Hari
-                    "Date": now.strftime("%Y-%m-%d"),   # Tanggal
-                    "Time": now.strftime("%H:%M:%S"),   # Jam
-                    "GPS": f"{lat:.6f}, {lon:.6f}",     # Gabung Lat, Lon
-                    "SOG": f"{speed:.2f}",              # Speed Over Ground
-                    "COG": f"{cog:.1f}",                # Course Over Ground
-                    "HDG": f"{heading:.1f}"             # Heading
+                    "Day": now.strftime("%A"),  # Nama Hari
+                    "Date": now.strftime("%Y-%m-%d"),  # Tanggal
+                    "Time": now.strftime("%H:%M:%S"),  # Jam
+                    "GPS": f"{lat:.6f}, {lon:.6f}",  # Gabung Lat, Lon
+                    "SOG": f"{speed:.2f}",  # Speed Over Ground
+                    "COG": f"{cog:.1f}",  # Course Over Ground
+                    "HDG": f"{heading:.1f}",  # Heading
                 }
 
                 # Tulis ke file
                 self.telemetry_writer.writerow(row_payload)
-                
+
             except Exception as e:
                 print(f"[Logger] Gagal menulis log: {e}")
 

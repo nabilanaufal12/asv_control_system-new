@@ -569,7 +569,7 @@ class AsvHandler:
 
                 # Panggil satu baris ini saja. Logger akan otomatis format ke Day/Date/GPS/dll.
                 self.logger.log_telemetry(state_for_log)
-                
+
                 # Update SocketIO (GUI) & Firebase
                 self._update_and_emit_state()
                 send_telemetry_to_firebase(state_for_log, self.config)
@@ -610,7 +610,7 @@ class AsvHandler:
     def _handle_toggle_csv_logging(self, payload):
         """Mengaktifkan/mematikan log CSV kustom user."""
         status = payload.get("status", False)
-        
+
         if status:
             if not self.is_logging_csv:
                 # Start dengan header fix yang sudah ditentukan

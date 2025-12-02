@@ -155,7 +155,7 @@ def apply_overlay(background_frame, overlay_data):
     # --- PERSIAPAN DATA ---
     now = datetime.now()
     day_map = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
-    
+
     lat = telemetry_data.get("latitude", 0)
     lon = telemetry_data.get("longitude", 0)
     sog_ms = telemetry_data.get("speed", 0)
@@ -180,26 +180,21 @@ def apply_overlay(background_frame, overlay_data):
         f"GPS : {gps_str}",
         f"SOG : {sog_str}",
         f"COG : {cog:.2f} deg",
-        f"HDG : {hdg:.2f} deg"
+        f"HDG : {hdg:.2f} deg",
     ]
 
     # --- KONFIGURASI LAYOUT ---
     # [MODIFIKASI] Ubah angka 20 menjadi 45 agar teks turun ke bawah garis
-    y_pos = info_y_start + 28  
-    
-    line_height = 20           # Jarak antar baris
-    font_size = 0.5            # Ukuran font
-    font_face = cv2.FONT_HERSHEY_DUPLEX 
+    y_pos = info_y_start + 28
+
+    line_height = 20  # Jarak antar baris
+    font_size = 0.5  # Ukuran font
+    font_face = cv2.FONT_HERSHEY_DUPLEX
 
     # Loop menggambar setiap baris teks
     for line_text in lines:
         putText_with_shadow(
-            frame, 
-            line_text, 
-            (info_x, y_pos), 
-            font_face, 
-            font_size, 
-            color_white
+            frame, line_text, (info_x, y_pos), font_face, font_size, color_white
         )
         y_pos += line_height
 

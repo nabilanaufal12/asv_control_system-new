@@ -73,6 +73,7 @@ class SerialHandler:
         permanent_port = "/dev/ttyASV"
         try:
             import os
+
             # Cek apakah file device ada di sistem Linux
             if os.path.exists(permanent_port):
                 print(f"[Serial] Mendeteksi device permanen: {permanent_port}")

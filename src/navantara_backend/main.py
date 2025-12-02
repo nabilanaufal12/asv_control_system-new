@@ -40,6 +40,20 @@ def create_app():
 
     CORS(app)
 
+    # --- [KONFIGURASI FOLDER LOG CSV] ---
+    # Menggunakan os.getcwd() agar konsisten dengan folder captures
+    csv_log_dir = os.path.join(os.getcwd(), "mission_logs")
+    print(f"[Backend] Mencari Log CSV di: {csv_log_dir}")
+
+    # Pastikan folder ada saat server start
+    if not os.path.exists(csv_log_dir):
+        try:
+            os.makedirs(csv_log_dir)
+            print(f"[Server] Folder log CSV dibuat: {csv_log_dir}")
+        except Exception as e:
+            print(f"[Server] Gagal membuat folder log CSV: {e}")
+    # ------------------------------------
+
     # --- [FIX KRITIS CORS: Preflight & Anti-Cache] ---
     @app.before_request
     def handle_options_request():
@@ -157,7 +171,40 @@ def create_app():
 
     # --- AKHIR MODIFIKASI ---
 
-    # --- 4. TAMBAHKAN ENDPOINT API BARU DI SINI ---
+    # --- [FITUR BARU] DOWNLOAD LOG CSV ---
+
+    @app.route("/api/logfiles/csv", methods=["GET"])
+    def list_csv_logs():
+        """
+        Mengembalikan daftar file CSV dari folder logs/telemetry_csv.
+        """
+        try:
+            if not os.path.exists(csv_log_dir):
+                return jsonify([])
+
+            # Ambil semua file .csv
+            files = [f for f in os.listdir(csv_log_dir) if f.endswith(".csv")]
+            # Urutkan desc (terbaru diatas, asumsi penamaan timestamp)
+            files.sort(reverse=True)
+
+            return jsonify(files)
+        except Exception as e:
+            print(f"[API Log] Error listing CSV: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/download/log/csv/<path:filename>", methods=["GET"])
+    def download_csv_log(filename):
+        """
+        Download file CSV log sebagai attachment.
+        """
+        try:
+            return send_from_directory(csv_log_dir, filename, as_attachment=True)
+        except Exception as e:
+            return jsonify({"error": "File not found"}), 404
+
+    # --- AKHIR FITUR BARU ---
+
+    # --- 4. TAMBAHAN ENDPOINT API ---
     @app.route("/api/telemetry")
     def api_get_telemetry():
         """

@@ -29,7 +29,7 @@ class ThreadedCamera:
         self.src = src
         # [MODIFIKASI] Log source untuk debugging
         print(f"[ThreadedCamera] Membuka source: {self.src}")
-        
+
         self.capture = cv2.VideoCapture(src)
         # Set buffer size (opsional, tergantung driver)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -38,7 +38,7 @@ class ThreadedCamera:
         self.frame = None
         self.stopped = False
         self.lock = threading.Lock()
-        
+
         # Cek apakah kamera benar-benar terbuka saat init
         if self.capture.isOpened():
             self.status, self.frame = self.capture.read()
@@ -67,7 +67,7 @@ class ThreadedCamera:
                         self.frame = frame
                     else:
                         self.status = False
-                
+
                 # Sleep sangat kecil untuk yield CPU
                 time.sleep(0.005)
 
@@ -89,7 +89,7 @@ class ThreadedCamera:
         self.stopped = True
         if self.thread.is_alive():
             self.thread.join(timeout=1.0)
-        
+
         if self.capture.isOpened():
             self.capture.release()
 
@@ -138,11 +138,11 @@ class VisionService:
         # [MODIFIKASI] Dukungan string path (udev) dengan fallback ke index lama
         self.camera_src_1 = vision_cfg.get("camera_src_1")
         if self.camera_src_1 is None:
-             self.camera_src_1 = int(vision_cfg.get("camera_index_1", 0))
+            self.camera_src_1 = int(vision_cfg.get("camera_index_1", 0))
 
         self.camera_src_2 = vision_cfg.get("camera_src_2")
         if self.camera_src_2 is None:
-             self.camera_src_2 = int(vision_cfg.get("camera_index_2", 1))
+            self.camera_src_2 = int(vision_cfg.get("camera_index_2", 1))
 
         print(f"[VisionService] Camera 1 Source: {self.camera_src_1}")
         print(f"[VisionService] Camera 2 Source: {self.camera_src_2}")
@@ -396,7 +396,7 @@ class VisionService:
                     print(f"[{cam_id_log}] Gagal membuka device {source} (Not Opened).")
                     return None
                 temp.release()
-                
+
                 # Inisialisasi ThreadedCamera dengan source yang sesuai
                 new_cap = ThreadedCamera(source)
                 print(f"[{cam_id_log}] Kamera berhasil diinisialisasi (Re-init).")
@@ -432,12 +432,16 @@ class VisionService:
             if not frame_valid:
                 consecutive_failures += 1
                 if consecutive_failures % 10 == 0:
-                    print(f"[{cam_id_log}] Warning: Gagal membaca frame ({consecutive_failures}x).")
-                
+                    print(
+                        f"[{cam_id_log}] Warning: Gagal membaca frame ({consecutive_failures}x)."
+                    )
+
                 # Jika kegagalan menembus ambang batas, lakukan HARD RESET
                 if consecutive_failures > MAX_FAILURES:
-                    print(f"[{cam_id_log}] KRITIS: Mencoba HARD RESET koneksi kamera...")
-                    
+                    print(
+                        f"[{cam_id_log}] KRITIS: Mencoba HARD RESET koneksi kamera..."
+                    )
+
                     # 1. Matikan instance lama
                     if cap:
                         try:
@@ -445,29 +449,29 @@ class VisionService:
                         except Exception:
                             pass
                         cap = None
-                    
+
                     # 2. Tunggu Kernel release resource (PENTING)
                     eventlet.sleep(RECONNECT_DELAY)
-                    
+
                     # 3. Coba buat instance baru dengan source yang sama
                     cap = init_camera(cam_src)
-                    
+
                     # Reset counter agar tidak spam reset jika kamera benar-benar mati
-                    consecutive_failures = 0 
-                
+                    consecutive_failures = 0
+
                 # Sleep sebentar agar tidak membebani CPU saat error
                 eventlet.sleep(0.1)
                 continue
             # --------------------------------------
 
             # === JIKA FRAME VALID, LANJUTKAN PROSES ===
-            
+
             with self.settings_lock:
                 should_emit_to_gui = self.gui_is_listening
 
             with self.asv_handler.state_lock:
                 # Pastikan asv_handler sudah siap
-                if hasattr(self.asv_handler, 'current_state'):
+                if hasattr(self.asv_handler, "current_state"):
                     is_auto = self.asv_handler.current_state.control_mode == "AUTO"
                 else:
                     is_auto = False
@@ -475,10 +479,16 @@ class VisionService:
             # 1. PROSES AI (Inference)
             if apply_detection:
                 try:
-                    processed_frame_ai = self.process_and_control(frame_to_process, is_auto)
+                    processed_frame_ai = self.process_and_control(
+                        frame_to_process, is_auto
+                    )
                     with frame_lock:
-                        VisionService._latest_processed_frame_cam1 = processed_frame_ai.copy()
-                        VisionService._latest_processed_frame = VisionService._latest_processed_frame_cam1
+                        VisionService._latest_processed_frame_cam1 = (
+                            processed_frame_ai.copy()
+                        )
+                        VisionService._latest_processed_frame = (
+                            VisionService._latest_processed_frame_cam1
+                        )
                     frame_to_emit = processed_frame_ai
                 except Exception as e:
                     print(f"[{cam_id_log}] Error AI: {e}")
