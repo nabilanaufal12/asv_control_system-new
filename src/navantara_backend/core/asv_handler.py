@@ -4,6 +4,7 @@ import time
 import numpy as np
 import json
 import logging
+from datetime import datetime
 from dataclasses import dataclass, asdict, field
 
 from navantara_backend.services.serial_service import SerialHandler
@@ -75,7 +76,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 0.0  # coba 9999.0
+    nav_dist_to_wp: float = 99.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -136,6 +137,8 @@ class AsvHandler:
             "use_dummy_serial", False
         )
         self.logger = MissionLogger()
+        self.is_logging_csv = False
+        self.custom_csv_headers = ["Day", "Date", "Time", "GPS", "SOG", "COG", "HDG"]
         self.logger.log_event("AsvHandler diinisialisasi.")
         logging.info("[AsvHandler] Handler diinisialisasi untuk operasi backend.")
         self.initiate_auto_connection()
@@ -560,12 +563,17 @@ class AsvHandler:
                 if command_to_send:
                     self.serial_handler.send_command(command_to_send)
 
+                # --- BAGIAN LOGGING (Disederhanakan) ---
                 with self.state_lock:
                     state_for_log = asdict(self.current_state)
 
+                # Panggil satu baris ini saja. Logger akan otomatis format ke Day/Date/GPS/dll.
                 self.logger.log_telemetry(state_for_log)
+                
+                # Update SocketIO (GUI) & Firebase
                 self._update_and_emit_state()
                 send_telemetry_to_firebase(state_for_log, self.config)
+                # ----------------------------------------
 
             except Exception as e:
                 logging.error(f"[FATAL] Error di main_logic_loop: {e}", exc_info=True)
@@ -589,6 +597,7 @@ class AsvHandler:
             "SET_INVERSION": self._handle_set_inversion,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
             "UPDATE_INVERSION_TRIGGER": self._handle_update_inversion_trigger,
+            "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
         }
         handler = command_handlers.get(command)
         if handler:
@@ -597,6 +606,22 @@ class AsvHandler:
             logging.warning(
                 f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'"
             )
+
+    def _handle_toggle_csv_logging(self, payload):
+        """Mengaktifkan/mematikan log CSV kustom user."""
+        status = payload.get("status", False)
+        
+        if status:
+            if not self.is_logging_csv:
+                # Start dengan header fix yang sudah ditentukan
+                self.logger.start_csv_log(self.custom_csv_headers)
+                self.is_logging_csv = True
+                logging.info("[AsvHandler] Logging Data Kustom AKTIF.")
+        else:
+            if self.is_logging_csv:
+                self.logger.stop_csv_log()
+                self.is_logging_csv = False
+                logging.info("[AsvHandler] Logging Data Kustom MATI.")
 
     def _handle_update_vision_servo(self, payload):
         try:
