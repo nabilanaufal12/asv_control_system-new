@@ -25,10 +25,17 @@ Servo auxOutput; // Objek untuk output tambahan (misal: pompa, lampu, dll)
 
 // ---------------- PID ----------------
 double Kp = 2.0, Ki = 0.0, Kd = 0.5; // Konstanta PID (Proporsional, Integral, Derivatif)
+
+// --- Waypoint Inversion Control for AI Mode (MODIFIKASI) ---
+// Waypoint index (0-indexed) where AI servo output inversion begins.
+// E.g., setting this to 5 means inversion starts when targeting Waypoint #6.
+// Ubah angka 5 menjadi indeks Waypoint yang Anda inginkan.
+const int AI_SERVO_INVERSION_INDEX = 7; 
+
 double error, lastError = 0, integral = 0; // Variabel perhitungan PID
 
 // ---------------- Waypoint ----------------
-#define MAX_DATA 15 // Batas maksimum jumlah Waypoint yang bisa disimpan
+#define MAX_DATA 20 // Batas maksimum jumlah Waypoint yang bisa disimpan
 Preferences preferences; // Objek untuk manajemen memori NVS
 
 float latitudes[MAX_DATA]; // Array untuk menyimpan lintang Waypoint
@@ -60,7 +67,7 @@ double haversine(double lat1, double lon1, double lat2, double lon2) {
   lat1 = radians(lat1);
   lat2 = radians(lat2);
   double a = sin(dLat / 2) * sin(dLat / 2) +
-             cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
+              cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2);
   double c = 2 * atan2(sqrt(a), sqrt(1 - a));
   return R * c; // Mengembalikan jarak dalam meter
 }
@@ -196,7 +203,7 @@ void displayAllData() {
     for (int i = 0; i < dataIndex; i++) {
       Serial.print("Titik ");
       if (i < 9) Serial.print("0");
-      Serial.print(i + 1);
+      Serial.print(i);
       Serial.print(": ");
       Serial.print(latitudes[i], 6);
       Serial.print(", ");
@@ -258,7 +265,7 @@ void checkSerialInput() {
 
 
 void setup() {
-  Serial.begin(115200); // Inisialisasi komunikasi serial utama
+  Serial.begin(230400); // Inisialisasi komunikasi serial utama
 
   // --- LED GPS FIX (TAMBAHAN) ---
   pinMode(LED_GPS, OUTPUT);
@@ -314,6 +321,8 @@ void setup() {
   Serial.print(MAX_DATA);
   Serial.println(" titik");
   Serial.println("================================");
+  Serial.print("Servo AI Inversi dimulai dari Waypoint ke-");
+  Serial.println(AI_SERVO_INVERSION_INDEX + 1);
 }
 
 // --- Variabel Global Telemetri ---
@@ -444,9 +453,32 @@ void loop() {
 
     // PRIORITAS 1: Perintah dari AI (serialCommand == 'A')
     if (serialCommand == 'A') {
-      finalServo = ai_servo_val;
+      int calculatedServoVal = ai_servo_val;
+      
+      // LOGIKA INVERSI SERVO AI BERDASARKAN WAYPOINT TARGET
+      // Inversi dimulai ketika Waypoint target (counter) mencapai atau melebihi AI_SERVO_INVERSION_INDEX
+      if (counter >= AI_SERVO_INVERSION_INDEX) {
+        // Inversi: 180 -> 0, 175 -> 5, 90 -> 90, dst.
+        calculatedServoVal = 180 - ai_servo_val; 
+        
+        // Batasan untuk memastikan nilai tetap dalam range 0-180
+        if (calculatedServoVal > 180) calculatedServoVal = 180;
+        if (calculatedServoVal < 0) calculatedServoVal = 0;
+        
+        status = "AI_INVERTED"; // Menambahkan status untuk indikasi inversi
+        Serial.print("AI Servo Inverted (WP ");
+        Serial.print(counter + 1);
+        Serial.print("): ");
+        Serial.print(ai_servo_val);
+        Serial.print(" -> ");
+        Serial.println(calculatedServoVal);
+      } else {
+        status = "AI_ACTIVE";
+      }
+
+      finalServo = calculatedServoVal;
       finalMotor = ai_motor_val;
-      status = "AI_ACTIVE";
+      
     } 
     // PRIORITAS 2: Waypoint Navigation (serialCommand == 'W')
     else if (serialCommand == 'W') {
@@ -482,10 +514,14 @@ void loop() {
           // Cek apakah Waypoint sudah tercapai (radius 1.75m)
           if (dist < 1.75) {
             counter++; // Lanjut ke WP berikutnya
+            // Tambahkan logging saat WP tercapai
+            Serial.print("✅ WP #");
+            Serial.print(counter);
+            Serial.println(" tercapai. Menuju WP berikutnya.");
           }
 
           // Simpan data WP untuk telemetri JSON
-          wp_target_idx = counter + 1; // Index WP yang sedang dituju
+          wp_target_idx = counter + 1; // Index WP yang sedang dituju (1-based)
           wp_dist_m = dist;
           wp_target_brg = targetBearing;
           wp_error_hdg = errorHeading;
@@ -525,6 +561,13 @@ void loop() {
   // Data Output Aktuator
   jsonDoc["servo_out"] = finalServo;
   jsonDoc["motor_out"] = finalMotor;
+  
+  // Data Waypoint Inversi
+  if (serialCommand == 'A') {
+    jsonDoc["ai_inversion_active"] = (counter >= AI_SERVO_INVERSION_INDEX);
+    jsonDoc["ai_wp_target"] = counter + 1;
+    jsonDoc["ai_wp_start_invert"] = AI_SERVO_INVERSION_INDEX + 1;
+  }
 
   // Data khusus Waypoint (HANYA DIKIRIM JIKA MODE AUTO DAN PERINTAH WAYPOINT)
   if (mode == "AUTO" && serialCommand == 'W') { 
@@ -547,5 +590,5 @@ void loop() {
   Serial.println(); // Newline sebagai penanda akhir data
 
   // Jeda singkat agar loop tidak terlalu cepat (20Hz)
-  delay(50);
+  delay(80); // Dipercepat dari 100ms menjadi 50ms untuk update 20Hz
 }

@@ -102,7 +102,7 @@ def apply_overlay(background_frame, overlay_data):
     color_grey = (200, 200, 200)
 
     # === 2. GAMBAR HEADER ===
-    # Logo Sponsor (Sekarang akan dicari di path yang benar)
+    # Logo Sponsor
     logo_sponsor1 = get_logo("logo_sponsor1.png", size=(90, 28))
     logo_sponsor2 = get_logo("logo_sponsor2.png", size=(28, 28))
     logo_sponsor3 = get_logo("logo_sponsor3.png", size=(28, 28))
@@ -142,7 +142,7 @@ def apply_overlay(background_frame, overlay_data):
         color_white,
         2,
     )
-    # Garis putih horizontal halus
+    # Garis putih horizontal halus (Posisi di +8)
     cv2.line(
         frame,
         (info_x, info_y_start + 8),
@@ -152,85 +152,55 @@ def apply_overlay(background_frame, overlay_data):
         cv2.LINE_AA,
     )
 
-    # Siapkan data teks
+    # --- PERSIAPAN DATA ---
     now = datetime.now()
     day_map = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
-    date_day = f"{day_map[now.weekday()]}, {now.strftime('%d/%m/%Y')}"
+    
     lat = telemetry_data.get("latitude", 0)
     lon = telemetry_data.get("longitude", 0)
     sog_ms = telemetry_data.get("speed", 0)
-    photo_code = f"KKI25-{time.strftime('%H%M%S')}-{random.randint(100,999)}"
+    cog = telemetry_data.get("cog", 0)
+    hdg = telemetry_data.get("heading", 0)
 
-    y_pos = info_y_start + 28
-    line_height = 16
-    font_size = 0.4
+    # 1. Format GPS (N/S dan E/W)
+    lat_dir = "N" if lat >= 0 else "S"
+    lon_dir = "E" if lon >= 0 else "W"
+    gps_str = f"{lat_dir} {abs(lat):.6f}, {lon_dir} {abs(lon):.6f}"
 
-    # Tulis semua teks telemetri menggunakan fungsi bayangan
-    putText_with_shadow(
-        frame, date_day, (info_x, y_pos), font_sub, font_size, color_white
-    )
-    y_pos += line_height
-    putText_with_shadow(
-        frame,
-        "Lokasi: ASV NAVANTARA - UMRAH",
-        (info_x, y_pos),
-        font_sub,
-        font_size,
-        color_white,
-    )
-    y_pos += line_height
-    putText_with_shadow(
-        frame,
-        f"Koordinat: {abs(lat):.6f}S, {abs(lon):.6f}E",
-        (info_x, y_pos),
-        font_sub,
-        font_size,
-        color_white,
-    )
-    y_pos += line_height
-    putText_with_shadow(
-        frame,
-        f"SOG: {sog_ms * 1.94384:.2f} knot / {sog_ms * 3.6:.2f} km/h",
-        (info_x, y_pos),
-        font_sub,
-        font_size,
-        color_white,
-    )
-    y_pos += line_height
-    putText_with_shadow(
-        frame,
-        f"HDG: {telemetry_data.get('heading', 0.0):.2f} deg",
-        (info_x, y_pos),
-        font_sub,
-        font_size,
-        color_white,
-    )
-    y_pos += line_height
-    putText_with_shadow(
-        frame,
-        f"COG: {telemetry_data.get('cog', 0.0):.2f} deg",
-        (info_x, y_pos),
-        font_sub,
-        font_size,
-        color_white,
-    )
-    y_pos += line_height
-    putText_with_shadow(
-        frame,
-        f"Baterai: {telemetry_data.get('battery_voltage', 0):.2f} V",
-        (info_x, y_pos),
-        font_sub,
-        font_size,
-        color_white,
-    )
-    y_pos += line_height
-    putText_with_shadow(
-        frame,
-        f"Kode Foto: {photo_code}",
-        (info_x, y_pos),
-        font_sub,
-        font_size,
-        color_white,
-    )
+    # 2. Format SOG (km/jam dan knots)
+    speed_kmh = sog_ms * 3.6
+    speed_knots = sog_ms * 1.94384
+    sog_str = f"{speed_kmh:.2f} km/jam ({speed_knots:.0f} kn)"
+
+    # Daftar baris data
+    lines = [
+        f"DAY : {day_map[now.weekday()]}",
+        f"DATE: {now.strftime('%d/%m/%Y')}",
+        f"TIME: {now.strftime('%H:%M:%S')}",
+        f"GPS : {gps_str}",
+        f"SOG : {sog_str}",
+        f"COG : {cog:.2f} deg",
+        f"HDG : {hdg:.2f} deg"
+    ]
+
+    # --- KONFIGURASI LAYOUT ---
+    # [MODIFIKASI] Ubah angka 20 menjadi 45 agar teks turun ke bawah garis
+    y_pos = info_y_start + 28  
+    
+    line_height = 20           # Jarak antar baris
+    font_size = 0.5            # Ukuran font
+    font_face = cv2.FONT_HERSHEY_DUPLEX 
+
+    # Loop menggambar setiap baris teks
+    for line_text in lines:
+        putText_with_shadow(
+            frame, 
+            line_text, 
+            (info_x, y_pos), 
+            font_face, 
+            font_size, 
+            color_white
+        )
+        y_pos += line_height
 
     return frame

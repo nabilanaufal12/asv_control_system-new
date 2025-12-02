@@ -14,12 +14,10 @@
     <style>
       /* ... (Semua CSS Anda yang ada tetap di sini, tidak berubah) ... */
 
-      /* Menyembunyikan elemen yang tidak diperlukan lagi */
       .arena-selector,
       .button-container {
         display: none;
       }
-      /* Mengatur tata letak header section agar rapi */
       .section-header {
         display: flex;
         justify-content: space-between;
@@ -27,10 +25,9 @@
         width: 100%;
       }
       .path-title {
-        margin-left: auto; /* Mendorong tulisan LINTASAN ke kanan */
+        margin-left: auto;
       }
 
-      /* CSS untuk gambar video */
       .camera-container img {
         width: 100%;
         height: auto;
@@ -40,28 +37,24 @@
         background-color: #2c3e50;
       }
 
-      /* CSS UNTUK DIV PETA */
       #map-canvas {
         width: 100%;
-        height: 100%; /* Akan mengisi .map-container */
+        height: 100%;
         border-radius: 8px;
-        background-color: #e0e0e0; /* Placeholder */
+        background-color: #e0e0e0;
       }
 
-      /* Menyembunyikan atribusi Leaflet */
       .leaflet-control-attribution {
         display: none !important;
       }
 
-      /* Styling tambahan untuk tombol refresh (opsional) */
       .capture-section .section-header {
-        margin-bottom: 10px; /* Jarak antara judul/tombol dan galeri */
+        margin-bottom: 10px;
       }
       #refresh-gallery-btn {
-        padding: 5px 10px; /* Ukuran tombol lebih kecil */
+        padding: 5px 10px;
         font-size: 0.8rem;
-        cursor: pointer; /* Tambahkan cursor pointer */
-        /* Anda bisa gunakan class 'btn' atau 'btn-secondary' jika sudah ada di styles.css */
+        cursor: pointer;
         background-color: #3498db;
         color: white;
         border: none;
@@ -71,11 +64,9 @@
         background-color: #2980b9;
       }
 
-      /* --- MODIFIKASI: CSS UNTUK GALERI BARU --- */
-      /* Menggunakan class .capture-grid yang sudah ada */
       .capture-grid {
-        max-height: 200px; /* Beri batas ketinggian */
-        overflow-y: auto; /* Buat bisa di-scroll jika gambar banyak */
+        max-height: 200px;
+        overflow-y: auto;
         background-color: #ecf0f1;
         border-radius: 5px;
         padding: 10px;
@@ -90,12 +81,8 @@
         width: 100%;
         margin-bottom: 8px;
         border-radius: 4px;
-        cursor: pointer; /* Menandakan bisa diklik */
+        cursor: pointer;
       }
-      /* --- AKHIR MODIFIKASI CSS --- */
-
-      /* --- === CSS UNTUK TOMBOL MANUAL CAPTURE (DIHAPUS DARI SINI) === --- */
-
     </style>
   </head>
   <body>
@@ -164,7 +151,7 @@
               <h3>SURFACE CAM</h3>
               <div class="camera-container" id="cam1-container">
                 <img
-                  src="http://192.168.1.20:5000/live_video_feed"
+                  src="http://192.168.1.14:5000/live_video_feed"
                   alt="Camera 1 Feed"
                   crossorigin="anonymous"
                 />
@@ -174,7 +161,7 @@
               <h3>UNDERWATER CAM</h3>
               <div class="camera-container" id="cam2-container">
                 <img
-                  src="http://192.168.1.20:5000/live_video_feed_cam2"
+                  src="http://192.168.1.14:5000/live_video_feed_cam2"
                   alt="Camera 2 Feed"
                   crossorigin="anonymous"
                 />
@@ -261,11 +248,10 @@
     <script src="js/main.js"></script>
 
     <script>
-      // ... (Seluruh <script> canvas Anda yang ada tetap di sini, tidak berubah) ...
       document.addEventListener("DOMContentLoaded", function () {
         const backgroundCtx = document
           .getElementById("background-canvas")
-          ?.getContext("2d"); // Tambah ?.
+          ?.getContext("2d");
         const gridCtx = document.getElementById("grid-canvas")?.getContext("2d");
         const lineCtx = document.getElementById("line-canvas")?.getContext("2d");
         const pointCtx = document
@@ -286,7 +272,7 @@
           console.warn(
             "Salah satu elemen canvas atau arenaDisplay tidak ditemukan."
           );
-          return; // Hentikan script jika elemen penting tidak ada
+          return;
         }
 
         const pointsData = {
@@ -318,9 +304,14 @@
         let points = [];
 
         function switchArena(arena) {
-          if (currentArena === arena || !pointsData[arena]) return;
+          // 🚩 PERBAIKAN: Izinkan switch meskipun pointsData[arena] tidak ada (misal: 'Unknown')
+          if (currentArena === arena) return; 
+          
           currentArena = arena;
-          predefinedPoints = pointsData[arena];
+          
+          // Gunakan data jika ada, jika tidak, array kosong
+          predefinedPoints = pointsData[arena] || []; 
+          
           arenaDisplay.textContent = arena;
           if (arenaABtn && arenaBBtn) {
             // Cek tombol arena
@@ -332,7 +323,7 @@
               arenaABtn.classList.remove("active");
             }
           }
-          initialize();
+          initialize(); // Pastikan initialize selalu dipanggil
         }
 
         window.addEventListener("switchArena", (event) =>
@@ -351,6 +342,10 @@
 
         window.addEventListener("setTrajectoryPoint", function (event) {
           const pointIndex = parseInt(event.detail.point, 10);
+          
+          // 🚩 LOG PENERIMAAN EVENT DARI JS/MAIN.JS
+          console.log("[Canvas Script] Event 'setTrajectoryPoint' diterima. Titik target:", pointIndex);
+          
           if (!isNaN(pointIndex)) {
             drawUpToPoint(pointIndex);
           }
@@ -359,7 +354,8 @@
         function initialize() {
           drawBackground();
           drawGrid();
-          drawUpToPoint(0);
+          // PERBAIKAN: Set awal ke 0 titik, menunggu perintah dari telemetri
+          drawUpToPoint(0); 
         }
 
         function drawBackground() {
