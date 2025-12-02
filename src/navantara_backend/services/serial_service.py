@@ -68,6 +68,22 @@ class SerialHandler:
             return False
 
     def find_and_connect_esp32(self, baudrate):
+        # --- [MODIFIKASI: PRIORITAS UDEV RULE] ---
+        # 1. Cek device permanen /dev/ttyASV terlebih dahulu
+        permanent_port = "/dev/ttyASV"
+        try:
+            import os
+            # Cek apakah file device ada di sistem Linux
+            if os.path.exists(permanent_port):
+                print(f"[Serial] Mendeteksi device permanen: {permanent_port}")
+                # Coba connect langsung
+                if self.connect(permanent_port, baudrate):
+                    return True
+            else:
+                print(f"[Serial] Device permanen {permanent_port} belum terpasang.")
+        except Exception as e:
+            print(f"[Serial] Gagal mengecek {permanent_port}: {e}")
+        # -----------------------------------------
         # List semua port yang tersedia untuk diagnostik
         ports = serial.tools.list_ports.comports()
         print("[Serial] Port yang tersedia:")

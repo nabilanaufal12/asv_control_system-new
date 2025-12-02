@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
 
-# Impor semua komponen tab
 from .pid_view import PidView
 from .servo_view import ServoView
 from .connection_view import ConnectionView
@@ -34,8 +33,8 @@ class SettingsPanel(QGroupBox):
     vision_speed_updated = Signal(int)
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
-    # [BARU] Sinyal Trigger Inversi
-    inversion_trigger_updated = Signal(int)
+    # [HAPUS] Sinyal Trigger Inversi yang redundan
+    # inversion_trigger_updated = Signal(int) 
 
     def __init__(self, config, title="Settings"):
         super().__init__(title)
@@ -85,20 +84,20 @@ class SettingsPanel(QGroupBox):
         dist_layout.addWidget(QLabel("AI Activation:"))
         dist_layout.addWidget(self.spin_obs_dist)
 
-        # 4. [BARU] Input Waypoint Inversion Trigger
-        trigger_layout = QHBoxLayout()
-        self.spin_inv_trigger = QSpinBox()
-        self.spin_inv_trigger.setRange(1, 99)  # 1-based (WP 1 s/d WP 99)
-        self.spin_inv_trigger.setValue(6)  # Default WP 6
-        self.spin_inv_trigger.setPrefix("Start Invert at WP: ")
-        trigger_layout.addWidget(QLabel("Servo Inversion:"))
-        trigger_layout.addWidget(self.spin_inv_trigger)
+        # [HAPUS] Bagian Trigger Layout Redundan
+        # trigger_layout = QHBoxLayout()
+        # self.spin_inv_trigger = QSpinBox()
+        # self.spin_inv_trigger.setRange(1, 99) 
+        # self.spin_inv_trigger.setValue(6) 
+        # self.spin_inv_trigger.setPrefix("Start Invert at WP: ")
+        # trigger_layout.addWidget(QLabel("Servo Inversion:"))
+        # trigger_layout.addWidget(self.spin_inv_trigger)
 
         # --- GABUNGKAN SEMUA KE AI LAYOUT ---
         ai_layout.addLayout(speed_layout)
         ai_layout.addLayout(servo_layout)
         ai_layout.addLayout(dist_layout)
-        ai_layout.addLayout(trigger_layout)  # [FIX] Ditambahkan di sini sekali saja
+        # ai_layout.addLayout(trigger_layout)  <-- [HAPUS] Baris ini
 
         ai_control_group.setLayout(ai_layout)
         main_layout.addWidget(ai_control_group)
@@ -138,14 +137,14 @@ class SettingsPanel(QGroupBox):
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
 
-        # [BARU] Koneksi Trigger Inversi
-        self.spin_inv_trigger.valueChanged.connect(self._on_inv_trigger_changed)
+        # [HAPUS] Koneksi Trigger Inversi Redundan
+        # self.spin_inv_trigger.valueChanged.connect(self._on_inv_trigger_changed)
 
     # --- SLOT HANDLERS ---
 
-    def _on_inv_trigger_changed(self, value):
-        # Emit signal (misal: 6) -> Main Window akan kirim {"index": 6}
-        self.inversion_trigger_updated.emit(value)
+    # [HAPUS] Method Slot Redundan
+    # def _on_inv_trigger_changed(self, value):
+    #     self.inversion_trigger_updated.emit(value)
 
     def _on_ai_speed_changed(self, value):
         self.lbl_ai_speed.setText(f"PWM Motor: {value}")

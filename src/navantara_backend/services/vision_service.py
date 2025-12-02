@@ -27,6 +27,9 @@ from navantara_backend.vision.overlay_utils import (
 class ThreadedCamera:
     def __init__(self, src=0):
         self.src = src
+        # [MODIFIKASI] Log source untuk debugging
+        print(f"[ThreadedCamera] Membuka source: {self.src}")
+        
         self.capture = cv2.VideoCapture(src)
         # Set buffer size (opsional, tergantung driver)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -132,8 +135,17 @@ class VisionService:
         self.is_inverted = False
 
         # Pengaturan dari config.json
-        self.camera_index_1 = int(vision_cfg.get("camera_index_1", 0))
-        self.camera_index_2 = int(vision_cfg.get("camera_index_2", 1))
+        # [MODIFIKASI] Dukungan string path (udev) dengan fallback ke index lama
+        self.camera_src_1 = vision_cfg.get("camera_src_1")
+        if self.camera_src_1 is None:
+             self.camera_src_1 = int(vision_cfg.get("camera_index_1", 0))
+
+        self.camera_src_2 = vision_cfg.get("camera_src_2")
+        if self.camera_src_2 is None:
+             self.camera_src_2 = int(vision_cfg.get("camera_index_2", 1))
+
+        print(f"[VisionService] Camera 1 Source: {self.camera_src_1}")
+        print(f"[VisionService] Camera 2 Source: {self.camera_src_2}")
         self.KNOWN_CLASSES = vision_cfg.get("known_classes", [])
         self.poi_confidence_threshold = vision_cfg.get("poi_confidence_threshold", 0.65)
         self.poi_validation_frames = vision_cfg.get("poi_validation_frames", 5)
@@ -335,7 +347,7 @@ class VisionService:
 
             eventlet.spawn(
                 self._capture_loop,
-                self.camera_index_1,
+                self.camera_src_1,  # [UBAH] Gunakan src
                 VisionService._frame_lock_cam1,
                 "CAM1",
                 "frame_cam1",
@@ -343,7 +355,7 @@ class VisionService:
             )
             eventlet.spawn(
                 self._capture_loop,
-                self.camera_index_2,
+                self.camera_src_2,  # [UBAH] Gunakan src
                 VisionService._frame_lock_cam2,
                 "CAM2",
                 "frame_cam2",
@@ -362,12 +374,13 @@ class VisionService:
             cv2.destroyAllWindows()
 
     def _capture_loop(
-        self, cam_index, frame_lock, cam_id_log, event_name, apply_detection
+        self, cam_src, frame_lock, cam_id_log, event_name, apply_detection
     ):
         """
         Loop capture dengan mekanisme SELF-HEALING (Auto Reconnect).
+        Mendukung path string (udev rules) atau index integer.
         """
-        print(f"[{cam_id_log}] Memulai loop kamera (Mode: Robust Threaded)...")
+        print(f"[{cam_id_log}] Memulai loop kamera (Source: {cam_src})...")
 
         cap = None
         consecutive_failures = 0
@@ -375,25 +388,25 @@ class VisionService:
         RECONNECT_DELAY = 2.0  # Waktu tunggu (detik) sebelum inisialisasi ulang
 
         # Fungsi helper untuk inisialisasi kamera
-        def init_camera(index):
+        def init_camera(source):
             try:
                 # Coba buka sebentar untuk tes
-                temp = cv2.VideoCapture(index)
+                temp = cv2.VideoCapture(source)
                 if not temp.isOpened():
-                    print(f"[{cam_id_log}] Gagal membuka device {index} (Not Opened).")
+                    print(f"[{cam_id_log}] Gagal membuka device {source} (Not Opened).")
                     return None
                 temp.release()
                 
-                # Inisialisasi ThreadedCamera
-                new_cap = ThreadedCamera(index)
+                # Inisialisasi ThreadedCamera dengan source yang sesuai
+                new_cap = ThreadedCamera(source)
                 print(f"[{cam_id_log}] Kamera berhasil diinisialisasi (Re-init).")
                 return new_cap
             except Exception as e:
                 print(f"[{cam_id_log}] Exception saat init kamera: {e}")
                 return None
 
-        # Inisialisasi awal
-        cap = init_camera(cam_index)
+        # Inisialisasi awal menggunakan cam_src (bisa string path atau int)
+        cap = init_camera(cam_src)
 
         # Settingan GUI
         GUI_SKIP_RATE = 5
@@ -436,8 +449,8 @@ class VisionService:
                     # 2. Tunggu Kernel release resource (PENTING)
                     eventlet.sleep(RECONNECT_DELAY)
                     
-                    # 3. Coba buat instance baru
-                    cap = init_camera(cam_index)
+                    # 3. Coba buat instance baru dengan source yang sama
+                    cap = init_camera(cam_src)
                     
                     # Reset counter agar tidak spam reset jika kamera benar-benar mati
                     consecutive_failures = 0 
@@ -453,7 +466,11 @@ class VisionService:
                 should_emit_to_gui = self.gui_is_listening
 
             with self.asv_handler.state_lock:
-                is_auto = self.asv_handler.current_state.control_mode == "AUTO"
+                # Pastikan asv_handler sudah siap
+                if hasattr(self.asv_handler, 'current_state'):
+                    is_auto = self.asv_handler.current_state.control_mode == "AUTO"
+                else:
+                    is_auto = False
 
             # 1. PROSES AI (Inference)
             if apply_detection:

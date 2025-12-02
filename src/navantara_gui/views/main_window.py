@@ -234,6 +234,10 @@ class MainWindow(QMainWindow):
             lambda payload: self.api_client.send_command("SET_PHOTO_MISSION", payload)
         )
 
+        self.waypoints_panel.update_inversion_trigger.connect(
+            lambda p: self.api_client.send_command("UPDATE_INVERSION_TRIGGER", p)
+        )
+
         # --- [BARU: KONEKSI DYNAMIC INVERSION TRIGGER] ---
         self.waypoints_panel.update_inversion_trigger.connect(
             lambda p: self.api_client.send_command("UPDATE_INVERSION_TRIGGER", p)
