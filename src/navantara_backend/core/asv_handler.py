@@ -76,7 +76,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 99.0  # coba 9999.0
+    nav_dist_to_wp: float = 0.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -598,6 +598,7 @@ class AsvHandler:
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
             "UPDATE_INVERSION_TRIGGER": self._handle_update_inversion_trigger,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
+            "MANUAL_CAPTURE": self._handle_manual_capture,
         }
         handler = command_handlers.get(command)
         if handler:
@@ -707,6 +708,32 @@ class AsvHandler:
             self.current_state.vision_target["active"] = is_active
             if is_active:
                 self.current_state.vision_target.update(payload)
+
+    # ... metode-metode lain ...
+
+    def _handle_manual_capture(self, payload):
+        """
+        Menangani perintah manual capture (Surface/Underwater)
+        dengan opsi RAW (tanpa overlay).
+        """
+        # Pastikan vision_service sudah di-inject dari main.py
+        if not hasattr(self, 'vision_service'):
+            logging.error("[AsvHandler] Gagal Capture: Vision Service belum terhubung.")
+            return
+
+        # --- [KODE YANG ANDA MINTA] ---
+        capture_type = payload.get("type", "surface")
+        is_raw = payload.get("raw", False)  # Ambil nilai boolean, default False
+
+        # Panggil fungsi vision service dengan parameter baru
+        result = self.vision_service.trigger_manual_capture(capture_type, raw_mode=is_raw)
+        # ------------------------------
+
+        # (Opsional) Log hasil untuk debugging
+        if result.get("status") == "success":
+            logging.info(f"[AsvHandler] Capture Berhasil: {result.get('file')} (Mode: {result.get('mode', 'Overlaid')})")
+        else:
+            logging.error(f"[AsvHandler] Capture Gagal: {result.get('message')}")
 
     def _handle_manual_control(self, payload):
         with self.state_lock:

@@ -1,7 +1,7 @@
 // js/main.js
 
 // --- KONFIGURASI IP ---
-const SERVER_IP = "http://192.168.1.14:5000";
+const SERVER_IP = "http://192.168.2.146:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;

@@ -523,8 +523,11 @@ class VisionService:
             cap.stop()
         print(f"[{cam_id_log}] Loop berhenti.")
 
-    def trigger_manual_capture(self, capture_type: str):
-        print(f"[Capture] Menerima trigger manual untuk: {capture_type}")
+    # [MODIFIKASI] Menambahkan parameter raw_mode=False sebagai default
+    def trigger_manual_capture(self, capture_type: str, raw_mode: bool = False):
+        mode_label = "RAW" if raw_mode else "OVERLAY"
+        print(f"[Capture] Menerima trigger manual ({mode_label}) untuk: {capture_type}")
+        
         frame_to_use = None
         mission_name = None
         filename_prefix = None
@@ -533,18 +536,24 @@ class VisionService:
         try:
             with self.asv_handler.state_lock:
                 current_state_dict = asdict(self.asv_handler.current_state)
-        except Exception:  # [FIX] Hapus 'as e' karena tidak digunakan
+        except Exception:
             return {"status": "error", "message": "Gagal mendapatkan state ASV."}
 
         # --- LOGIKA SURFACE ---
         if capture_type == "surface":
             with VisionService._frame_lock_cam1:
                 if VisionService._latest_processed_frame_cam1 is not None:
+                    # Jika raw_mode, kita mungkin ingin frame benar-benar mentah sebelum processing AI, 
+                    # tapi karena struktur saat ini menyimpan _latest_processed_frame_cam1, 
+                    # kita gunakan itu (ini tetap gambar bersih tanpa overlay HTML).
                     frame_to_use = VisionService._latest_processed_frame_cam1.copy()
                 else:
                     return {"status": "error", "message": "Kamera Depan tidak siap."}
+            
             mission_name = "Surface Imaging"
-            filename_prefix = "surface"
+            # [MODIFIKASI] Tentukan prefix berdasarkan mode raw
+            filename_prefix = "raw_surface" if raw_mode else "surface"
+            
             image_count = self.surface_image_count
             self.surface_image_count += 1
 
@@ -556,38 +565,51 @@ class VisionService:
                 else:
                     print("[Capture] Error: Frame CAM 2 belum tersedia.")
                     return {"status": "error", "message": "Kamera Bawah tidak siap."}
+            
             mission_name = "Underwater Imaging"
-            filename_prefix = "underwater"
+            # [MODIFIKASI] Tentukan prefix berdasarkan mode raw
+            filename_prefix = "raw_underwater" if raw_mode else "underwater"
+            
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
         else:
             return {"status": "error", "message": "Tipe capture tidak valid."}
 
-        # Proses Overlay
-        try:
-            overlay_data = create_overlay_from_html(
-                current_state_dict, mission_type=mission_name
-            )
-            snapshot = apply_overlay(frame_to_use, overlay_data)
-        except Exception:  # [FIX] Hapus 'as e' karena tidak digunakan
+        # --- [MODIFIKASI] LOGIKA OVERLAY VS RAW ---
+        snapshot = None
+        
+        if raw_mode:
+            # Jika RAW, lewati proses overlay sepenuhnya
             snapshot = frame_to_use
+            print(f"[Capture] Mode RAW aktif. Overlay data telemetri dilewati.")
+        else:
+            # Jika Default, lakukan proses overlay
+            try:
+                overlay_data = create_overlay_from_html(
+                    current_state_dict, mission_type=mission_name
+                )
+                snapshot = apply_overlay(frame_to_use, overlay_data)
+            except Exception as e:
+                print(f"[Capture] Gagal membuat overlay: {e}. Menggunakan frame asli.")
+                snapshot = frame_to_use
 
+        # Proses Penyimpanan File
         filename = f"{filename_prefix}_{image_count}.jpg"
         save_dir = os.path.join(os.getcwd(), "logs", "captures")
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 
         try:
+            # Kualitas JPEG tinggi (95) agar detail tetap terjaga terutama untuk RAW
             ret, buffer = cv2.imencode(".jpg", snapshot, [cv2.IMWRITE_JPEG_QUALITY, 95])
             if ret:
                 with open(save_path, "wb") as f:
                     f.write(buffer)
                 print(f"[Capture] Berhasil disimpan: {save_path}")
-                return {"status": "success", "file": filename}
+                return {"status": "success", "file": filename, "mode": mode_label}
         except Exception as e:
-            # Di sini 'e' digunakan, jadi tetap pertahankan 'as e'
             return {"status": "error", "message": f"Gagal menyimpan file: {e}"}
-
+        
     def set_obstacle_distance(self, payload):
         """
         Mengubah jarak aktivasi penghindaran rintangan secara real-time.

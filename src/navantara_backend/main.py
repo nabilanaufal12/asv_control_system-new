@@ -122,6 +122,7 @@ def create_app():
     # Inisialisasi layanan
     asv_handler = AsvHandler(app.config["ASV_CONFIG"], socketio)
     vision_service = VisionService(app.config["ASV_CONFIG"], asv_handler, socketio)
+    asv_handler.vision_service = vision_service
     app.asv_handler = asv_handler
     app.vision_service = vision_service
 
