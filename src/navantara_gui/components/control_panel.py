@@ -3,9 +3,11 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,  # Tambahkan QGridLayout
     QPushButton,
     QGroupBox,
     QButtonGroup,
+    QLabel,  # Tambahkan QLabel
 )
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QIcon
@@ -15,13 +17,17 @@ import os
 class ControlPanel(QWidget):
     manual_button_clicked = Signal()
     auto_button_clicked = Signal()
-    capture_surface_clicked = Signal()
-    capture_underwater_clicked = Signal()
+
+    # [MODIFIKASI] Sinyal yang lebih spesifik
+    surface_overlay_clicked = Signal()
+    surface_raw_clicked = Signal()
+    underwater_overlay_clicked = Signal()
+    underwater_raw_clicked = Signal()
 
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.key_buttons = {}  # Simpan referensi tombol WASD
+        self.key_buttons = {}
         self.setup_ui()
 
     def setup_ui(self):
@@ -36,26 +42,17 @@ class ControlPanel(QWidget):
 
         self.manual_mode_btn = QPushButton("MANUAL")
         self.manual_mode_btn.setCheckable(True)
-        # [FIX] Default checked diubah ke False
         self.manual_mode_btn.setChecked(False)
 
         self.auto_mode_btn = QPushButton("AUTO")
         self.auto_mode_btn.setCheckable(True)
-        # [FIX] Default checked diubah ke True
         self.auto_mode_btn.setChecked(True)
 
-        # Styling tombol mode
         self.manual_mode_btn.setStyleSheet(
-            """
-            QPushButton:checked { background-color: #e67e22; color: white; font-weight: bold; }
-            QPushButton { padding: 10px; }
-        """
+            "QPushButton:checked { background-color: #e67e22; color: white; font-weight: bold; } QPushButton { padding: 10px; }"
         )
         self.auto_mode_btn.setStyleSheet(
-            """
-            QPushButton:checked { background-color: #2ecc71; color: white; font-weight: bold; }
-            QPushButton { padding: 10px; }
-        """
+            "QPushButton:checked { background-color: #2ecc71; color: white; font-weight: bold; } QPushButton { padding: 10px; }"
         )
 
         self.mode_btn_group.addButton(self.manual_mode_btn)
@@ -69,30 +66,23 @@ class ControlPanel(QWidget):
         # --- Manual Controls (WASD) ---
         wasd_group = QGroupBox("Manual Drive")
         wasd_layout = QVBoxLayout()
-
-        # Baris W
         row_w = QHBoxLayout()
         self.btn_w = self.create_key_button("W")
         row_w.addStretch()
         row_w.addWidget(self.btn_w)
         row_w.addStretch()
-
-        # Baris ASD
         row_asd = QHBoxLayout()
         self.btn_a = self.create_key_button("A")
         self.btn_s = self.create_key_button("S")
         self.btn_d = self.create_key_button("D")
-
         row_asd.addWidget(self.btn_a)
         row_asd.addWidget(self.btn_s)
         row_asd.addWidget(self.btn_d)
-
         wasd_layout.addLayout(row_w)
         wasd_layout.addLayout(row_asd)
         wasd_group.setLayout(wasd_layout)
         layout.addWidget(wasd_group)
 
-        # Simpan referensi untuk update visual nanti
         self.key_buttons["W"] = self.btn_w
         self.key_buttons["A"] = self.btn_a
         self.key_buttons["S"] = self.btn_s
@@ -101,19 +91,16 @@ class ControlPanel(QWidget):
         # --- Mission Control ---
         mission_group = QGroupBox("Mission Control")
         mission_layout = QVBoxLayout()
-
         self.start_mission_btn = QPushButton(" Start Mission")
         self.start_mission_btn.setIcon(QIcon(self._get_icon_path("play-circle.svg")))
         self.start_mission_btn.setStyleSheet(
             "background-color: #27ae60; color: white; padding: 8px;"
         )
-
         self.pause_mission_btn = QPushButton(" Pause / Hold")
         self.pause_mission_btn.setIcon(QIcon(self._get_icon_path("pause-circle.svg")))
         self.pause_mission_btn.setStyleSheet(
             "background-color: #f1c40f; color: black; padding: 8px;"
         )
-
         self.return_home_btn = QPushButton(" Return to Home")
         self.return_home_btn.setStyleSheet(
             "background-color: #c0392b; color: white; padding: 8px;"
@@ -125,22 +112,46 @@ class ControlPanel(QWidget):
         mission_group.setLayout(mission_layout)
         layout.addWidget(mission_group)
 
-        # --- [BARU] Camera Capture Controls ---
+        # --- [MODIFIKASI UTAMA] Camera Capture Controls ---
         capture_group = QGroupBox("Camera Capture")
-        capture_layout = QHBoxLayout()
+        # Menggunakan Grid Layout untuk 4 tombol
+        capture_layout = QGridLayout()
 
-        self.btn_capture_surface = QPushButton("Surface")
-        self.btn_capture_surface.setStyleSheet("padding: 6px;")
+        # Label Header
+        capture_layout.addWidget(QLabel("<b>Surface (CAM1):</b>"), 0, 0, 1, 2)
 
-        self.btn_capture_underwater = QPushButton("Underwater")
-        self.btn_capture_underwater.setStyleSheet("padding: 6px;")
+        # Tombol Surface
+        self.btn_surf_overlay = QPushButton("Overlay")
+        self.btn_surf_overlay.setStyleSheet(
+            "background-color: #3498db; color: white; padding: 5px;"
+        )
+        self.btn_surf_raw = QPushButton("RAW")
+        self.btn_surf_raw.setStyleSheet(
+            "background-color: #95a5a6; color: white; padding: 5px;"
+        )
 
-        capture_layout.addWidget(self.btn_capture_surface)
-        capture_layout.addWidget(self.btn_capture_underwater)
+        capture_layout.addWidget(self.btn_surf_overlay, 1, 0)
+        capture_layout.addWidget(self.btn_surf_raw, 1, 1)
+
+        # Spacer/Label Header Underwater
+        capture_layout.addWidget(QLabel("<b>Underwater (CAM2):</b>"), 2, 0, 1, 2)
+
+        # Tombol Underwater
+        self.btn_under_overlay = QPushButton("Overlay")
+        self.btn_under_overlay.setStyleSheet(
+            "background-color: #3498db; color: white; padding: 5px;"
+        )
+        self.btn_under_raw = QPushButton("RAW")
+        self.btn_under_raw.setStyleSheet(
+            "background-color: #95a5a6; color: white; padding: 5px;"
+        )
+
+        capture_layout.addWidget(self.btn_under_overlay, 3, 0)
+        capture_layout.addWidget(self.btn_under_raw, 3, 1)
+
         capture_group.setLayout(capture_layout)
-
         layout.addWidget(capture_group)
-        # ---------------------------------------
+        # --------------------------------------------------
 
         layout.addStretch()
 
@@ -148,10 +159,11 @@ class ControlPanel(QWidget):
         self.manual_mode_btn.clicked.connect(self.manual_button_clicked.emit)
         self.auto_mode_btn.clicked.connect(self.auto_button_clicked.emit)
 
-        self.btn_capture_surface.clicked.connect(self.capture_surface_clicked.emit)
-        self.btn_capture_underwater.clicked.connect(
-            self.capture_underwater_clicked.emit
-        )
+        # [MODIFIKASI] Koneksi tombol baru
+        self.btn_surf_overlay.clicked.connect(self.surface_overlay_clicked.emit)
+        self.btn_surf_raw.clicked.connect(self.surface_raw_clicked.emit)
+        self.btn_under_overlay.clicked.connect(self.underwater_overlay_clicked.emit)
+        self.btn_under_raw.clicked.connect(self.underwater_raw_clicked.emit)
 
     def create_key_button(self, text):
         btn = QPushButton(text)
@@ -175,29 +187,15 @@ class ControlPanel(QWidget):
         return btn
 
     def update_key_press_status(self, key_char, is_pressed):
-        """Update visual tombol saat keyboard ditekan."""
         btn = self.key_buttons.get(key_char)
         if btn:
             if is_pressed:
                 btn.setStyleSheet(
-                    """
-                    background-color: #3498db;
-                    color: white;
-                    border: 2px solid #2980b9;
-                    border-radius: 5px;
-                    font-weight: bold;
-                    font-size: 16px;
-                """
+                    "background-color: #3498db; color: white; border: 2px solid #2980b9; border-radius: 5px; font-weight: bold; font-size: 16px;"
                 )
             else:
                 btn.setStyleSheet(
-                    """
-                    background-color: #ecf0f1;
-                    border: 2px solid #bdc3c7;
-                    border-radius: 5px;
-                    font-weight: bold;
-                    font-size: 16px;
-                """
+                    "background-color: #ecf0f1; border: 2px solid #bdc3c7; border-radius: 5px; font-weight: bold; font-size: 16px;"
                 )
 
     def _get_icon_path(self, filename):

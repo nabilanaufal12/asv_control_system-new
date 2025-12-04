@@ -4,7 +4,6 @@ import time
 import numpy as np
 import json
 import logging
-from datetime import datetime
 from dataclasses import dataclass, asdict, field
 
 from navantara_backend.services.serial_service import SerialHandler
@@ -717,7 +716,7 @@ class AsvHandler:
         dengan opsi RAW (tanpa overlay).
         """
         # Pastikan vision_service sudah di-inject dari main.py
-        if not hasattr(self, 'vision_service'):
+        if not hasattr(self, "vision_service"):
             logging.error("[AsvHandler] Gagal Capture: Vision Service belum terhubung.")
             return
 
@@ -726,12 +725,16 @@ class AsvHandler:
         is_raw = payload.get("raw", False)  # Ambil nilai boolean, default False
 
         # Panggil fungsi vision service dengan parameter baru
-        result = self.vision_service.trigger_manual_capture(capture_type, raw_mode=is_raw)
+        result = self.vision_service.trigger_manual_capture(
+            capture_type, raw_mode=is_raw
+        )
         # ------------------------------
 
         # (Opsional) Log hasil untuk debugging
         if result.get("status") == "success":
-            logging.info(f"[AsvHandler] Capture Berhasil: {result.get('file')} (Mode: {result.get('mode', 'Overlaid')})")
+            logging.info(
+                f"[AsvHandler] Capture Berhasil: {result.get('file')} (Mode: {result.get('mode', 'Overlaid')})"
+            )
         else:
             logging.error(f"[AsvHandler] Capture Gagal: {result.get('message')}")
 

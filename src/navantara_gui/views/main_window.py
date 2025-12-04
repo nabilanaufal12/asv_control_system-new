@@ -227,9 +227,6 @@ class MainWindow(QMainWindow):
         self.api_client.frame_cam1_updated.connect(self.video_view.update_frame_1)
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
 
-        # --- [MODIFIKASI] Menghapus koneksi sinyal ke MapView ---
-        # self.waypoints_panel.waypoints_updated.connect(self.map_view.update_waypoints) <- Dihapus
-
         self.waypoints_panel.send_photo_mission.connect(
             lambda payload: self.api_client.send_command("SET_PHOTO_MISSION", payload)
         )
@@ -238,18 +235,32 @@ class MainWindow(QMainWindow):
             lambda p: self.api_client.send_command("UPDATE_INVERSION_TRIGGER", p)
         )
 
-        # --- [BARU: KONEKSI DYNAMIC INVERSION TRIGGER] ---
-        self.waypoints_panel.update_inversion_trigger.connect(
-            lambda p: self.api_client.send_command("UPDATE_INVERSION_TRIGGER", p)
-        )
-        # -------------------------------------------------
+        # --- [MODIFIKASI] Koneksi Capture Baru dengan Payload RAW/Overlay ---
 
-        self.control_panel.capture_surface_clicked.connect(
-            self.on_request_manual_capture_surface
+        # 1. Surface Capture
+        self.control_panel.surface_overlay_clicked.connect(
+            lambda: self.api_client.send_command(
+                "MANUAL_CAPTURE", {"type": "surface", "raw": False}
+            )
         )
-        self.control_panel.capture_underwater_clicked.connect(
-            self.on_request_manual_capture_underwater
+        self.control_panel.surface_raw_clicked.connect(
+            lambda: self.api_client.send_command(
+                "MANUAL_CAPTURE", {"type": "surface", "raw": True}
+            )
         )
+
+        # 2. Underwater Capture
+        self.control_panel.underwater_overlay_clicked.connect(
+            lambda: self.api_client.send_command(
+                "MANUAL_CAPTURE", {"type": "underwater", "raw": False}
+            )
+        )
+        self.control_panel.underwater_raw_clicked.connect(
+            lambda: self.api_client.send_command(
+                "MANUAL_CAPTURE", {"type": "underwater", "raw": True}
+            )
+        )
+        # ------------------------------------------------------------------
 
     @Slot(str)
     def set_mode(self, mode):

@@ -200,7 +200,7 @@ def create_app():
         """
         try:
             return send_from_directory(csv_log_dir, filename, as_attachment=True)
-        except Exception as e:
+        except Exception:
             return jsonify({"error": "File not found"}), 404
 
     # --- AKHIR FITUR BARU ---

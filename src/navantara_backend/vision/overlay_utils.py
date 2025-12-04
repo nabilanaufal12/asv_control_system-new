@@ -2,8 +2,6 @@
 # --- VERSI DENGAN PATH ASET YANG DIPERBAIKI ---
 
 import cv2
-import time
-import random
 import numpy as np
 from datetime import datetime
 from pathlib import Path
@@ -179,8 +177,7 @@ def apply_overlay(background_frame, overlay_data):
         f"TIME: {now.strftime('%H:%M:%S')}",
         f"GPS : {gps_str}",
         f"SOG : {sog_str}",
-        f"COG : {cog:.2f} deg",
-        f"HDG : {hdg:.2f} deg",
+        f"COG : {hdg:.2f} deg",
     ]
 
     # --- KONFIGURASI LAYOUT ---
