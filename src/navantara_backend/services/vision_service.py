@@ -579,18 +579,17 @@ class VisionService:
             }
 
         # 2. Proses Snapshot (Overlay vs RAW)
-        snapshot = None
+        snapshot = frame_source 
 
         if raw_mode:
             # --- JALUR RAW ---
-            # Langsung gunakan frame source tanpa modifikasi apapun
-            # Tambahkan penanda '_raw' pada nama file agar mudah dibedakan
+            # 2.1. Terapkan penanda nama file _raw
             filename_prefix = f"{filename_prefix}_raw"
-            snapshot = frame_source
+            # 2.2. snapshot sudah diset ke frame_source, overlay dilewati.
             print("[Capture] Mode RAW: Overlay dilewati.")
         else:
             # --- JALUR OVERLAY ---
-            # Ambil state telemetri terbaru
+            # 2.1. Coba terapkan overlay telemetri
             try:
                 with self.asv_handler.state_lock:
                     current_state_dict = asdict(self.asv_handler.current_state)
@@ -602,8 +601,9 @@ class VisionService:
                 snapshot = apply_overlay(frame_source, overlay_data)
                 print("[Capture] Mode OVERLAY: Telemetri diterapkan.")
             except Exception as e:
-                print(f"[Capture] Gagal membuat overlay: {e}. Fallback ke gambar asli.")
-                snapshot = frame_source
+                # 2.2. Jika overlay gagal, snapshot tetap frame_source.
+                logging.error(f"[Capture] Gagal membuat overlay: {e}. Fallback ke gambar asli.")
+                # snapshot sudah frame_source, tidak perlu assignment lagi.
 
         # 3. Penyimpanan File
         filename = f"{filename_prefix}_{image_count}.jpg"

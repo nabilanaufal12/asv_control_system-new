@@ -85,7 +85,7 @@ class AsvState:
     manual_motor_cmd: int = 1500
     inversion_trigger_wp: int = 8  # Wp 6
     inverse_servo: bool = False
-    active_arena: str = "Unknown"
+    active_arena: str = "B"
     debug_waypoint_counter: int = 0
     use_dummy_counter: bool = False
     esp_status: str = None
@@ -119,7 +119,20 @@ class AsvHandler:
         self.last_reconnect_attempt = 0
         self.reconnect_interval = 5.0
 
-        self.current_state = AsvState()
+        # Baca nilai default AI dari konfigurasi (BARU)
+        ai_cfg = self.config.get("ai_control_defaults", {})
+        vision_motor_cmd = ai_cfg.get("vision_auto_motor_cmd", 1300)
+        vision_servo_left = ai_cfg.get("vision_servo_left_cmd", 70)
+        vision_servo_right = ai_cfg.get("vision_servo_right_cmd", 110)
+
+        # Inisialisasi state dengan nilai dari konfigurasi AI.
+        # Nilai lain (termasuk active_arena="B") akan menggunakan default dataclass.
+        self.current_state = AsvState(
+            vision_auto_motor_cmd=vision_motor_cmd,
+            vision_servo_left_cmd=vision_servo_left,
+            vision_servo_right_cmd=vision_servo_right
+        )
+
         # Dictionary ini menyimpan value terakhir berdasarkan NAMA ASLI (long key)
         # agar logika deteksi perubahan (delta) tetap konsisten.
         self.last_emitted_state = {}
