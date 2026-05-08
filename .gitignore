@@ -18,13 +18,13 @@ env/
 
 # IDE & Editor
 .vscode/
-config/
 .idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+navantara-asv.code-workspace
 
 # File yang Dihasilkan Otomatis
 snapshots/
