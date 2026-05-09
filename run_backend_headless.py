@@ -37,7 +37,8 @@ if __name__ == "__main__":
     # --- [KEAMANAN: UBAH DEFAULT KE LOCALHOST] ---
     # Jangan gunakan 0.0.0.0 kecuali Anda ingin akses remote dari laptop lain.
     # 127.0.0.1 memastikan hanya aplikasi lokal (GUI di Jetson) yang bisa akses.
-    host = backend_config.get("ip_address", "127.0.0.1")
+    # host = backend_config.get("ip_address", "127.0.0.1")
+    host = "0.0.0.0"
 
     # Gunakan 5000 sebagai default port
     port = int(backend_config.get("port", 5000))

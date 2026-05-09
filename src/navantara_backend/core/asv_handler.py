@@ -75,7 +75,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 0.0  # coba 9999.0
+    nav_dist_to_wp: float = 9.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -279,8 +279,10 @@ class AsvHandler:
 
                 try:
                     data = json.loads(line)
-                    # Langsung update state (tanpa antrian tambahan)
-                    self._parse_json_telemetry(data)
+                    # [FIX KRITIS] Pastikan data adalah dictionary (JSON Object) sebelum diproses
+                    if isinstance(data, dict):
+                        self._parse_json_telemetry(data)
+                    # Jika data adalah integer/string tunggal (seperti '1'), ia akan diabaikan dengan aman
                 except json.JSONDecodeError:
                     pass
                 except Exception as e:
