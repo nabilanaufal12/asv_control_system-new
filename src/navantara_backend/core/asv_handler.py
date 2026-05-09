@@ -130,7 +130,7 @@ class AsvHandler:
         self.current_state = AsvState(
             vision_auto_motor_cmd=vision_motor_cmd,
             vision_servo_left_cmd=vision_servo_left,
-            vision_servo_right_cmd=vision_servo_right
+            vision_servo_right_cmd=vision_servo_right,
         )
 
         # Dictionary ini menyimpan value terakhir berdasarkan NAMA ASLI (long key)

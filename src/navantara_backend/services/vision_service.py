@@ -579,7 +579,7 @@ class VisionService:
             }
 
         # 2. Proses Snapshot (Overlay vs RAW)
-        snapshot = frame_source 
+        snapshot = frame_source
 
         if raw_mode:
             # --- JALUR RAW ---
@@ -602,7 +602,9 @@ class VisionService:
                 print("[Capture] Mode OVERLAY: Telemetri diterapkan.")
             except Exception as e:
                 # 2.2. Jika overlay gagal, snapshot tetap frame_source.
-                logging.error(f"[Capture] Gagal membuat overlay: {e}. Fallback ke gambar asli.")
+                logging.error(
+                    f"[Capture] Gagal membuat overlay: {e}. Fallback ke gambar asli."
+                )
                 # snapshot sudah frame_source, tidak perlu assignment lagi.
 
         # 3. Penyimpanan File
