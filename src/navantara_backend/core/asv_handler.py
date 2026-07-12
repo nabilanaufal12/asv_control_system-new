@@ -104,8 +104,8 @@ class AsvState:
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
     vision_auto_motor_cmd: int = 1300
-    vision_front_motor_left_cmd: int = 1650
-    vision_front_motor_right_cmd: int = 1650
+    vision_front_motor_left_cmd: int = 1500
+    vision_front_motor_right_cmd: int = 1500
     vision_servo_left_cmd: int = 70
     vision_servo_right_cmd: int = 110
 
@@ -520,21 +520,26 @@ class AsvHandler:
                         pwm_cmd = current_ai_pwm
 
                         # 3. LOGIKA MOTOR DEPAN SAJA
-                        # PERHATIAN: Jika ESC motor depan Anda nilai matinya 1000, ubah 1500 di bawah ini jadi 1000
+                        # (Gunakan 1000 jika ESC motor depan Anda mati di 1000)
                         motor_depan_kiri = 1000  
                         motor_depan_kanan = 1000
                         
-                        # Kekuatan dorongan belok motor depan (Silakan sesuaikan, misal 1650, 1700, atau ambil dari GUI slider front motor tadi)
-                        pwm_depan_aktif = 1500 
+                        # Ambil tenaga dari slider GUI masing-masing
+                        with self.state_lock:
+                            pwm_depan_kiri_aktif = self.current_state.vision_front_motor_left_cmd
+                            pwm_depan_kanan_aktif = self.current_state.vision_front_motor_right_cmd
 
                         if turn_direction == "LEFT":
                             # Belok kiri -> Motor kanan depan nyala, kiri depan mati
-                            motor_depan_kanan = pwm_depan_aktif
-                            desc += " | Assist: Motor Depan KANAN Nyala"
+                            # [PERBAIKAN]: Gunakan variabel dari GUI (pwm_depan_kanan_aktif)
+                            motor_depan_kanan = pwm_depan_kanan_aktif 
+                            desc += f" | Assist: KANAN Nyala ({pwm_depan_kanan_aktif})"
+                            
                         elif turn_direction == "RIGHT":
                             # Belok kanan -> Motor kiri depan nyala, kanan depan mati
-                            motor_depan_kiri = pwm_depan_aktif
-                            desc += " | Assist: Motor Depan KIRI Nyala"
+                            # [PERBAIKAN]: Gunakan variabel dari GUI (pwm_depan_kiri_aktif)
+                            motor_depan_kiri = pwm_depan_kiri_aktif
+                            desc += f" | Assist: KIRI Nyala ({pwm_depan_kiri_aktif})"
 
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
                         if nav_dist_to_wp < 1.5:

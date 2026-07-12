@@ -59,8 +59,8 @@ class SettingsPanel(QGroupBox):
         left_front_layout = QHBoxLayout()
         self.lbl_front_left = QLabel("PWM Depan Kiri: 1650")
         self.slider_front_left = QSlider(Qt.Horizontal)
-        self.slider_front_left.setRange(1500, 1900)
-        self.slider_front_left.setValue(1650)
+        self.slider_front_left.setRange(1000, 1900)
+        self.slider_front_left.setValue(1500)
         left_front_layout.addWidget(self.lbl_front_left)
         left_front_layout.addWidget(self.slider_front_left)
         
@@ -68,8 +68,8 @@ class SettingsPanel(QGroupBox):
         right_front_layout = QHBoxLayout()
         self.lbl_front_right = QLabel("PWM Depan Kanan: 1650")
         self.slider_front_right = QSlider(Qt.Horizontal)
-        self.slider_front_right.setRange(1500, 1900)
-        self.slider_front_right.setValue(1650)
+        self.slider_front_right.setRange(1000, 1900)
+        self.slider_front_right.setValue(1500)
         right_front_layout.addWidget(self.lbl_front_right)
         right_front_layout.addWidget(self.slider_front_right)
 
