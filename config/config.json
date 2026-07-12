@@ -7,7 +7,7 @@
     "port": 5000
   },
   "serial_connection": {
-    "default_baud_rate": 115200,
+    "default_baud_rate": 230400,
     "auto_connect_descriptors": [
       "Silicon Labs",
       "CH340",
@@ -26,8 +26,8 @@
       "kd": 0.05
     },
     "avoidance_pid": {
-    "kp": 0.4,
-    "kd": 0.3
+      "kp": 0.4,
+      "kd": 0.3
     }
   },
   "actuators": {
@@ -71,7 +71,12 @@
     "debug": true,
     "camera_index_1": 0,
     "camera_index_2": 2,
-    "known_classes": ["red_buoy", "green_buoy", "green_box", "blue_box"],
+    "known_classes": [
+      "red_buoy",
+      "green_buoy",
+      "green_box",
+      "blue_box"
+    ],
     "poi_confidence_threshold": 0.65,
     "poi_validation_frames": 5,
     "obstacle_activation_distance_cm": 120.0,

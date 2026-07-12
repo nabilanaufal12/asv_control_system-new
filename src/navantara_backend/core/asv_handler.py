@@ -75,7 +75,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 9.0  # coba 9999.0
+    nav_dist_to_wp: float = 0.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -104,6 +104,8 @@ class AsvState:
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
     vision_auto_motor_cmd: int = 1300
+    vision_front_motor_left_cmd: int = 1650
+    vision_front_motor_right_cmd: int = 1650
     vision_servo_left_cmd: int = 70
     vision_servo_right_cmd: int = 110
 
@@ -468,8 +470,9 @@ class AsvHandler:
                     logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
 
                 elif control_mode == "MANUAL":
+                    # Tambahkan 1500, 1500 untuk mematikan motor depan saat mode manual
                     command_to_send = (
-                        f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)}\n"
+                        f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)},1500,1500\n"
                     )
                     logging.info(
                         f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us"
@@ -487,50 +490,63 @@ class AsvHandler:
                             self.current_state.recovering_from_avoidance = False
                             self.current_state.is_avoiding = True
                             self.current_state.gate_context["last_gate_config"] = None
+                            
+                            # Ambil kecepatan motor belakang dari GUI
                             current_ai_pwm = self.current_state.vision_auto_motor_cmd
-                            current_angle_left = (
-                                self.current_state.vision_servo_left_cmd
-                            )
-                            current_angle_right = (
-                                self.current_state.vision_servo_right_cmd
-                            )
+                            # Kita TIDAK butuh nilai servo dari GUI karena akan di-set selalu 90
 
                         obj_class = vision_target_obj_class
-                        servo_cmd = servo_default
+                        turn_direction = "STRAIGHT"
                         desc = "Neutral"
 
+                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Bola & Inversi)
                         if final_inversion_state:
                             if obj_class == "green_buoy":
-                                servo_cmd = current_angle_left  # Gunakan variabel
-                                desc = f"Green->{current_angle_left} (INV)"
+                                turn_direction = "LEFT"
+                                desc = "Green -> Menghindar Kiri (INV)"
                             elif obj_class == "red_buoy":
-                                servo_cmd = current_angle_right  # Gunakan variabel
-                                desc = f"Red->{current_angle_right} (INV)"
+                                turn_direction = "RIGHT"
+                                desc = "Red -> Menghindar Kanan (INV)"
                         else:
                             if obj_class == "green_buoy":
-                                servo_cmd = current_angle_right  # Gunakan variabel
-                                desc = f"Green->{current_angle_right} (NRM)"
+                                turn_direction = "RIGHT"
+                                desc = "Green -> Menghindar Kanan (NRM)"
                             elif obj_class == "red_buoy":
-                                servo_cmd = current_angle_left  # Gunakan variabel
-                                desc = f"Red->{current_angle_left} (NRM)"
+                                turn_direction = "LEFT"
+                                desc = "Red -> Menghindar Kiri (NRM)"
 
+                        # 2. SET SERVO SELALU LURUS (Misal 90 derajat)
+                        servo_cmd = servo_default 
                         pwm_cmd = current_ai_pwm
 
+                        # 3. LOGIKA MOTOR DEPAN SAJA
+                        # PERHATIAN: Jika ESC motor depan Anda nilai matinya 1000, ubah 1500 di bawah ini jadi 1000
+                        motor_depan_kiri = 1000  
+                        motor_depan_kanan = 1000
+                        
+                        # Kekuatan dorongan belok motor depan (Silakan sesuaikan, misal 1650, 1700, atau ambil dari GUI slider front motor tadi)
+                        pwm_depan_aktif = 1500 
+
+                        if turn_direction == "LEFT":
+                            # Belok kiri -> Motor kanan depan nyala, kiri depan mati
+                            motor_depan_kanan = pwm_depan_aktif
+                            desc += " | Assist: Motor Depan KANAN Nyala"
+                        elif turn_direction == "RIGHT":
+                            # Belok kanan -> Motor kiri depan nyala, kanan depan mati
+                            motor_depan_kiri = pwm_depan_aktif
+                            desc += " | Assist: Motor Depan KIRI Nyala"
+
+                        # 4. EKSEKUSI PENGIRIMAN SERIAL
                         if nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
-                            logging.info(
-                                "[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav."
-                            )
+                            logging.info("[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
                         elif esp_status == "WP_COMPLETE" or status == "WP_COMPLETE":
                             command_to_send = "W\n"
-                            logging.info(
-                                "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W"
-                            )
+                            logging.info("[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W")
                         else:
-                            command_to_send = f"A,{servo_cmd},{int(pwm_cmd)}\n"
-                            logging.info(
-                                f"[LOGIC DEBUG] AI ACTIVE | Speed: {int(pwm_cmd)} | Action: {desc}"
-                            )
+                            # Kirim 5 parameter: A, Servo (Selalu 90), Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
+                            command_to_send = f"A,{servo_cmd},{int(pwm_cmd)},{motor_depan_kiri},{motor_depan_kanan}\n"
+                            logging.info(f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}")
 
                     elif resume_waypoint_on_clear:
                         with self.state_lock:
@@ -605,6 +621,7 @@ class AsvHandler:
             "UPDATE_PID": self._handle_update_pid,
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
             "UPDATE_VISION_SPEED": self._handle_update_vision_speed,
+            "UPDATE_VISION_FRONT_MOTOR": self._handle_update_vision_front_motor,
             "UPDATE_VISION_SERVO": self._handle_update_vision_servo,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "INVERSE_SERVO": self._handle_inverse_servo,
@@ -669,6 +686,17 @@ class AsvHandler:
             logging.info(f"[AsvHandler] Kecepatan AI Vision diupdate ke PWM: {pwm_val}")
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM tidak valid untuk vision speed")
+
+    def _handle_update_vision_front_motor(self, payload):
+        try:
+            left_val = int(payload.get("left", 1650))
+            right_val = int(payload.get("right", 1650))
+            with self.state_lock:
+                self.current_state.vision_front_motor_left_cmd = left_val
+                self.current_state.vision_front_motor_right_cmd = right_val
+            logging.info(f"[AsvHandler] Motor Depan AI Updated -> Kiri: {left_val}, Kanan: {right_val}")
+        except ValueError:
+            logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
 
     def _handle_set_inversion(self, payload):
         with self.state_lock:
@@ -820,7 +848,7 @@ class AsvHandler:
             actuator_config = self.config.get("actuators", {})
             pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
             servo_def = actuator_config.get("servo_default_angle", 90)
-            command_str = f"A,{int(servo_def)},{int(pwm_stop)}\n"
+            command_str = f"A,{int(servo_def)},{int(pwm_stop)},1500,1500\n"
             logging.info(
                 f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
             )

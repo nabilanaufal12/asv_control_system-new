@@ -194,6 +194,14 @@ class MainWindow(QMainWindow):
                 "UPDATE_VISION_SPEED", {"pwm": val}
             )
         )
+        
+        # --- [TAMBAHAN BARU] Koneksi Motor Depan (Kiri & Kanan) ---
+        self.settings_panel.vision_front_motor_updated.connect(
+            lambda payload: self.api_client.send_command(
+                "UPDATE_VISION_FRONT_MOTOR", payload
+            )
+        )
+        # ----------------------------------------------------------
 
         self.settings_panel.vision_servo_updated.connect(
             lambda p: self.api_client.send_command("UPDATE_VISION_SERVO", p)
@@ -235,7 +243,7 @@ class MainWindow(QMainWindow):
             lambda p: self.api_client.send_command("UPDATE_INVERSION_TRIGGER", p)
         )
 
-        # --- [MODIFIKASI] Koneksi Capture Baru dengan Payload RAW/Overlay ---
+        # --- Koneksi Capture RAW/Overlay ---
 
         # 1. Surface Capture
         self.control_panel.surface_overlay_clicked.connect(
@@ -260,7 +268,6 @@ class MainWindow(QMainWindow):
                 "MANUAL_CAPTURE", {"type": "underwater", "raw": True}
             )
         )
-        # ------------------------------------------------------------------
 
     @Slot(str)
     def set_mode(self, mode):
@@ -304,10 +311,6 @@ class MainWindow(QMainWindow):
 
         # Perbarui semua panel
         self.system_status_panel.update_data(data)
-
-        # --- [MODIFIKASI] Hapus update ke MapView dan LogPanel ---
-        # self.map_view.update_data(data) <- Dihapus
-        # self.log_panel.update_log(data) <- Dihapus
 
         self.header.update_status(data)
         self.update_button_states()

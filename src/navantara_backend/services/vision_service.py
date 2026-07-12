@@ -915,9 +915,12 @@ class VisionService:
 
         if all_buoys:
             closest_buoy = min(
-                all_buoys, key=lambda b: b.get("distance_cm", float("inf"))
+                all_buoys, 
+                key=lambda b: b.get("distance_cm") if b.get("distance_cm") is not None else float("inf")
             )
-            distance_to_closest = closest_buoy.get("distance_cm", float("inf"))
+            distance_to_closest = closest_buoy.get("distance_cm")
+            if distance_to_closest is None:
+                distance_to_closest = float("inf")
 
             if distance_to_closest < self.obstacle_activation_distance:
                 self.last_buoy_seen_time = time.time()

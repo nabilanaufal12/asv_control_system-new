@@ -24,17 +24,15 @@ class SettingsPanel(QGroupBox):
     berbagai macam pengaturan.
     """
 
-    # Sinyal-sinyal ini akan dipancarkan ke MainWindow
     pid_updated = Signal(dict)
     servo_settings_updated = Signal(dict)
     connect_requested = Signal(dict)
     debug_command_sent = Signal(str, object)
     manual_speed_changed = Signal(int)
     vision_speed_updated = Signal(int)
+    vision_front_motor_updated = Signal(dict) # [UBAH] Sekarang mengirim dict (Kiri & Kanan)
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
-    # [HAPUS] Sinyal Trigger Inversi yang redundan
-    # inversion_trigger_updated = Signal(int)
 
     def __init__(self, config, title="Settings"):
         super().__init__(title)
@@ -45,24 +43,47 @@ class SettingsPanel(QGroupBox):
         ai_control_group = QGroupBox("AI Vision & Mission Control")
         ai_layout = QVBoxLayout()
 
-        # 1. Slider Kecepatan
+        # 1. Slider Kecepatan Motor Bawah (Utama)
         speed_layout = QHBoxLayout()
-        self.lbl_ai_speed = QLabel("PWM Motor: 1300")
+        self.lbl_ai_speed = QLabel("PWM Motor Utama: 1300")
         self.slider_ai_speed = QSlider(Qt.Horizontal)
         self.slider_ai_speed.setRange(1100, 1800)
         self.slider_ai_speed.setValue(1300)
         speed_layout.addWidget(self.lbl_ai_speed)
         speed_layout.addWidget(self.slider_ai_speed)
 
+        # 1.5 [UBAH] 2 Slider Kecepatan Motor Depan (Kemudi Kiri & Kanan)
+        front_speed_layout = QVBoxLayout()
+        
+        # --- Motor Depan Kiri ---
+        left_front_layout = QHBoxLayout()
+        self.lbl_front_left = QLabel("PWM Depan Kiri: 1650")
+        self.slider_front_left = QSlider(Qt.Horizontal)
+        self.slider_front_left.setRange(1500, 1900)
+        self.slider_front_left.setValue(1650)
+        left_front_layout.addWidget(self.lbl_front_left)
+        left_front_layout.addWidget(self.slider_front_left)
+        
+        # --- Motor Depan Kanan ---
+        right_front_layout = QHBoxLayout()
+        self.lbl_front_right = QLabel("PWM Depan Kanan: 1650")
+        self.slider_front_right = QSlider(Qt.Horizontal)
+        self.slider_front_right.setRange(1500, 1900)
+        self.slider_front_right.setValue(1650)
+        right_front_layout.addWidget(self.lbl_front_right)
+        right_front_layout.addWidget(self.slider_front_right)
+
+        front_speed_layout.addLayout(left_front_layout)
+        front_speed_layout.addLayout(right_front_layout)
+
         # 2. Input Servo Kiri & Kanan
         servo_layout = QHBoxLayout()
-        # Servo Kiri (Default 45)
         self.spin_left = QSpinBox()
         self.spin_left.setRange(0, 90)
         self.spin_left.setValue(70)
         self.spin_left.setPrefix("Left: ")
         self.spin_left.setSuffix("°")
-        # Servo Kanan (Default 135)
+        
         self.spin_right = QSpinBox()
         self.spin_right.setRange(90, 180)
         self.spin_right.setValue(110)
@@ -84,20 +105,11 @@ class SettingsPanel(QGroupBox):
         dist_layout.addWidget(QLabel("AI Activation:"))
         dist_layout.addWidget(self.spin_obs_dist)
 
-        # [HAPUS] Bagian Trigger Layout Redundan
-        # trigger_layout = QHBoxLayout()
-        # self.spin_inv_trigger = QSpinBox()
-        # self.spin_inv_trigger.setRange(1, 99)
-        # self.spin_inv_trigger.setValue(6)
-        # self.spin_inv_trigger.setPrefix("Start Invert at WP: ")
-        # trigger_layout.addWidget(QLabel("Servo Inversion:"))
-        # trigger_layout.addWidget(self.spin_inv_trigger)
-
         # --- GABUNGKAN SEMUA KE AI LAYOUT ---
         ai_layout.addLayout(speed_layout)
+        ai_layout.addLayout(front_speed_layout)
         ai_layout.addLayout(servo_layout)
         ai_layout.addLayout(dist_layout)
-        # ai_layout.addLayout(trigger_layout)  <-- [HAPUS] Baris ini
 
         ai_control_group.setLayout(ai_layout)
         main_layout.addWidget(ai_control_group)
@@ -133,22 +145,27 @@ class SettingsPanel(QGroupBox):
 
         # Koneksi Kontrol AI
         self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
+        
+        # [UBAH] Sambungkan kedua slider depan ke fungsi yang sama
+        self.slider_front_left.valueChanged.connect(self._on_front_speed_changed)
+        self.slider_front_right.valueChanged.connect(self._on_front_speed_changed)
+        
         self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
 
-        # [HAPUS] Koneksi Trigger Inversi Redundan
-        # self.spin_inv_trigger.valueChanged.connect(self._on_inv_trigger_changed)
-
     # --- SLOT HANDLERS ---
-
-    # [HAPUS] Method Slot Redundan
-    # def _on_inv_trigger_changed(self, value):
-    #     self.inversion_trigger_updated.emit(value)
-
     def _on_ai_speed_changed(self, value):
-        self.lbl_ai_speed.setText(f"PWM Motor: {value}")
+        self.lbl_ai_speed.setText(f"PWM Motor Utama: {value}")
         self.vision_speed_updated.emit(value)
+
+    def _on_front_speed_changed(self):
+        val_l = self.slider_front_left.value()
+        val_r = self.slider_front_right.value()
+        self.lbl_front_left.setText(f"PWM Depan Kiri: {val_l}")
+        self.lbl_front_right.setText(f"PWM Depan Kanan: {val_r}")
+        # Kirim payload data ke backend
+        self.vision_front_motor_updated.emit({"left": val_l, "right": val_r})
 
     def _on_ai_servo_changed(self):
         payload = {"left": self.spin_left.value(), "right": self.spin_right.value()}
