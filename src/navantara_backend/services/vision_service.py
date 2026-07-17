@@ -193,8 +193,8 @@ class VisionService:
             # Path relatif ke folder src/navantara_backend/vision/
             vision_dir = Path(__file__).parent.parent / "vision"
 
-            engine_path = vision_dir / "best100.engine"
-            pt_path = vision_dir / "best100.pt"
+            engine_path = vision_dir / "asv_final_v11.engine"
+            pt_path = vision_dir / "best.pt"
 
             model_path = None
             task_msg = ""

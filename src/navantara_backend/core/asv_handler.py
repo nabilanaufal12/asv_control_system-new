@@ -499,21 +499,29 @@ class AsvHandler:
                         turn_direction = "STRAIGHT"
                         desc = "Neutral"
 
-                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Bola & Inversi)
+                       # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek & Inversi)
                         if final_inversion_state:
-                            if obj_class == "green_buoy":
-                                turn_direction = "LEFT"
-                                desc = "Green -> Menghindar Kiri (INV)"
-                            elif obj_class == "red_buoy":
+                            # --- ARENA B (INVERTED) ---
+                            if obj_class in ["bola-hijau", "kotak-hijau"]:
                                 turn_direction = "RIGHT"
-                                desc = "Red -> Menghindar Kanan (INV)"
+                                desc = f"{obj_class} -> Menghindar Kanan (INV)"
+                            elif obj_class in ["bola-merah", "kotak-biru"]:
+                                turn_direction = "LEFT"
+                                desc = f"{obj_class} -> Menghindar Kiri (INV)"
+                            elif obj_class == "bola-biru":
+                                turn_direction = "STRAIGHT"
+                                desc = f"{obj_class} -> Target Docking (Lurus)"
                         else:
-                            if obj_class == "green_buoy":
-                                turn_direction = "RIGHT"
-                                desc = "Green -> Menghindar Kanan (NRM)"
-                            elif obj_class == "red_buoy":
+                            # --- ARENA A (NORMAL) ---
+                            if obj_class in ["bola-hijau", "kotak-hijau"]:
                                 turn_direction = "LEFT"
-                                desc = "Red -> Menghindar Kiri (NRM)"
+                                desc = f"{obj_class} -> Menghindar Kiri (NRM)"
+                            elif obj_class in ["bola-merah", "kotak-biru"]:
+                                turn_direction = "RIGHT"
+                                desc = f"{obj_class} -> Menghindar Kanan (NRM)"
+                            elif obj_class == "bola-biru":
+                                turn_direction = "STRAIGHT"
+                                desc = f"{obj_class} -> Target Docking (Lurus)"
 
                         # 2. SET SERVO SELALU LURUS (Misal 90 derajat)
                         servo_cmd = servo_default 

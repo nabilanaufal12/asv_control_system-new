@@ -1,3 +1,7 @@
+import os
+# Fix untuk SSH tanpa display — harus di-set SEBELUM import cv2
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
 import cv2
 from ultralytics import YOLO
 
@@ -10,18 +14,24 @@ CLASS_NAMES = {
     4: 'bola-merah'
 }
 
+# Gunakan engine yang dibuild di Jetson INI (bukan dari device lain)
+MODEL_PATH = "/home/navantara/navantara/src/navantara_backend/vision/best.engine"
+
 def main():
-    print("Memuat model best.pt (tanpa TensorRT, menggunakan PyTorch)...")
+    print(f"Memuat model TensorRT: {MODEL_PATH}")
     
-    try:
-        # Memuat model YOLO
-        model = YOLO("asv_final_v11.engine", task='detect')
-    except Exception as e:
-        print(f"Error memuat model: {e}")
-        print("Pastikan model best.pt ada di folder yang sama.")
+    if not os.path.exists(MODEL_PATH):
+        print(f"Error: Model tidak ditemukan di {MODEL_PATH}")
+        print("Pastikan sudah menjalankan trtexec untuk convert ONNX → engine di Jetson ini.")
         return
 
-    print("Membuka kamera (webcam 0)... Tekan 'q' untuk keluar.")
+    try:
+        model = YOLO(MODEL_PATH, task='detect')
+    except Exception as e:
+        print(f"Error memuat model: {e}")
+        return
+
+    print("Membuka kamera (webcam 0)...")
     cap = cv2.VideoCapture(0)
     
     if not cap.isOpened():
@@ -29,50 +39,37 @@ def main():
         print("Silakan coba mengubah index VideoCapture(0) jika Anda memiliki kamera eksternal.")
         return
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Gagal mengambil frame dari kamera.")
-            break
+    print("Inferensi berjalan (headless mode, tanpa GUI).")
+    print("Tekan Ctrl+C untuk berhenti.\n")
+
+    frame_count = 0
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("Gagal mengambil frame dari kamera.")
+                break
+                
+            # Jalankan inferensi
+            results = model.predict(source=frame, conf=0.5, verbose=False)
             
-        # Jalankan inferensi menggunakan model asv_final_v11.engine
-        # conf=0.5 berarti hanya deteksi dengan confidence >= 50% yang ditampilkan
-        results = model.predict(source=frame, conf=0.5, verbose=False)
-        
-        # Iterasi hasil deteksi untuk mengganti nama class dengan CLASS_NAMES kustom jika diperlukan,
-        # namun results[0].plot() akan otomatis menggambar kotak dengan nama class bawaan model.
-        # Kita juga bisa menggambar secara manual:
-        
-        annotated_frame = frame.copy()
-        for result in results:
-            boxes = result.boxes
-            for box in boxes:
-                # Koordinat bounding box
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                
-                # Class ID dan confidence
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                
-                # Dapatkan nama class dari dictionary CLASS_NAMES kita (jika ada), kalau tidak gunakan default
-                label_name = model.names[cls_id]
-                label = f"{label_name} {conf:.2f}"
-                
-                # Gambar kotak
-                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                # Gambar label
-                cv2.putText(annotated_frame, label, (x1, max(0, y1 - 10)), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            # Tampilkan hasil deteksi di terminal
+            for result in results:
+                boxes = result.boxes
+                if len(boxes) > 0:
+                    for box in boxes:
+                        cls_id = int(box.cls[0])
+                        conf = float(box.conf[0])
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        label_name = model.names.get(cls_id, f"class_{cls_id}")
+                        print(f"[Frame {frame_count}] Terdeteksi: {label_name} ({conf:.2f}) @ [{x1},{y1},{x2},{y2}]")
+            
+            frame_count += 1
 
-        # Tampilkan hasil inferensi
-        cv2.imshow("YOLO Inference - best.pt", annotated_frame)
-        
-        # Tekan tombol 'q' untuk keluar
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
+    except KeyboardInterrupt:
+        print(f"\nDihentikan. Total frame diproses: {frame_count}")
+    finally:
+        cap.release()
 
 if __name__ == "__main__":
     main()
