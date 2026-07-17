@@ -29,7 +29,7 @@ HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
 #define PIN_ESC_BAWAH_KIRI 26
 #define PIN_ESC_BAWAH_KANAN 33
 
-// Pin Arah (Maju/Mundur) menggunakan sinyal PWM (seperti Aux sebelumnya)
+// Pin Arah (Maju/Mundur) menggunakan sinyal PWM
 #define DIR_DEPAN_KIRI 14
 #define DIR_DEPAN_KANAN 19
 #define DIR_BAWAH_KIRI 15
@@ -73,11 +73,11 @@ bool wasInSaveMode = false;
 char serialCommand = 'W'; 
 int ai_servo_val = 90; 
 int ai_motor_val = 1500; // Untuk motor bawah
-int ai_motor_depan_kiri_val = 1500;  // TAMBAHAN: Untuk motor depan kiri
-int ai_motor_depan_kanan_val = 1500; // TAMBAHAN: Untuk motor depan kanan
+int ai_motor_depan_kiri_val = 1000;  // Nilai dari serial Jetson untuk motor depan kiri
+int ai_motor_depan_kanan_val = 1000; // Nilai dari serial Jetson untuk motor depan kanan
 
 // --- Buffer JSON & Serial ---
-StaticJsonDocument<400> jsonDoc; // Ukuran diperbesar sedikit untuk extra variabel
+StaticJsonDocument<400> jsonDoc;
 String serialInputBuffer = ""; 
 
 // ---------------- Haversine ----------------
@@ -233,7 +233,7 @@ void displayAllData() {
 // ---------------- MODE FLAG ----------------
 bool isManual = true;
 
-// --- FUNGSI NON-BLOCKING UNTUK MEMBACA PERINTAH SERIAL ---
+// --- FUNGSI MEMBACA PERINTAH SERIAL ---
 void checkSerialInput() {
   while (Serial.available() > 0) {
     char incomingChar = Serial.read(); 
@@ -245,22 +245,23 @@ void checkSerialInput() {
         serialCommand = serialInputBuffer.charAt(0); 
         
         if (serialCommand == 'A') {
-          // Format Baru: A,<servo>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
+          // FORMAT BARU: A,<servo>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
           int comma1 = serialInputBuffer.indexOf(',');
           int comma2 = serialInputBuffer.indexOf(',', comma1 + 1);
           int comma3 = serialInputBuffer.indexOf(',', comma2 + 1);
           int comma4 = serialInputBuffer.indexOf(',', comma3 + 1);
 
+          // Cek apakah ada minimal 4 koma sebelum nilai diekstrak
           if (comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0) {
-            String servoStr    = serialInputBuffer.substring(comma1 + 1, comma2);
-            String motorBwhStr = serialInputBuffer.substring(comma2 + 1, comma3);
-            String motorDKStr  = serialInputBuffer.substring(comma3 + 1, comma4);
-            String motorDKnStr = serialInputBuffer.substring(comma4 + 1);
+            String servoStr          = serialInputBuffer.substring(comma1 + 1, comma2);
+            String motorBwhStr       = serialInputBuffer.substring(comma2 + 1, comma3);
+            String motorDepanKiriStr = serialInputBuffer.substring(comma3 + 1, comma4);
+            String motorDepanKananStr= serialInputBuffer.substring(comma4 + 1);
 
             ai_servo_val             = servoStr.toInt();
             ai_motor_val             = motorBwhStr.toInt();
-            ai_motor_depan_kiri_val  = motorDKStr.toInt();
-            ai_motor_depan_kanan_val = motorDKnStr.toInt();
+            ai_motor_depan_kiri_val  = motorDepanKiriStr.toInt();
+            ai_motor_depan_kanan_val = motorDepanKananStr.toInt();
           }
         }
       }
@@ -379,10 +380,10 @@ void loop() {
   
   // Variabel penampung output aktuator di cycle ini
   int finalServo = 90;
-  int finalMotor = 1500;           // Untuk motor bawah
-  int finalMotorDepanKiri = 1000;  // Default mati
-  int finalMotorDepanKanan = 1000; // Default mati
-  int finalDir = 1500;             // Default untuk pin arah (Aux)
+  int finalMotor = 1500;           
+  int finalMotorDepanKiri = 1000;  // Pastikan default 1000 (mati)
+  int finalMotorDepanKanan = 1000; // Pastikan default 1000 (mati)
+  int finalDir = 1500;             
   
   int wp_target_idx = 0;
   double wp_dist_m = 0.0;
@@ -406,11 +407,9 @@ void loop() {
     int ch3 = readChannel(2); 
     finalMotor = ch3;
 
-    // Di mode manual, motor depan kita set mati (1000) sesuai request sebelumnya
     finalMotorDepanKiri = 1000;
     finalMotorDepanKanan = 1000;
 
-    // Ambil nilai dari CH8 (Aux Output sebelumnya) untuk mengatur arah motor
     int ch8 = readChannel(7);
     finalDir = ch8;
 
@@ -462,7 +461,6 @@ void loop() {
     }
 
     mode = "AUTO";
-    // Saat mode auto, kita set arah ke maju secara default (1500 atau 2000 tergantung ESC Anda)
     finalDir = 1500; 
 
     if (serialCommand == 'A') {
@@ -479,9 +477,9 @@ void loop() {
         status = "AI_ACTIVE";
       }
 
-      // Terapkan nilai-nilai dari variabel serial (Jetson) ke aktuator
+      // Terapkan semua nilai yang diterima dari Serial Jetson
       finalServo           = calculatedServoVal;
-      finalMotor           = ai_motor_val; // Untuk motor bawah
+      finalMotor           = ai_motor_val; 
       finalMotorDepanKiri  = ai_motor_depan_kiri_val;
       finalMotorDepanKanan = ai_motor_depan_kanan_val;
       
@@ -494,8 +492,8 @@ void loop() {
         if (counter >= dataIndex) { 
           finalServo = 90;
           finalMotor = 1000; 
-          finalMotorDepanKiri = 1000;
-          finalMotorDepanKanan = 1000;
+          finalMotorDepanKiri = 1000;  // Paksa mati di Mode W
+          finalMotorDepanKanan = 1000; // Paksa mati di Mode W
           status = "WP_COMPLETE";
           wp_target_idx = dataIndex; 
         } else { 
@@ -511,11 +509,11 @@ void loop() {
           int servoPos = PID_servo(targetBearing, heading);
           finalServo = servoPos;
 
-          // Dalam mode Waypoint lama, semua motor menggunakan channel 6 sebagai kecepatan auto
           int motorSpeed = readChannel(6);  
-          finalMotor = motorSpeed;
-          finalMotorDepanKiri = motorSpeed;
-          finalMotorDepanKanan = motorSpeed;
+          finalMotor = motorSpeed;          
+          
+          finalMotorDepanKiri = 1000;       // Paksa mati di Mode W
+          finalMotorDepanKanan = 1000;      // Paksa mati di Mode W
 
           if (dist < 1.75) {
             counter++; 
@@ -533,8 +531,8 @@ void loop() {
       } else {
         finalServo = 90;
         finalMotor = 1000; 
-        finalMotorDepanKiri = 1000;
-        finalMotorDepanKanan = 1000;
+        finalMotorDepanKiri = 1000;   // Paksa mati di Mode W
+        finalMotorDepanKanan = 1000;  // Paksa mati di Mode W
         if (dataIndex == 0) status = "NO_WAYPOINTS";
         else status = "GPS_INVALID";
       }
@@ -545,21 +543,17 @@ void loop() {
   // --- 3. Kontrol Aktuator Lanjutan ---
   // ========================================
 
-  // Kontrol Servo Kiri dan Kanan
   servoKiri.write(finalServo); 
   servoKanan.write(finalServo); 
 
-  // Kirim sinyal PWM (berdasarkan CH8 di mode manual atau 1500 di Auto) ke pin arah
   dirDepanKiri.writeMicroseconds(finalDir);
   dirDepanKanan.writeMicroseconds(finalDir);
   dirBawahKiri.writeMicroseconds(finalDir);
   dirBawahKanan.writeMicroseconds(finalDir);
 
-  // Kontrol 4 ESC kecepatan
   escDepanKiri.writeMicroseconds(finalMotorDepanKiri);
   escDepanKanan.writeMicroseconds(finalMotorDepanKanan);
   
-  // Motor bawah 
   escBawahKiri.writeMicroseconds(finalMotor);
   escBawahKanan.writeMicroseconds(finalMotor);
 
