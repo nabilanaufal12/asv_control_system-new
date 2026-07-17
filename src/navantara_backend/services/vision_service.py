@@ -224,7 +224,7 @@ class VisionService:
 
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get(
-            "camera_detection", {"red_buoy": 20.0, "green_buoy": 20.0, "buoy": 20.0}
+            "camera_detection", {"bola-merah": 20.0, "bola-hijau": 20.0, "bola-biru": 20.0}
         )
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
         self.OBJECT_REAL_WIDTHS_CM = cam_detect_cfg.get("object_real_widths_cm", {})
@@ -295,17 +295,30 @@ class VisionService:
     # -----------------------------------------
 
     def _estimate_distance(self, pixel_width, object_class):
+        # Coba ambil ukuran dari file config.json terlebih dahulu
         real_width_cm = self.OBJECT_REAL_WIDTHS_CM.get(object_class)
+        
+        # --- [TAMBAHAN: FALLBACK UKURAN FISIK (DALAM CM)] ---
+        # Jika nama Indonesia tidak ada di config, kita atur ukuran default di sini
         if not real_width_cm:
-            real_width_cm = self.OBJECT_REAL_WIDTHS_CM.get("buoy")
+            if "bola" in object_class:
+                real_width_cm = 20.0  # Asumsi diameter bola pelampung adalah 20 cm
+            elif "kotak" in object_class:
+                real_width_cm = 25.0  # Asumsi lebar kotak pelampung adalah 25 cm
+            else:
+                real_width_cm = 20.0  # Fallback default
+        # ----------------------------------------------------
 
+        # Proteksi pembagian nol
         if not real_width_cm or pixel_width <= 0:
             return None
+            
+        # Rumus Pinhole Camera: (Lebar Asli * Focal Length) / Lebar di Layar
         return (real_width_cm * self.FOCAL_LENGTH_PIXELS) / pixel_width
 
     def _draw_distance_info(self, frame, detections):
-        buoy_detections = [d for d in detections if "buoy" in d.get("class", "")]
-        for det in buoy_detections:
+        all_detections = [d for d in detections if d.get("distance_cm") is not None]
+        for det in all_detections:
             distance_cm = det.get("distance_cm")
             if distance_cm is not None:
                 x1, y1, _, _ = map(int, det.get("xyxy", [0, 0, 0, 0]))
@@ -338,7 +351,7 @@ class VisionService:
 
     def _validate_buoy_color(self, frame, detection):
         """Validates and determines the color of detected buoys with improved thresholds and logging."""
-        if "buoy" not in detection.get("class", ""):
+        if "buoy" not in detection.get("class", "") and "bola" not in detection.get("class", "") and "kotak" not in detection.get("class", ""):
             return detection.get("class")
         try:
             x1, y1, x2, y2 = map(int, detection["xyxy"])
@@ -377,9 +390,9 @@ class VisionService:
 
             # Prioritas Mapping Logika Warna Tambahan (Jika label asli tidak spesifik)
             if green_percentage > 15 and green_px > red_px * 1.2:
-                result = "green_buoy"
+                result = "bola-hijau"
             elif red_percentage > 15 and red_px > green_px * 1.2:
-                result = "red_buoy"
+                result = "bola-merah"
             else:
                 result = detection.get("class")
 
@@ -790,15 +803,13 @@ class VisionService:
             # Validasi warna buoy juga sebaiknya dilakukan di sini jika mempengaruhi keputusan
             validated_detections_for_nav = []
             for det in detections:
-                if "buoy" in det["class"]:
-                    # Validasi warna cepat
-                    det["class"] = self._validate_buoy_color(frame, det)
-
-                    # Hitung jarak
+                cls_name = det.get("class", "")
+                
+                # Hitung jarak jika objek adalah bola atau kotak
+                if "bola" in cls_name or "kotak" in cls_name:
                     pixel_width = det["xyxy"][2] - det["xyxy"][0]
-                    det["distance_cm"] = self._estimate_distance(
-                        pixel_width, det.get("class")
-                    )
+                    det["distance_cm"] = self._estimate_distance(pixel_width, cls_name)
+                    
                 validated_detections_for_nav.append(det)
 
             if is_mode_auto:
@@ -817,22 +828,23 @@ class VisionService:
                 x1, y1, x2, y2 = det["xyxy"]
                 cls_name = det["class"]
                 conf = det["confidence"]
-                circ = det.get("shape_circularity", -1)
-                cov = det.get("shape_radial_cov", -1)
-                verdict = det.get("shape_verdict", "")
+                sudut = det.get("jumlah_sudut", 0)
+                
+                # --- [TAMBAHAN] Ambil Nilai Jarak ---
+                jarak = det.get("distance_cm")
+                jarak_teks = f"{jarak:.1f}cm" if jarak is not None else "? cm"
 
-                color = (0, 255, 0) # Default Hijau
+                # Penentuan warna Bounding Box
+                color = (0, 255, 0) # Default: Hijau
                 if "merah" in cls_name:
-                    color = (0, 0, 255) # Merah (BGR)
-                elif "biru" in cls_name:
-                    color = (255, 0, 0) # Biru (BGR)
+                    color = (0, 0, 255)
+                elif "biru" in cls_name: 
+                    color = (255, 0, 0)
 
                 cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-
-                # Label utama: class + confidence
-                label = f"{cls_name} {conf:.2f}"
-                if verdict:
-                    label += f" [{verdict}]"
+                
+                # --- Teks Bounding Box (Digabung: Nama, Conf, Sudut, Jarak) ---
+                label = f"{cls_name} {conf:.2f} (Sdt:{sudut}) | {jarak_teks}"
                 cv2.putText(
                     annotated_frame,
                     label,
@@ -842,55 +854,13 @@ class VisionService:
                     color,
                     2,
                 )
-                # Debug metric (baris kedua, lebih kecil)
-                if circ >= 0:
-                    cv2.putText(
-                        annotated_frame,
-                        f"C:{circ:.2f} R:{cov:.2f}",
-                        (x1, y2 + 15),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.4,
-                        (255, 255, 255),
-                        1,
-                    )
-
-            # Draw distance info (Visual Only)
-            annotated_frame = self._draw_distance_info(
-                annotated_frame, validated_detections_for_nav
-            )
 
         except Exception as e:
             logging.error(f"[Vision] Inference error: {str(e)}")
             logging.error(traceback.format_exc())
             return frame
 
-        # --- Logic Navigasi & Misi (Unchanged) ---
-        validated_detections = []
 
-        for det in detections:
-            # Logic warna buoy tetap dijalankan sebagai validasi lapis kedua
-            # PENTING: Gunakan 'frame' (asli) untuk validasi warna agar akurat
-            if "buoy" in det["class"]:
-                det["class"] = self._validate_buoy_color(frame, det)
-                pixel_width = (
-                    det.get("xyxy", [0, 0, 0, 0])[2] - det.get("xyxy", [0, 0, 0, 0])[0]
-                )
-                det["distance_cm"] = self._estimate_distance(
-                    pixel_width, det.get("class")
-                )
-            validated_detections.append(det)
-
-        annotated_frame = self._draw_distance_info(
-            annotated_frame, validated_detections
-        )
-
-        if is_mode_auto:
-            with self.asv_handler.state_lock:
-                current_state_nav = self.asv_handler.current_state
-            # PENTING: Kirim lebar frame ASLI (orig_w) agar kalkulasi navigasi presisi
-            self.handle_autonomous_navigation(
-                validated_detections, orig_w, current_state_nav
-            )
 
         # --- [MULAI LOGIKA BARU: MISI FOTO SEGMEN] ---
         # Langsung masuk ke logika segmen tanpa mendefinisikan green_boxes/blue_boxes
@@ -963,13 +933,10 @@ class VisionService:
 
     # -----------------------------------------
 
-    # --- [PERBAIKAN: FIX STUCK MODE A] ---
     def handle_autonomous_navigation(self, detections, frame_width, current_state):
         """Handles autonomous navigation based on object detections."""
 
         # 1. CEK COOLDOWN TERLEBIH DAHULU
-        # Ini wajib dijalankan setiap frame, ada deteksi atau tidak.
-        # Jika sudah lama (misal 2 detik) tidak melihat buoy valid, matikan mode Vision.
         if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
             self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
@@ -977,36 +944,36 @@ class VisionService:
         if not detections:
             return
 
-        # 3. Cek Mode Navigasi
+        # 3. Cek Mode Navigasi (PENTING: Kapal harus dalam mode AUTO)
         if current_state.control_mode != "AUTO":
             return
 
-        red_buoys = []
-        green_buoys = []
+        valid_buoys = []
 
         for det in detections:
             cls = det.get("class", "")
             conf = det.get("confidence", 0.0)
 
+            # Abaikan jika tingkat kepercayaan AI di bawah threshold
             if conf < self.poi_confidence_threshold:
                 continue
 
-            if cls == "red_buoy":
-                red_buoys.append(det)
-            elif cls == "green_buoy":
-                green_buoys.append(det)
+            # --- [PERBAIKAN] Kumpulkan semua 5 kelas baru ---
+            if cls in ["bola-merah", "bola-hijau", "kotak-hijau", "kotak-biru", "bola-biru"]:
+                valid_buoys.append(det)
 
-        all_buoys = red_buoys + green_buoys
-
-        if all_buoys:
+        if valid_buoys:
+            # Cari objek yang paling dekat dengan kapal
             closest_buoy = min(
-                all_buoys, 
+                valid_buoys, 
                 key=lambda b: b.get("distance_cm") if b.get("distance_cm") is not None else float("inf")
             )
+            
             distance_to_closest = closest_buoy.get("distance_cm")
             if distance_to_closest is None:
                 distance_to_closest = float("inf")
 
+            # Jika objek berada dalam jarak aktivasi penghindaran
             if distance_to_closest < self.obstacle_activation_distance:
                 self.last_buoy_seen_time = time.time()
 
@@ -1018,9 +985,10 @@ class VisionService:
                 }
 
                 logging.info(
-                    f"[Vision] Obstacle detected ({closest_buoy.get('class')}) at {distance_to_closest:.1f}cm."
+                    f"[Vision] Target manuver aktif ({closest_buoy.get('class')}) pada jarak {distance_to_closest:.1f}cm."
                 )
 
+                # --- MENGIRIM DATA KE ASV HANDLER ---
                 self.asv_handler.process_command(
                     "VISION_TARGET_UPDATE",
                     payload_obs,

@@ -57,7 +57,7 @@ class SettingsPanel(QGroupBox):
         
         # --- Motor Depan Kiri ---
         left_front_layout = QHBoxLayout()
-        self.lbl_front_left = QLabel("PWM Depan Kiri: 1650")
+        self.lbl_front_left = QLabel("PWM Depan Kiri: 1500")
         self.slider_front_left = QSlider(Qt.Horizontal)
         self.slider_front_left.setRange(1000, 1900)
         self.slider_front_left.setValue(1500)
@@ -66,7 +66,7 @@ class SettingsPanel(QGroupBox):
         
         # --- Motor Depan Kanan ---
         right_front_layout = QHBoxLayout()
-        self.lbl_front_right = QLabel("PWM Depan Kanan: 1650")
+        self.lbl_front_right = QLabel("PWM Depan Kanan: 1500")
         self.slider_front_right = QSlider(Qt.Horizontal)
         self.slider_front_right.setRange(1000, 1900)
         self.slider_front_right.setValue(1500)

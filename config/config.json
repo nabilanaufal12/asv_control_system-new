@@ -42,11 +42,11 @@
   "camera_detection": {
     "focal_length_pixels": 600,
     "object_real_widths_cm": {
-      "red_buoy": 20.0,
-      "green_buoy": 20.0,
-      "buoy_gate": 200.0,
-      "green_box": 30.0,
-      "blue_box": 30.0
+      "bola-merah": 20.0,
+      "bola-hijau": 20.0,
+      "bola-biru": 20.0,
+      "kotak-hijau": 25.0,
+      "kotak-biru": 25.0
     }
   },
   "dwa_params": {
@@ -72,10 +72,11 @@
     "camera_index_1": 0,
     "camera_index_2": 2,
     "known_classes": [
-      "red_buoy",
-      "green_buoy",
-      "green_box",
-      "blue_box"
+      "bola-merah",
+      "bola-hijau",
+      "bola-biru",
+      "kotak-hijau",
+      "kotak-biru"
     ],
     "poi_confidence_threshold": 0.65,
     "poi_validation_frames": 5,
