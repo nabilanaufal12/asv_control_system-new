@@ -23,6 +23,53 @@ from navantara_backend.vision.overlay_utils import (
     apply_overlay,
 )
 
+# ==============================================================
+# PASTE FUNGSI DARI CLAUDE DI SINI
+def refine_blue_class(roi_frame, current_cls_id):
+    # Proteksi: Jika box terlalu kecil (misal objek sangat jauh), percayai saja YOLO
+    if roi_frame.shape[0] < 15 or roi_frame.shape[1] < 15:
+        return current_cls_id
+        
+    # 1. Konversi ke HSV
+    hsv = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2HSV)
+    
+    # 2. HSV Masking Khusus Warna Biru
+    lower_blue = np.array([90, 50, 40]) 
+    upper_blue = np.array([130, 255, 255])
+    mask = cv2.inRange(hsv, lower_blue, upper_blue)
+    
+    # 3. Morfologi Ringan (Optimasi untuk Jetson)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    
+    # 4. Cari Kontur
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if not contours:
+        return current_cls_id  
+        
+    largest_contour = max(contours, key=cv2.contourArea)
+    area = cv2.contourArea(largest_contour)
+    
+    if area < 50:
+        return current_cls_id
+        
+    # 5. EVALUASI BENTUK (SHAPE ANALYSIS)
+    perimeter = cv2.arcLength(largest_contour, True)
+    epsilon = 0.04 * perimeter 
+    approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+    vertices = len(approx)
+    
+    rect = cv2.minAreaRect(largest_contour)
+    box_area = rect[1][0] * rect[1][1]
+    extent = area / box_area if box_area > 0 else 0
+    
+    if vertices <= 6 and extent > 0.82:
+        return 1  # 1 = 'Blue_Box'
+    else:
+        return 0  # 0 = 'Blue_Ball'
+# ==============================================================
 
 class ThreadedCamera:
     def __init__(self, src=0):
@@ -111,11 +158,13 @@ class VisionService:
         self.running = False
 
         # --- [CRITICAL: LABEL MAPPING] ---
-        # Menjembatani perbedaan label Model Baru vs Logika Lama
+        # Menjembatani perbedaan label Model Baru vs Logika asv_handler
         self.LABEL_MAP = {
-            "Green_Ball": "green_buoy",
-            "Red_Ball": "red_buoy",
-            "Gate": "gate_buoy",
+            "Blue_Ball": "bola-biru",
+            "Blue_Box": "kotak-biru",
+            "Green_Ball": "bola-hijau",
+            "Green_Box": "kotak-hijau",
+            "Red_Ball": "bola-merah",
         }
         # ---------------------------------
 
@@ -702,96 +751,24 @@ class VisionService:
                     y2 = int(coords_small[3] * scale_y)
 
                     cls_id = int(box.cls[0].cpu().numpy())
-                    raw_cls_name = result.names[cls_id]
                     conf = float(box.conf[0].cpu().numpy())
 
-                    # --- [KOREKSI BENTUK: Circularity + Radial CoV via HSV Mask] ---
-                    # Menggunakan color segmentation (bukan edge detection) agar robust
-                    # terhadap glare, riak air, dan pantulan cahaya pada plastik.
-                    x1_roi, y1_roi = max(0, x1), max(0, y1)
-                    x2_roi, y2_roi = min(orig_w, x2), min(orig_h, y2)
+                    # --- [PANGGIL FUNGSI KOREKSI DI SINI] ---
+                    # Jika YOLO menebak kelas 0 (Blue_Ball) atau 1 (Blue_Box)
+                    if cls_id == 0 or cls_id == 1:
+                        # Pastikan koordinat crop tidak melenceng keluar dari batas frame asli
+                        x1_roi, y1_roi = max(0, x1), max(0, y1)
+                        x2_roi, y2_roi = min(orig_w, x2), min(orig_h, y2)
+                        
+                        # Potong frame menjadi ROI (Region of Interest)
+                        if (x2_roi > x1_roi) and (y2_roi > y1_roi):
+                            roi = frame[y1_roi:y2_roi, x1_roi:x2_roi]
+                            # Timpa cls_id lama dengan hasil koreksi bentuk/HSV
+                            cls_id = refine_blue_class(roi, cls_id)
+                    # ----------------------------------------
 
-                    shape_circularity = -1.0  # -1 = tidak bisa dihitung
-                    shape_radial_cov = -1.0
-                    shape_verdict = ""  # "BOLA" / "KOTAK" / "" (trust YOLO)
-
-                    needs_shape_check = raw_cls_name in [
-                        "bola-biru", "kotak-biru", "bola-hijau", "kotak-hijau"
-                    ]
-
-                    if needs_shape_check and (x2_roi - x1_roi) > 15 and (y2_roi - y1_roi) > 15:
-                        roi = frame[y1_roi:y2_roi, x1_roi:x2_roi]
-                        hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-
-                        # HSV mask berdasarkan warna buoy
-                        if "biru" in raw_cls_name:
-                            # Biru: H=90-130, S=50+, V=50+
-                            mask = cv2.inRange(hsv_roi, (90, 50, 50), (130, 255, 255))
-                        else:
-                            # Hijau: H=35-85, S=50+, V=50+
-                            mask = cv2.inRange(hsv_roi, (35, 50, 50), (85, 255, 255))
-
-                        # Morphological cleanup: close (tutup lubang) → open (hapus noise)
-                        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-                        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-                        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
-
-                        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-                        if contours:
-                            largest = max(contours, key=cv2.contourArea)
-                            area = cv2.contourArea(largest)
-                            perimeter = cv2.arcLength(largest, True)
-                            roi_area = (x2_roi - x1_roi) * (y2_roi - y1_roi)
-
-                            # Hanya proses jika kontur cukup besar (>10% ROI)
-                            if area > roi_area * 0.10 and perimeter > 0:
-                                # --- Metrik 1: Circularity ---
-                                # Lingkaran=1.0, Persegi=0.785
-                                shape_circularity = (4.0 * 3.14159 * area) / (perimeter * perimeter)
-
-                                # --- Metrik 2: Radial Distance CoV ---
-                                # Lingkaran: CoV rendah (jarak seragam)
-                                # Persegi: CoV tinggi (sudut lebih jauh)
-                                M = cv2.moments(largest)
-                                if M["m00"] > 0:
-                                    cx = M["m10"] / M["m00"]
-                                    cy = M["m01"] / M["m00"]
-                                    distances = []
-                                    # Sample setiap N titik untuk kecepatan
-                                    step = max(1, len(largest) // 60)
-                                    for i in range(0, len(largest), step):
-                                        pt = largest[i][0]
-                                        d = ((pt[0] - cx) ** 2 + (pt[1] - cy) ** 2) ** 0.5
-                                        distances.append(d)
-
-                                    if len(distances) > 5:
-                                        mean_d = sum(distances) / len(distances)
-                                        if mean_d > 0:
-                                            variance = sum((d - mean_d) ** 2 for d in distances) / len(distances)
-                                            shape_radial_cov = (variance ** 0.5) / mean_d
-
-                                # --- Voting: kedua metrik harus setuju ---
-                                circ_says_circle = shape_circularity > 0.85
-                                circ_says_square = shape_circularity < 0.82
-                                cov_says_circle = 0 <= shape_radial_cov < 0.12
-                                cov_says_square = shape_radial_cov > 0.14
-
-                                if circ_says_circle and cov_says_circle:
-                                    shape_verdict = "BOLA"
-                                elif circ_says_square and cov_says_square:
-                                    shape_verdict = "KOTAK"
-                                # else: ambiguous → trust YOLO
-
-                                # Override kelas YOLO hanya jika voting setuju
-                                if shape_verdict:
-                                    warna = "biru" if "biru" in raw_cls_name else "hijau"
-                                    if shape_verdict == "BOLA":
-                                        raw_cls_name = f"bola-{warna}"
-                                    else:
-                                        raw_cls_name = f"kotak-{warna}"
-                    # --- [END KOREKSI BENTUK] ---
-
+                    # Tarik nama kelas SETELAH proses koreksi selesai
+                    raw_cls_name = result.names[cls_id]
                     final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
 
                     center_x = int((x1 + x2) / 2)
@@ -804,11 +781,9 @@ class VisionService:
                             "class": final_cls_name,
                             "confidence": conf,
                             "original_class": raw_cls_name,
-                            "shape_circularity": round(shape_circularity, 3),
-                            "shape_radial_cov": round(shape_radial_cov, 3),
-                            "shape_verdict": shape_verdict,
                         }
                     )
+            # =========================================================
 
             # 3. CONTROL LOGIC (PRIORITAS UTAMA)
             # Eksekusi keputusan navigasi SEKARANG JUGA sebelum CPU sibuk menggambar.
@@ -846,11 +821,11 @@ class VisionService:
                 cov = det.get("shape_radial_cov", -1)
                 verdict = det.get("shape_verdict", "")
 
-                color = (0, 255, 0)
+                color = (0, 255, 0) # Default Hijau
                 if "merah" in cls_name:
-                    color = (0, 0, 255)
+                    color = (0, 0, 255) # Merah (BGR)
                 elif "biru" in cls_name:
-                    color = (255, 0, 0)
+                    color = (255, 0, 0) # Biru (BGR)
 
                 cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
 
