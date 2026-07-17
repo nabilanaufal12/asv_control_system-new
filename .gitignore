@@ -48,6 +48,10 @@ navigation_simulation.py
 
 # Model Weights
 # Mengabaikan semua file bobot model...
+*.engine
+*.engine.bak_640
+*.engine.bak_1280
+*.onnx
 *.pt
 *.weights
 !besto.pt
