@@ -193,7 +193,7 @@ class VisionService:
             # Path relatif ke folder src/navantara_backend/vision/
             vision_dir = Path(__file__).parent.parent / "vision"
 
-            engine_path = vision_dir / "asv_final_v11.engine"
+            engine_path = vision_dir / "best.engine"
             pt_path = vision_dir / "best.pt"
 
             model_path = None
@@ -703,8 +703,96 @@ class VisionService:
 
                     cls_id = int(box.cls[0].cpu().numpy())
                     raw_cls_name = result.names[cls_id]
-                    final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
                     conf = float(box.conf[0].cpu().numpy())
+
+                    # --- [KOREKSI BENTUK: Circularity + Radial CoV via HSV Mask] ---
+                    # Menggunakan color segmentation (bukan edge detection) agar robust
+                    # terhadap glare, riak air, dan pantulan cahaya pada plastik.
+                    x1_roi, y1_roi = max(0, x1), max(0, y1)
+                    x2_roi, y2_roi = min(orig_w, x2), min(orig_h, y2)
+
+                    shape_circularity = -1.0  # -1 = tidak bisa dihitung
+                    shape_radial_cov = -1.0
+                    shape_verdict = ""  # "BOLA" / "KOTAK" / "" (trust YOLO)
+
+                    needs_shape_check = raw_cls_name in [
+                        "bola-biru", "kotak-biru", "bola-hijau", "kotak-hijau"
+                    ]
+
+                    if needs_shape_check and (x2_roi - x1_roi) > 15 and (y2_roi - y1_roi) > 15:
+                        roi = frame[y1_roi:y2_roi, x1_roi:x2_roi]
+                        hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+                        # HSV mask berdasarkan warna buoy
+                        if "biru" in raw_cls_name:
+                            # Biru: H=90-130, S=50+, V=50+
+                            mask = cv2.inRange(hsv_roi, (90, 50, 50), (130, 255, 255))
+                        else:
+                            # Hijau: H=35-85, S=50+, V=50+
+                            mask = cv2.inRange(hsv_roi, (35, 50, 50), (85, 255, 255))
+
+                        # Morphological cleanup: close (tutup lubang) → open (hapus noise)
+                        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+                        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+
+                        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                        if contours:
+                            largest = max(contours, key=cv2.contourArea)
+                            area = cv2.contourArea(largest)
+                            perimeter = cv2.arcLength(largest, True)
+                            roi_area = (x2_roi - x1_roi) * (y2_roi - y1_roi)
+
+                            # Hanya proses jika kontur cukup besar (>10% ROI)
+                            if area > roi_area * 0.10 and perimeter > 0:
+                                # --- Metrik 1: Circularity ---
+                                # Lingkaran=1.0, Persegi=0.785
+                                shape_circularity = (4.0 * 3.14159 * area) / (perimeter * perimeter)
+
+                                # --- Metrik 2: Radial Distance CoV ---
+                                # Lingkaran: CoV rendah (jarak seragam)
+                                # Persegi: CoV tinggi (sudut lebih jauh)
+                                M = cv2.moments(largest)
+                                if M["m00"] > 0:
+                                    cx = M["m10"] / M["m00"]
+                                    cy = M["m01"] / M["m00"]
+                                    distances = []
+                                    # Sample setiap N titik untuk kecepatan
+                                    step = max(1, len(largest) // 60)
+                                    for i in range(0, len(largest), step):
+                                        pt = largest[i][0]
+                                        d = ((pt[0] - cx) ** 2 + (pt[1] - cy) ** 2) ** 0.5
+                                        distances.append(d)
+
+                                    if len(distances) > 5:
+                                        mean_d = sum(distances) / len(distances)
+                                        if mean_d > 0:
+                                            variance = sum((d - mean_d) ** 2 for d in distances) / len(distances)
+                                            shape_radial_cov = (variance ** 0.5) / mean_d
+
+                                # --- Voting: kedua metrik harus setuju ---
+                                circ_says_circle = shape_circularity > 0.85
+                                circ_says_square = shape_circularity < 0.82
+                                cov_says_circle = 0 <= shape_radial_cov < 0.12
+                                cov_says_square = shape_radial_cov > 0.14
+
+                                if circ_says_circle and cov_says_circle:
+                                    shape_verdict = "BOLA"
+                                elif circ_says_square and cov_says_square:
+                                    shape_verdict = "KOTAK"
+                                # else: ambiguous → trust YOLO
+
+                                # Override kelas YOLO hanya jika voting setuju
+                                if shape_verdict:
+                                    warna = "biru" if "biru" in raw_cls_name else "hijau"
+                                    if shape_verdict == "BOLA":
+                                        raw_cls_name = f"bola-{warna}"
+                                    else:
+                                        raw_cls_name = f"kotak-{warna}"
+                    # --- [END KOREKSI BENTUK] ---
+
+                    final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
 
                     center_x = int((x1 + x2) / 2)
                     center_y = int((y1 + y2) / 2)
@@ -716,6 +804,9 @@ class VisionService:
                             "class": final_cls_name,
                             "confidence": conf,
                             "original_class": raw_cls_name,
+                            "shape_circularity": round(shape_circularity, 3),
+                            "shape_radial_cov": round(shape_radial_cov, 3),
+                            "shape_verdict": shape_verdict,
                         }
                     )
 
@@ -751,23 +842,42 @@ class VisionService:
                 x1, y1, x2, y2 = det["xyxy"]
                 cls_name = det["class"]
                 conf = det["confidence"]
+                circ = det.get("shape_circularity", -1)
+                cov = det.get("shape_radial_cov", -1)
+                verdict = det.get("shape_verdict", "")
 
                 color = (0, 255, 0)
-                if "red" in cls_name:
+                if "merah" in cls_name:
                     color = (0, 0, 255)
-                elif "gate" in cls_name:
-                    color = (0, 255, 255)
+                elif "biru" in cls_name:
+                    color = (255, 0, 0)
 
                 cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+
+                # Label utama: class + confidence
+                label = f"{cls_name} {conf:.2f}"
+                if verdict:
+                    label += f" [{verdict}]"
                 cv2.putText(
                     annotated_frame,
-                    f"{cls_name} {conf:.2f}",
+                    label,
                     (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
                     color,
                     2,
                 )
+                # Debug metric (baris kedua, lebih kecil)
+                if circ >= 0:
+                    cv2.putText(
+                        annotated_frame,
+                        f"C:{circ:.2f} R:{cov:.2f}",
+                        (x1, y2 + 15),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.4,
+                        (255, 255, 255),
+                        1,
+                    )
 
             # Draw distance info (Visual Only)
             annotated_frame = self._draw_distance_info(
