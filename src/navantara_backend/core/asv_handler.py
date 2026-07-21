@@ -523,31 +523,36 @@ class AsvHandler:
                                 turn_direction = "STRAIGHT"
                                 desc = f"{obj_class} -> Target Docking (Lurus)"
 
-                        # 2. SET SERVO SELALU LURUS (Misal 90 derajat)
-                        servo_cmd = servo_default 
-                        pwm_cmd = current_ai_pwm
+                        # 2. LOGIKA KEMUDI (SERVO BELAKANG & MOTOR DEPAN)
+                        # Ambil tenaga motor belakang dari GUI
+                        pwm_cmd = current_ai_pwm 
 
-                        # 3. LOGIKA MOTOR DEPAN SAJA
-                        # (Gunakan 1000 jika ESC motor depan Anda mati di 1000)
                         motor_depan_kiri = 1000  
                         motor_depan_kanan = 1000
                         
-                        # Ambil tenaga dari slider GUI masing-masing
+                        # Ambil nilai servo dan motor depan dari GUI secara realtime
                         with self.state_lock:
                             pwm_depan_kiri_aktif = self.current_state.vision_front_motor_left_cmd
                             pwm_depan_kanan_aktif = self.current_state.vision_front_motor_right_cmd
+                            servo_kiri_aktif = self.current_state.vision_servo_left_cmd
+                            servo_kanan_aktif = self.current_state.vision_servo_right_cmd
 
                         if turn_direction == "LEFT":
-                            # Belok kiri -> Motor kanan depan nyala, kiri depan mati
-                            # [PERBAIKAN]: Gunakan variabel dari GUI (pwm_depan_kanan_aktif)
+                            # Belok Kiri: Menggunakan settingan servo kiri dari GUI
+                            servo_cmd = servo_kiri_aktif
                             motor_depan_kanan = pwm_depan_kanan_aktif 
-                            desc += f" | Assist: KANAN Nyala ({pwm_depan_kanan_aktif})"
+                            desc += f" | Belok KIRI (Servo: {servo_kiri_aktif}, M.Kanan: {pwm_depan_kanan_aktif})"
                             
                         elif turn_direction == "RIGHT":
-                            # Belok kanan -> Motor kiri depan nyala, kanan depan mati
-                            # [PERBAIKAN]: Gunakan variabel dari GUI (pwm_depan_kiri_aktif)
+                            # Belok Kanan: Menggunakan settingan servo kanan dari GUI
+                            servo_cmd = servo_kanan_aktif
                             motor_depan_kiri = pwm_depan_kiri_aktif
-                            desc += f" | Assist: KIRI Nyala ({pwm_depan_kiri_aktif})"
+                            desc += f" | Belok KANAN (Servo: {servo_kanan_aktif}, M.Kiri: {pwm_depan_kiri_aktif})"
+                            
+                        else:
+                            # Lurus: Servo Netral
+                            servo_cmd = servo_default
+                            desc += f" | LURUS (Servo: {servo_default})"
 
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
                         if nav_dist_to_wp < 1.5:
