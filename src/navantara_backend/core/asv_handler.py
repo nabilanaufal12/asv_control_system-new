@@ -12,7 +12,6 @@ from navantara_backend.services.serial_service import SerialHandler
 from navantara_backend.core.navigation import PIDController
 from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
-from navantara_backend.vision.cloud_utils import send_telemetry_to_firebase
 
 # --- [OPTIMASI KEY MINIFICATION: MAPPING DICTIONARY] ---
 # Format: "Nama Atribut Class AsvState" -> "Kode Pendek JSON"
@@ -618,9 +617,8 @@ class AsvHandler:
                 # Panggil satu baris ini saja. Logger akan otomatis format ke Day/Date/GPS/dll.
                 self.logger.log_telemetry(state_for_log)
 
-                # Update SocketIO (GUI) & Firebase
+                # Update SocketIO (GUI)
                 self._update_and_emit_state()
-                send_telemetry_to_firebase(state_for_log, self.config)
                 # ----------------------------------------
 
             except Exception as e:
