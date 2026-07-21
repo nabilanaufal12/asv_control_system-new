@@ -268,7 +268,13 @@ async function fetchCsvLogList() {
   if (!listContainer) return;
 
   try {
-    const response = await fetch(`${SERVER_IP}/api/logfiles/csv`);
+    const raceSelector = document.getElementById("raceSelector");
+    let url = `${SERVER_IP}/api/logfiles/csv`;
+    if (raceSelector && raceSelector.value) {
+      url += `?race_id=${raceSelector.value}`;
+    }
+
+    const response = await fetch(url);
     if (!response.ok) throw new Error('Gagal mengambil data log');
 
     const files = await response.json();
@@ -283,7 +289,8 @@ async function fetchCsvLogList() {
         const listItem = document.createElement('li');
         listItem.className = 'csv-item';
 
-        const downloadUrl = `${SERVER_IP}/download/log/csv/${filename}`;
+        const raceId = raceSelector ? raceSelector.value : "";
+        const downloadUrl = `${SERVER_IP}/download/log/csv/${raceId}/${filename}`;
 
         // Render item
         listItem.innerHTML = `

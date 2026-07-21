@@ -894,6 +894,7 @@ class AsvHandler:
 
             if current_mode == "MANUAL" and new_mode == "AUTO":
                 self.current_state.current_race_id += 1
+                self.logger.start_new_race_log(self.current_state.current_race_id)
 
             self.current_state.control_mode = new_mode
             self.logger.log_event(f"Mode kontrol GUI diubah ke: {new_mode}")

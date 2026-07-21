@@ -177,14 +177,28 @@ def create_app():
     @app.route("/api/logfiles/csv", methods=["GET"])
     def list_csv_logs():
         """
-        Mengembalikan daftar file CSV dari folder logs/telemetry_csv.
+        Mengembalikan daftar file CSV dari folder logs/captures/race_{race_id}
+        atau race_X terbaru.
         """
         try:
-            if not os.path.exists(csv_log_dir):
+            race_id = request.args.get('race_id')
+            base_dir = os.path.join(os.getcwd(), "logs", "captures")
+            
+            if race_id:
+                target_dir = os.path.join(base_dir, f"race_{race_id}")
+            else:
+                target_dir = None
+                if os.path.exists(base_dir):
+                    races = [d for d in os.listdir(base_dir) if d.startswith("race_")]
+                    if races:
+                        races.sort(key=lambda x: int(x.split('_')[1]))
+                        target_dir = os.path.join(base_dir, races[-1])
+            
+            if not target_dir or not os.path.exists(target_dir):
                 return jsonify([])
 
             # Ambil semua file .csv
-            files = [f for f in os.listdir(csv_log_dir) if f.endswith(".csv")]
+            files = [f for f in os.listdir(target_dir) if f.endswith(".csv")]
             # Urutkan desc (terbaru diatas, asumsi penamaan timestamp)
             files.sort(reverse=True)
 
@@ -193,13 +207,14 @@ def create_app():
             print(f"[API Log] Error listing CSV: {e}")
             return jsonify({"error": str(e)}), 500
 
-    @app.route("/download/log/csv/<path:filename>", methods=["GET"])
-    def download_csv_log(filename):
+    @app.route("/download/log/csv/<race_id>/<path:filename>", methods=["GET"])
+    def download_csv_log(race_id, filename):
         """
         Download file CSV log sebagai attachment.
         """
         try:
-            return send_from_directory(csv_log_dir, filename, as_attachment=True)
+            target_dir = os.path.join(os.getcwd(), "logs", "captures", f"race_{race_id}")
+            return send_from_directory(target_dir, filename, as_attachment=True)
         except Exception:
             return jsonify({"error": "File not found"}), 404
 

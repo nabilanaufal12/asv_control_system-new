@@ -6,7 +6,7 @@ from datetime import datetime
 
 
 class MissionLogger:
-    def __init__(self, log_dir="mission_logs"):
+    def __init__(self, log_dir="logs/captures/race_1"):
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
@@ -73,6 +73,28 @@ class MissionLogger:
                     f.write(f"[{timestamp}] {message}\n")
             except Exception as e:
                 print(f"[Logger] Gagal menulis log event: {e}")
+
+    def start_new_race_log(self, race_id):
+        with self._lock:
+            if self.telemetry_file:
+                self.telemetry_file.close()
+
+            log_dir = f"logs/captures/race_{race_id}"
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.telemetry_log_path = os.path.join(log_dir, f"mission_data_{timestamp}.csv")
+            self.event_log_path = os.path.join(log_dir, f"events_{timestamp}.log")
+            
+            self.telemetry_file = open(
+                self.telemetry_log_path, "w", newline="", buffering=1
+            )
+            self.telemetry_writer = csv.DictWriter(
+                self.telemetry_file, fieldnames=self.fieldnames
+            )
+            self.telemetry_writer.writeheader()
+            print(f"[Logger] Started new CSV log for race_{race_id} at {self.telemetry_log_path}")
 
     def stop(self):
         with self._lock:

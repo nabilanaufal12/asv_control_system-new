@@ -219,79 +219,69 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      const backgroundCtx = document
-        .getElementById("background-canvas")
-        ?.getContext("2d");
+      const backgroundCtx = document.getElementById("background-canvas")?.getContext("2d");
       const gridCtx = document.getElementById("grid-canvas")?.getContext("2d");
       const lineCtx = document.getElementById("line-canvas")?.getContext("2d");
-      const pointCtx = document
-        .getElementById("point-canvas")
-        ?.getContext("2d");
+      const pointCtx = document.getElementById("point-canvas")?.getContext("2d");
       const arenaABtn = document.getElementById("arena-a-btn");
       const arenaBBtn = document.getElementById("arena-b-btn");
       const arenaDisplay = document.getElementById("arena-display");
 
-      // Periksa apakah canvas ada sebelum melanjutkan
-      if (
-        !backgroundCtx ||
-        !gridCtx ||
-        !lineCtx ||
-        !pointCtx ||
-        !arenaDisplay
-      ) {
-        console.warn(
-          "Salah satu elemen canvas atau arenaDisplay tidak ditemukan."
-        );
+      if (!backgroundCtx || !gridCtx || !lineCtx || !pointCtx || !arenaDisplay) {
+        console.warn("Salah satu elemen canvas atau arenaDisplay tidak ditemukan.");
         return;
       }
 
       const pointsData = {
         A: [
-          { x: 680, y: 448 },
-          { x: 632, y: 251 },
-          { x: 692, y: 90 },
-          { x: 400, y: 90 },
-          { x: 177, y: 92 },
-          { x: 140, y: 256 },
-          { x: 167, y: 431 },
-          { x: 312, y: 407 },
-          { x: 628, y: 450 },
+          { x: 680, y: 400 },
+          { x: 640, y: 251 },
+          { x: 692, y: 85 },
+          { x: 400, y: 85 },
+          { x: 140, y: 85 },
+          { x: 135, y: 250 },
+          { x: 100, y: 450 },
+          { x: 312, y: 415 },
+          { x: 620, y: 460 },
         ],
         B: [
-          { x: 115, y: 449 },
+          { x: 120, y: 400 },
           { x: 165, y: 252 },
-          { x: 120, y: 94 },
-          { x: 408, y: 91 },
-          { x: 650, y: 86 },
+          { x: 120, y: 85 },
+          { x: 408, y: 85 },
+          { x: 680, y: 85 },
           { x: 659, y: 251 },
-          { x: 617, y: 425 },
+          { x: 680, y: 448 },
           { x: 480, y: 409 },
-          { x: 156, y: 451 },
+          { x: 180, y: 460 },
         ],
       };
+
       function ptRole(index, total) {
         if (index === 0) return 'start';
-        if (index === total - 1) return 'finish';
-        if (index === total - 3) return 'imaging_surface';
-        if (index === total - 2) return 'imaging_underwater';
         return 'waypoint';
       }
+
       let currentArena = null;
       let predefinedPoints = [];
-      let points = [];
+      let targetPointIndex = 0;
+
+      let boat = {
+        x: 0,
+        y: 0,
+        targetX: 0,
+        targetY: 0,
+        isMoving: false,
+        progress: 0
+      };
 
       function switchArena(arena) {
-        // 🚩 PERBAIKAN: Izinkan switch meskipun pointsData[arena] tidak ada (misal: 'Unknown')
         if (currentArena === arena) return;
-
         currentArena = arena;
-
-        // Gunakan data jika ada, jika tidak, array kosong
         predefinedPoints = pointsData[arena] || [];
-
         arenaDisplay.textContent = arena;
+
         if (arenaABtn && arenaBBtn) {
-          // Cek tombol arena
           if (arena === "A") {
             arenaABtn.classList.add("active");
             arenaBBtn.classList.remove("active");
@@ -300,39 +290,33 @@
             arenaABtn.classList.remove("active");
           }
         }
-        initialize(); // Pastikan initialize selalu dipanggil
+
+        initialize();
       }
 
-      window.addEventListener("switchArena", (event) =>
-        switchArena(event.detail.arena)
-      );
-
-      function drawUpToPoint(pointNumber) {
-        const maxPoints = predefinedPoints.length;
-        const targetPoint = Math.max(0, Math.min(pointNumber, maxPoints));
-        points = [];
-        for (let i = 0; i < targetPoint; i++) {
-          points.push(predefinedPoints[i]);
-        }
-        drawAll();
-      }
+      window.addEventListener("switchArena", (event) => switchArena(event.detail.arena));
 
       window.addEventListener("setTrajectoryPoint", function (event) {
         const pointIndex = parseInt(event.detail.point, 10);
-
-        // 🚩 LOG PENERIMAAN EVENT DARI JS/MAIN.JS
         console.log("[Canvas Script] Event 'setTrajectoryPoint' diterima. Titik target:", pointIndex);
-
-        if (!isNaN(pointIndex)) {
-          drawUpToPoint(pointIndex);
+        if (!isNaN(pointIndex) && predefinedPoints.length > 0) {
+          targetPointIndex = Math.max(0, Math.min(pointIndex, predefinedPoints.length - 1));
+          boat.targetX = predefinedPoints[targetPointIndex].x;
+          boat.targetY = predefinedPoints[targetPointIndex].y;
+          boat.isMoving = true;
         }
       });
 
       function initialize() {
         drawBackground();
         drawGrid();
-        // PERBAIKAN: Set awal ke 0 titik, menunggu perintah dari telemetri
-        drawUpToPoint(0);
+        targetPointIndex = 0;
+        if (predefinedPoints.length > 0) {
+          boat.x = predefinedPoints[0].x;
+          boat.y = predefinedPoints[0].y;
+          boat.targetX = predefinedPoints[0].x;
+          boat.targetY = predefinedPoints[0].y;
+        }
       }
 
       function drawBackground() {
@@ -340,16 +324,13 @@
         const img = new Image();
         img.onload = () => backgroundCtx.drawImage(img, 0, 0, 800, 500);
         img.onerror = () => {
-          // Tactical dark fallback background
           backgroundCtx.fillStyle = '#07111f';
           backgroundCtx.fillRect(0, 0, 800, 500);
-          // Subtle water-texture gradient
           const grad = backgroundCtx.createLinearGradient(0, 0, 0, 500);
           grad.addColorStop(0, 'rgba(0,60,90,0.6)');
           grad.addColorStop(1, 'rgba(0,20,40,0.8)');
           backgroundCtx.fillStyle = grad;
           backgroundCtx.fillRect(0, 0, 800, 500);
-          // Center label
           backgroundCtx.font = 'bold 20px Rajdhani, Inter, sans-serif';
           backgroundCtx.fillStyle = 'rgba(0,180,216,0.2)';
           backgroundCtx.textAlign = 'center';
@@ -360,7 +341,6 @@
 
       function drawGrid() {
         gridCtx.clearRect(0, 0, 800, 500);
-        // Minor grid lines — subtle dark-teal
         gridCtx.strokeStyle = 'rgba(0,180,216,0.08)';
         gridCtx.lineWidth = 1;
         for (let x = 50; x < 800; x += 50) {
@@ -369,7 +349,6 @@
         for (let y = 50; y < 500; y += 50) {
           gridCtx.beginPath(); gridCtx.moveTo(0, y); gridCtx.lineTo(800, y); gridCtx.stroke();
         }
-        // Outer border
         gridCtx.strokeStyle = 'rgba(0,180,216,0.4)';
         gridCtx.lineWidth = 2;
         gridCtx.strokeRect(1, 1, 798, 498);
@@ -382,7 +361,6 @@
         pointCtx.textAlign = 'center';
 
         if (role === 'start') {
-          // ── START: solid green pentagon-ish circle with "S" ──
           pointCtx.shadowColor = '#00e676';
           pointCtx.shadowBlur = 12;
           pointCtx.fillStyle = '#00e676';
@@ -394,64 +372,7 @@
           pointCtx.fillStyle = '#003300';
           pointCtx.font = 'bold 11px Rajdhani, sans-serif';
           pointCtx.fillText('S', x, y + 4);
-
-        } else if (role === 'finish') {
-          // ── FINISH / DOCK: blue rounded square + 3 small circles ──
-          pointCtx.shadowColor = '#2979ff';
-          pointCtx.shadowBlur = 14;
-          pointCtx.fillStyle = '#1565c0';
-          pointCtx.strokeStyle = '#82b1ff';
-          pointCtx.lineWidth = 2;
-          pointCtx.beginPath();
-          const hw = 10;
-          pointCtx.roundRect(x - hw, y - hw, hw * 2, hw * 2, 3);
-          pointCtx.fill(); pointCtx.stroke();
-          // 3 small blue balls
-          pointCtx.shadowBlur = 0;
-          [-8, 0, 8].forEach(ox => {
-            pointCtx.fillStyle = '#64b5f6';
-            pointCtx.strokeStyle = '#ffffff';
-            pointCtx.lineWidth = 1;
-            pointCtx.beginPath();
-            pointCtx.arc(x + ox, y + 20, 4, 0, Math.PI * 2);
-            pointCtx.fill(); pointCtx.stroke();
-          });
-          pointCtx.fillStyle = '#ffffff';
-          pointCtx.font = 'bold 9px Rajdhani, sans-serif';
-          pointCtx.fillText('DOCK', x, y + 4);
-
-        } else if (role === 'imaging_surface') {
-          // ── SURFACE IMAGING: green square box ──
-          pointCtx.shadowColor = '#00e676';
-          pointCtx.shadowBlur = 10;
-          pointCtx.fillStyle = 'rgba(0,200,100,0.85)';
-          pointCtx.strokeStyle = '#00e676';
-          pointCtx.lineWidth = 2;
-          pointCtx.beginPath();
-          pointCtx.rect(x - 10, y - 10, 20, 20);
-          pointCtx.fill(); pointCtx.stroke();
-          pointCtx.shadowBlur = 0;
-          pointCtx.fillStyle = '#ffffff';
-          pointCtx.font = 'bold 8px Rajdhani, sans-serif';
-          pointCtx.fillText('CAM1', x, y + 20);
-
-        } else if (role === 'imaging_underwater') {
-          // ── UNDERWATER IMAGING: blue square box ──
-          pointCtx.shadowColor = '#40c4ff';
-          pointCtx.shadowBlur = 10;
-          pointCtx.fillStyle = 'rgba(30,100,220,0.85)';
-          pointCtx.strokeStyle = '#40c4ff';
-          pointCtx.lineWidth = 2;
-          pointCtx.beginPath();
-          pointCtx.rect(x - 10, y - 10, 20, 20);
-          pointCtx.fill(); pointCtx.stroke();
-          pointCtx.shadowBlur = 0;
-          pointCtx.fillStyle = '#ffffff';
-          pointCtx.font = 'bold 8px Rajdhani, sans-serif';
-          pointCtx.fillText('CAM2', x, y + 20);
-
         } else {
-          // ── WAYPOINT: cyan circle with white ring ──
           pointCtx.shadowColor = '#00b4d8';
           pointCtx.shadowBlur = 8;
           pointCtx.fillStyle = '#00b4d8';
@@ -465,18 +386,14 @@
           pointCtx.fillText(index + 1, x, y + 4);
         }
 
-        // ── Waypoint number label (above) for all except finish ──
-        if (role !== 'finish' && role !== 'imaging_surface' && role !== 'imaging_underwater') {
-          pointCtx.fillStyle = 'rgba(0,180,216,0.9)';
-          pointCtx.font = 'bold 10px Rajdhani, sans-serif';
-          pointCtx.fillText('WP' + (index + 1), x, y - 16);
-        }
+        pointCtx.fillStyle = 'rgba(0,180,216,0.9)';
+        pointCtx.font = 'bold 10px Rajdhani, sans-serif';
+        pointCtx.fillText('WP' + (index + 1), x, y - 16);
 
         pointCtx.restore();
       }
 
       function drawLine(x1, y1, x2, y2) {
-        // Glow layer — wider, more transparent
         lineCtx.save();
         lineCtx.strokeStyle = 'rgba(0,180,216,0.25)';
         lineCtx.lineWidth = 7;
@@ -485,7 +402,6 @@
         lineCtx.beginPath();
         lineCtx.moveTo(x1, y1); lineCtx.lineTo(x2, y2);
         lineCtx.stroke();
-        // Sharp core line
         lineCtx.strokeStyle = '#00b4d8';
         lineCtx.lineWidth = 2;
         lineCtx.setLineDash([10, 6]);
@@ -496,23 +412,57 @@
         lineCtx.restore();
       }
 
-      function drawAll() {
+      function renderLoop() {
         lineCtx.clearRect(0, 0, 800, 500);
         pointCtx.clearRect(0, 0, 800, 500);
-        for (let i = 0; i < points.length; i++) {
-          drawPoint(points[i].x, points[i].y, i);
+
+        if (predefinedPoints.length === 0) {
+          requestAnimationFrame(renderLoop);
+          return;
+        }
+
+        // Linear Interpolation (Lerp) untuk menggerakkan kapal
+        const lerpFactor = 0.05;
+        boat.x += (boat.targetX - boat.x) * lerpFactor;
+        boat.y += (boat.targetY - boat.y) * lerpFactor;
+
+        // Gambar titik-titik yang sudah dilewati dan titik tujuan saat ini
+        for (let i = 0; i <= targetPointIndex && i < predefinedPoints.length; i++) {
+          drawPoint(predefinedPoints[i].x, predefinedPoints[i].y, i);
+        }
+
+        // Gambar garis statis (dari start hingga titik sebelumnya)
+        for (let i = 0; i < targetPointIndex; i++) {
           if (i > 0) {
-            drawLine(
-              points[i - 1].x,
-              points[i - 1].y,
-              points[i].x,
-              points[i].y
-            );
+            drawLine(predefinedPoints[i - 1].x, predefinedPoints[i - 1].y, predefinedPoints[i].x, predefinedPoints[i].y);
           }
         }
+
+        // Gambar garis progresif menuju kapal
+        if (targetPointIndex > 0) {
+          const startPt = predefinedPoints[targetPointIndex - 1];
+          drawLine(startPt.x, startPt.y, boat.x, boat.y);
+        }
+
+        // Gambar Indikator Kapal (Glowing Orange Circle)
+        pointCtx.save();
+        pointCtx.shadowColor = '#ff9800';
+        pointCtx.shadowBlur = 15;
+        pointCtx.fillStyle = '#ffb74d';
+        pointCtx.beginPath();
+        pointCtx.arc(boat.x, boat.y, 8, 0, Math.PI * 2);
+        pointCtx.fill();
+        pointCtx.strokeStyle = '#fff';
+        pointCtx.lineWidth = 2;
+        pointCtx.stroke();
+        pointCtx.restore();
+
+        requestAnimationFrame(renderLoop);
       }
 
-      switchArena("A"); // Mulai dengan Arena A
+      // Mulai loop animasi dan inisialisasi arena awal
+      requestAnimationFrame(renderLoop);
+      switchArena("A");
     });
   </script>
 </body>
