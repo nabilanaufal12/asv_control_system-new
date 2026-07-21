@@ -24,8 +24,6 @@ from navantara_backend.vision.overlay_utils import (
 )
 
 
-
-
 class ThreadedCamera:
     def __init__(self, src=0):
         self.src = src
@@ -94,7 +92,6 @@ class ThreadedCamera:
 
         if self.capture.isOpened():
             self.capture.release()
-
 
 
 class VisionService:
@@ -179,7 +176,8 @@ class VisionService:
 
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get(
-            "camera_detection", {"bola-merah": 20.0, "bola-hijau": 20.0, "bola-biru": 20.0}
+            "camera_detection",
+            {"bola-merah": 20.0, "bola-hijau": 20.0, "bola-biru": 20.0},
         )
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
         self.OBJECT_REAL_WIDTHS_CM = cam_detect_cfg.get("object_real_widths_cm", {})
@@ -300,7 +298,7 @@ class VisionService:
     def _estimate_distance(self, pixel_width, object_class):
         # Coba ambil ukuran dari file config.json terlebih dahulu
         real_width_cm = self.OBJECT_REAL_WIDTHS_CM.get(object_class)
-        
+
         # --- [TAMBAHAN: FALLBACK UKURAN FISIK (DALAM CM)] ---
         # Jika nama Indonesia tidak ada di config, kita atur ukuran default di sini
         if not real_width_cm:
@@ -315,7 +313,7 @@ class VisionService:
         # Proteksi pembagian nol
         if not real_width_cm or pixel_width <= 0:
             return None
-            
+
         # Rumus Pinhole Camera: (Lebar Asli * Focal Length) / Lebar di Layar
         return (real_width_cm * self.FOCAL_LENGTH_PIXELS) / pixel_width
 
@@ -351,7 +349,6 @@ class VisionService:
                         2,
                     )
         return frame
-
 
     def run_capture_loops(self):
         """Memulai greenlet terpisah untuk menangkap frame dari kedua kamera."""
@@ -724,7 +721,7 @@ class VisionService:
                         # Pastikan koordinat crop tidak melenceng keluar dari batas frame asli
                         x1_roi, y1_roi = max(0, x1), max(0, y1)
                         x2_roi, y2_roi = min(orig_w, x2), min(orig_h, y2)
-                        
+
                         # Potong frame menjadi ROI (Region of Interest)
                         if (x2_roi > x1_roi) and (y2_roi > y1_roi):
                             roi = frame[y1_roi:y2_roi, x1_roi:x2_roi]
@@ -756,12 +753,12 @@ class VisionService:
             validated_detections_for_nav = []
             for det in detections:
                 cls_name = det.get("class", "")
-                
+
                 # Hitung jarak jika objek adalah bola atau kotak
                 if "bola" in cls_name or "kotak" in cls_name:
                     pixel_width = det["xyxy"][2] - det["xyxy"][0]
                     det["distance_cm"] = self._estimate_distance(pixel_width, cls_name)
-                    
+
                 validated_detections_for_nav.append(det)
 
             if is_mode_auto:
@@ -784,20 +781,20 @@ class VisionService:
                 cls_name = det["class"]
                 conf = det["confidence"]
                 sudut = det.get("jumlah_sudut", 0)
-                
+
                 # --- [TAMBAHAN] Ambil Nilai Jarak ---
                 jarak = det.get("distance_cm")
                 jarak_teks = f"{jarak:.1f}cm" if jarak is not None else "? cm"
 
                 # Penentuan warna Bounding Box
-                color = (0, 255, 0) # Default: Hijau
+                color = (0, 255, 0)  # Default: Hijau
                 if "merah" in cls_name:
                     color = (0, 0, 255)
-                elif "biru" in cls_name: 
+                elif "biru" in cls_name:
                     color = (255, 0, 0)
 
                 cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
-                
+
                 # --- Teks Bounding Box (Digabung: Nama, Conf, Sudut, Jarak) ---
                 label = f"{cls_name} {conf:.2f} (Sdt:{sudut}) | {jarak_teks}"
                 cv2.putText(
@@ -814,8 +811,6 @@ class VisionService:
             logging.error(f"[Vision] Inference error: {str(e)}")
             logging.error(traceback.format_exc())
             return frame
-
-
 
         # --- [MULAI LOGIKA BARU: MISI FOTO SEGMEN] ---
         # Langsung masuk ke logika segmen tanpa mendefinisikan green_boxes/blue_boxes
@@ -915,16 +910,26 @@ class VisionService:
                 continue
 
             # --- [PERBAIKAN] Kumpulkan semua 5 kelas baru ---
-            if cls in ["bola-merah", "bola-hijau", "kotak-hijau", "kotak-biru", "bola-biru"]:
+            if cls in [
+                "bola-merah",
+                "bola-hijau",
+                "kotak-hijau",
+                "kotak-biru",
+                "bola-biru",
+            ]:
                 valid_buoys.append(det)
 
         if valid_buoys:
             # Cari objek yang paling dekat dengan kapal
             closest_buoy = min(
-                valid_buoys, 
-                key=lambda b: b.get("distance_cm") if b.get("distance_cm") is not None else float("inf")
+                valid_buoys,
+                key=lambda b: (
+                    b.get("distance_cm")
+                    if b.get("distance_cm") is not None
+                    else float("inf")
+                ),
             )
-            
+
             distance_to_closest = closest_buoy.get("distance_cm")
             if distance_to_closest is None:
                 distance_to_closest = float("inf")

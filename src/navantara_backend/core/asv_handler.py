@@ -50,7 +50,6 @@ TELEMETRY_KEY_MAP = {
 # --- [AKHIR OPTIMASI] ---
 
 
-
 @dataclass
 class AsvState:
     control_mode: str = "AUTO"
@@ -260,8 +259,6 @@ class AsvHandler:
         if delta_payload:
             self.socketio.emit("telemetry_update", delta_payload)
 
-
-
     def _read_from_serial_loop(self):
         """
         Loop pembacaan serial yang dioptimalkan untuk latency rendah (Burst Read).
@@ -309,19 +306,13 @@ class AsvHandler:
     def _parse_json_telemetry(self, data):
         """Mem-parsing data telemetri JSON dari ESP32 dan memperbarui state kapal."""
         with self.state_lock:
-            self.current_state.heading = data.get(
-                "heading", self.current_state.heading
-            )
+            self.current_state.heading = data.get("heading", self.current_state.heading)
             self.current_state.speed = data.get("speed_kmh", 0.0) / 3.6
             self.current_state.nav_gps_sats = data.get(
                 "sats", self.current_state.nav_gps_sats
             )
-            self.current_state.latitude = data.get(
-                "lat", self.current_state.latitude
-            )
-            self.current_state.longitude = data.get(
-                "lon", self.current_state.longitude
-            )
+            self.current_state.latitude = data.get("lat", self.current_state.latitude)
+            self.current_state.longitude = data.get("lon", self.current_state.longitude)
             status_val = data.get("status", None)
             self.current_state.esp_status = status_val
 
@@ -449,9 +440,7 @@ class AsvHandler:
 
                 # 1. Normalisasi Status Arena (Fix Bug "ARENA" contains "A")
                 # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
-                raw_arena_val = (
-                    str(active_arena or "").strip().upper()
-                )
+                raw_arena_val = str(active_arena or "").strip().upper()
                 is_arena_b = False
                 # Cek apakah string diakhiri dengan B atau sama dengan B
                 if raw_arena_val == "B" or raw_arena_val.endswith("_B"):
@@ -499,9 +488,7 @@ class AsvHandler:
 
                 elif control_mode == "MANUAL":
                     # Tambahkan 1500, 1500 untuk mematikan motor depan saat mode manual
-                    command_to_send = (
-                        f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)},{self.PWM_NEUTRAL},{self.PWM_NEUTRAL}\n"
-                    )
+                    command_to_send = f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)},{self.PWM_NEUTRAL},{self.PWM_NEUTRAL}\n"
                     logging.info(
                         f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us"
                     )
@@ -518,7 +505,7 @@ class AsvHandler:
                             self.current_state.recovering_from_avoidance = False
                             self.current_state.is_avoiding = True
                             self.current_state.gate_context["last_gate_config"] = None
-                            
+
                             # Ambil kecepatan motor belakang dari GUI
                             current_ai_pwm = self.current_state.vision_auto_motor_cmd
                             # Kita TIDAK butuh nilai servo dari GUI karena akan di-set selalu 90
@@ -527,7 +514,7 @@ class AsvHandler:
                         turn_direction = "STRAIGHT"
                         desc = "Neutral"
 
-                       # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek & Inversi)
+                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek & Inversi)
                         if final_inversion_state:
                             # --- ARENA B (INVERTED) ---
                             if obj_class in ["bola-hijau", "kotak-hijau"]:
@@ -553,30 +540,36 @@ class AsvHandler:
 
                         # 2. LOGIKA KEMUDI (SERVO BELAKANG & MOTOR DEPAN)
                         # Ambil tenaga motor belakang dari GUI
-                        pwm_cmd = current_ai_pwm 
+                        pwm_cmd = current_ai_pwm
 
-                        motor_depan_kiri = self.FRONT_MOTOR_STOP  
+                        motor_depan_kiri = self.FRONT_MOTOR_STOP
                         motor_depan_kanan = self.FRONT_MOTOR_STOP
-                        
+
                         # Ambil nilai servo dan motor depan dari GUI secara realtime
                         with self.state_lock:
-                            pwm_depan_kiri_aktif = self.current_state.vision_front_motor_left_cmd
-                            pwm_depan_kanan_aktif = self.current_state.vision_front_motor_right_cmd
+                            pwm_depan_kiri_aktif = (
+                                self.current_state.vision_front_motor_left_cmd
+                            )
+                            pwm_depan_kanan_aktif = (
+                                self.current_state.vision_front_motor_right_cmd
+                            )
                             servo_kiri_aktif = self.current_state.vision_servo_left_cmd
-                            servo_kanan_aktif = self.current_state.vision_servo_right_cmd
+                            servo_kanan_aktif = (
+                                self.current_state.vision_servo_right_cmd
+                            )
 
                         if turn_direction == "LEFT":
                             # Belok Kiri: Menggunakan settingan servo kiri dari GUI
                             servo_cmd = servo_kiri_aktif
-                            motor_depan_kanan = pwm_depan_kanan_aktif 
+                            motor_depan_kanan = pwm_depan_kanan_aktif
                             desc += f" | Belok KIRI (Servo: {servo_kiri_aktif}, M.Kanan: {pwm_depan_kanan_aktif})"
-                            
+
                         elif turn_direction == "RIGHT":
                             # Belok Kanan: Menggunakan settingan servo kanan dari GUI
                             servo_cmd = servo_kanan_aktif
                             motor_depan_kiri = pwm_depan_kiri_aktif
                             desc += f" | Belok KANAN (Servo: {servo_kanan_aktif}, M.Kiri: {pwm_depan_kiri_aktif})"
-                            
+
                         else:
                             # Lurus: Servo Netral
                             servo_cmd = servo_default
@@ -585,14 +578,20 @@ class AsvHandler:
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
                         if nav_dist_to_wp < self.AI_WP_RELEASE_DISTANCE_M:
                             command_to_send = "W\n"
-                            logging.info(f"[AsvHandler] AI STATIC: Jarak WP < {self.AI_WP_RELEASE_DISTANCE_M}m. Melepas ke Waypoint Nav.")
+                            logging.info(
+                                f"[AsvHandler] AI STATIC: Jarak WP < {self.AI_WP_RELEASE_DISTANCE_M}m. Melepas ke Waypoint Nav."
+                            )
                         elif esp_status == "WP_COMPLETE" or status == "WP_COMPLETE":
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W")
+                            logging.info(
+                                "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W"
+                            )
                         else:
                             # Kirim 5 parameter: A, Servo (Selalu 90), Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)},{motor_depan_kiri},{motor_depan_kanan}\n"
-                            logging.info(f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}")
+                            logging.info(
+                                f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}"
+                            )
 
                     elif resume_waypoint_on_clear:
                         with self.state_lock:
@@ -740,7 +739,9 @@ class AsvHandler:
             with self.state_lock:
                 self.current_state.vision_front_motor_left_cmd = left_val
                 self.current_state.vision_front_motor_right_cmd = right_val
-            logging.info(f"[AsvHandler] Motor Depan AI Updated -> Kiri: {left_val}, Kanan: {right_val}")
+            logging.info(
+                f"[AsvHandler] Motor Depan AI Updated -> Kiri: {left_val}, Kanan: {right_val}"
+            )
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
 
@@ -796,8 +797,6 @@ class AsvHandler:
             self.current_state.vision_target["active"] = is_active
             if is_active:
                 self.current_state.vision_target.update(payload)
-
-
 
     def _handle_manual_capture(self, payload):
         """

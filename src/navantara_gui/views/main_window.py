@@ -194,7 +194,7 @@ class MainWindow(QMainWindow):
                 "UPDATE_VISION_SPEED", {"pwm": val}
             )
         )
-        
+
         # --- [TAMBAHAN BARU] Koneksi Motor Depan (Kiri & Kanan) ---
         self.settings_panel.vision_front_motor_updated.connect(
             lambda payload: self.api_client.send_command(

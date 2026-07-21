@@ -30,7 +30,9 @@ class SettingsPanel(QGroupBox):
     debug_command_sent = Signal(str, object)
     manual_speed_changed = Signal(int)
     vision_speed_updated = Signal(int)
-    vision_front_motor_updated = Signal(dict) # [UBAH] Sekarang mengirim dict (Kiri & Kanan)
+    vision_front_motor_updated = Signal(
+        dict
+    )  # [UBAH] Sekarang mengirim dict (Kiri & Kanan)
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
 
@@ -54,7 +56,7 @@ class SettingsPanel(QGroupBox):
 
         # 1.5 [UBAH] 2 Slider Kecepatan Motor Depan (Kemudi Kiri & Kanan)
         front_speed_layout = QVBoxLayout()
-        
+
         # --- Motor Depan Kiri ---
         left_front_layout = QHBoxLayout()
         self.lbl_front_left = QLabel("PWM Depan Kiri: 1500")
@@ -63,7 +65,7 @@ class SettingsPanel(QGroupBox):
         self.slider_front_left.setValue(1500)
         left_front_layout.addWidget(self.lbl_front_left)
         left_front_layout.addWidget(self.slider_front_left)
-        
+
         # --- Motor Depan Kanan ---
         right_front_layout = QHBoxLayout()
         self.lbl_front_right = QLabel("PWM Depan Kanan: 1500")
@@ -83,7 +85,7 @@ class SettingsPanel(QGroupBox):
         self.spin_left.setValue(70)
         self.spin_left.setPrefix("Left: ")
         self.spin_left.setSuffix("°")
-        
+
         self.spin_right = QSpinBox()
         self.spin_right.setRange(90, 180)
         self.spin_right.setValue(110)
@@ -145,11 +147,11 @@ class SettingsPanel(QGroupBox):
 
         # Koneksi Kontrol AI
         self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
-        
+
         # [UBAH] Sambungkan kedua slider depan ke fungsi yang sama
         self.slider_front_left.valueChanged.connect(self._on_front_speed_changed)
         self.slider_front_right.valueChanged.connect(self._on_front_speed_changed)
-        
+
         self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
