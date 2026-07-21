@@ -18,7 +18,11 @@ class MissionLogger:
         self._lock = threading.Lock()
 
         # --- SETUP CSV DENGAN FORMAT SESUAI PERMINTAAN ---
-        self.telemetry_file = open(self.telemetry_log_path, "w", newline="")
+        # [FIX RED-08] Gunakan buffering=1 (line-buffered) agar data langsung
+        # ditulis ke disk setiap baris, mencegah data loss saat crash/mati listrik.
+        self.telemetry_file = open(
+            self.telemetry_log_path, "w", newline="", buffering=1
+        )
 
         # Header kolom yang Anda minta
         self.fieldnames = ["Day", "Date", "Time", "GPS", "SOG", "COG", "HDG"]

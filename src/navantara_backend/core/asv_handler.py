@@ -50,11 +50,6 @@ TELEMETRY_KEY_MAP = {
 # --- [AKHIR OPTIMASI] ---
 
 
-def map_value(x, in_min, in_max, out_min, out_max):
-    if in_max == in_min:
-        return out_min
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
-
 
 @dataclass
 class AsvState:
@@ -110,6 +105,13 @@ class AsvState:
 
 
 class AsvHandler:
+    # [FIX YEL-02] Konstanta kelas untuk menggantikan magic numbers
+    RC_MODE_SWITCH_THRESHOLD = 1500
+    PWM_NEUTRAL = 1500
+    FRONT_MOTOR_STOP = 1000
+    AI_WP_RELEASE_DISTANCE_M = 1.5
+    LOOP_INTERVAL_SEC = 0.02
+
     def __init__(self, config, socketio):
         self.config = config
         self.socketio = socketio
@@ -157,6 +159,7 @@ class AsvHandler:
         self.initiate_auto_connection()
 
     def initiate_auto_connection(self):
+        """Mencoba koneksi serial otomatis ke ESP32 atau fallback ke mode dummy."""
         serial_cfg = self.config.get("serial_connection", {})
         force_port = serial_cfg.get("force_serial_port")
         baud_rate = serial_cfg.get("default_baud_rate", 115200)
@@ -182,6 +185,7 @@ class AsvHandler:
 
     # --- [MODIFIKASI: UPDATE AND EMIT DENGAN MINIFICATION] ---
     def _update_and_emit_state(self):
+        """Menghitung status kapal, membuat delta payload, dan mengirimnya ke GUI via SocketIO."""
         if not (self.running and self.is_streaming_to_gui):
             return
 
@@ -206,7 +210,7 @@ class AsvHandler:
             # --- LOGIKA STATUS STRING ---
             if not is_serial_connected:
                 processed_status = "DISCONNECTED (SERIAL)"
-            elif rc_mode_switch < 1500:
+            elif rc_mode_switch < self.RC_MODE_SWITCH_THRESHOLD:
                 processed_status = "RC MANUAL OVERRIDE"
             elif vision_target_active:
                 inv_label = "INV" if is_inverted else "NRM"
@@ -256,7 +260,7 @@ class AsvHandler:
         if delta_payload:
             self.socketio.emit("telemetry_update", delta_payload)
 
-    # ... (Sisa kode di bawah ini sama persis dengan sebelumnya)
+
 
     def _read_from_serial_loop(self):
         """
@@ -286,7 +290,9 @@ class AsvHandler:
                     # Jika data adalah integer/string tunggal (seperti '1'), ia akan diabaikan dengan aman
                 except json.JSONDecodeError:
                     pass
-                except Exception as e:
+                # [FIX RED-03] Tangkap hanya exception spesifik dari parsing,
+                # bukan 'Exception' yang terlalu luas dan menyembunyikan bug.
+                except (KeyError, TypeError, AttributeError, ValueError) as e:
                     logging.warning(f"[Serial] Error parsing: {e}")
 
             # 2. Manajemen Sleep Cerdas
@@ -301,72 +307,69 @@ class AsvHandler:
                 self.socketio.sleep(0.001)
 
     def _parse_json_telemetry(self, data):
-        try:
-            with self.state_lock:
-                self.current_state.heading = data.get(
-                    "heading", self.current_state.heading
-                )
-                self.current_state.speed = data.get("speed_kmh", 0.0) / 3.6
-                self.current_state.nav_gps_sats = data.get(
-                    "sats", self.current_state.nav_gps_sats
-                )
-                self.current_state.latitude = data.get(
-                    "lat", self.current_state.latitude
-                )
-                self.current_state.longitude = data.get(
-                    "lon", self.current_state.longitude
-                )
-                status_val = data.get("status", None)
-                self.current_state.esp_status = status_val
-
-                self.current_state.rc_channels = data.get(
-                    "rc_ch", self.current_state.rc_channels
-                )
-                mode = data.get("mode")
-                if mode == "MANUAL":
-                    # [FIX RED-04] Fallback ke state saat ini agar tidak None
-                    self.current_state.manual_servo_cmd = data.get(
-                        "servo_out", self.current_state.manual_servo_cmd
-                    )
-                    self.current_state.manual_motor_cmd = data.get(
-                        "motor_out", self.current_state.manual_motor_cmd
-                    )
-                elif mode == "AUTO":
-                    status = data.get("status")
-                    if status == "WAYPOINT":
-                        # [FIX RED-04] Fallback ke state saat ini agar tidak None
-                        self.current_state.nav_target_wp_index = data.get(
-                            "wp_target_idx", self.current_state.nav_target_wp_index
-                        )
-                        self.current_state.nav_dist_to_wp = data.get(
-                            "wp_dist_m", self.current_state.nav_dist_to_wp
-                        )
-                        self.current_state.nav_target_bearing = data.get(
-                            "wp_target_brg", self.current_state.nav_target_bearing
-                        )
-                        self.current_state.nav_heading_error = data.get(
-                            "wp_error_hdg", self.current_state.nav_heading_error
-                        )
-                        self.current_state.nav_servo_cmd = data.get(
-                            "servo_out", self.current_state.nav_servo_cmd
-                        )
-                        self.current_state.nav_motor_cmd = data.get(
-                            "motor_out", self.current_state.nav_motor_cmd
-                        )
-                    elif status == "AI_ACTIVE":
-                        # [FIX RED-04] Fallback ke state saat ini agar tidak None
-                        self.current_state.nav_servo_cmd = data.get(
-                            "servo_out", self.current_state.nav_servo_cmd
-                        )
-                        self.current_state.nav_motor_cmd = data.get(
-                            "motor_out", self.current_state.nav_motor_cmd
-                        )
-        except Exception as e:
-            logging.error(
-                f"[AsvHandler] Gagal mem-parsing data JSON: {e}. Data: {data}"
+        """Mem-parsing data telemetri JSON dari ESP32 dan memperbarui state kapal."""
+        with self.state_lock:
+            self.current_state.heading = data.get(
+                "heading", self.current_state.heading
             )
+            self.current_state.speed = data.get("speed_kmh", 0.0) / 3.6
+            self.current_state.nav_gps_sats = data.get(
+                "sats", self.current_state.nav_gps_sats
+            )
+            self.current_state.latitude = data.get(
+                "lat", self.current_state.latitude
+            )
+            self.current_state.longitude = data.get(
+                "lon", self.current_state.longitude
+            )
+            status_val = data.get("status", None)
+            self.current_state.esp_status = status_val
+
+            self.current_state.rc_channels = data.get(
+                "rc_ch", self.current_state.rc_channels
+            )
+            mode = data.get("mode")
+            if mode == "MANUAL":
+                # [FIX RED-04] Fallback ke state saat ini agar tidak None
+                self.current_state.manual_servo_cmd = data.get(
+                    "servo_out", self.current_state.manual_servo_cmd
+                )
+                self.current_state.manual_motor_cmd = data.get(
+                    "motor_out", self.current_state.manual_motor_cmd
+                )
+            elif mode == "AUTO":
+                status = data.get("status")
+                if status == "WAYPOINT":
+                    # [FIX RED-04] Fallback ke state saat ini agar tidak None
+                    self.current_state.nav_target_wp_index = data.get(
+                        "wp_target_idx", self.current_state.nav_target_wp_index
+                    )
+                    self.current_state.nav_dist_to_wp = data.get(
+                        "wp_dist_m", self.current_state.nav_dist_to_wp
+                    )
+                    self.current_state.nav_target_bearing = data.get(
+                        "wp_target_brg", self.current_state.nav_target_bearing
+                    )
+                    self.current_state.nav_heading_error = data.get(
+                        "wp_error_hdg", self.current_state.nav_heading_error
+                    )
+                    self.current_state.nav_servo_cmd = data.get(
+                        "servo_out", self.current_state.nav_servo_cmd
+                    )
+                    self.current_state.nav_motor_cmd = data.get(
+                        "motor_out", self.current_state.nav_motor_cmd
+                    )
+                elif status == "AI_ACTIVE":
+                    # [FIX RED-04] Fallback ke state saat ini agar tidak None
+                    self.current_state.nav_servo_cmd = data.get(
+                        "servo_out", self.current_state.nav_servo_cmd
+                    )
+                    self.current_state.nav_motor_cmd = data.get(
+                        "motor_out", self.current_state.nav_motor_cmd
+                    )
 
     def main_logic_loop(self):
+        """Loop utama kontrol kapal: EKF update, inversi servo, AI avoidance, dan pengiriman serial."""
         self.socketio.start_background_task(self._read_from_serial_loop)
         logging.info("[AsvHandler] Loop pembaca serial dimulai.")
         while self.running:
@@ -490,14 +493,14 @@ class AsvHandler:
 
                 command_to_send = None
 
-                if rc_mode_switch < 1500:
+                if rc_mode_switch < self.RC_MODE_SWITCH_THRESHOLD:
                     command_to_send = None
                     logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
 
                 elif control_mode == "MANUAL":
                     # Tambahkan 1500, 1500 untuk mematikan motor depan saat mode manual
                     command_to_send = (
-                        f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)},1500,1500\n"
+                        f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)},{self.PWM_NEUTRAL},{self.PWM_NEUTRAL}\n"
                     )
                     logging.info(
                         f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us"
@@ -552,8 +555,8 @@ class AsvHandler:
                         # Ambil tenaga motor belakang dari GUI
                         pwm_cmd = current_ai_pwm 
 
-                        motor_depan_kiri = 1000  
-                        motor_depan_kanan = 1000
+                        motor_depan_kiri = self.FRONT_MOTOR_STOP  
+                        motor_depan_kanan = self.FRONT_MOTOR_STOP
                         
                         # Ambil nilai servo dan motor depan dari GUI secara realtime
                         with self.state_lock:
@@ -580,9 +583,9 @@ class AsvHandler:
                             desc += f" | LURUS (Servo: {servo_default})"
 
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
-                        if nav_dist_to_wp < 1.5:
+                        if nav_dist_to_wp < self.AI_WP_RELEASE_DISTANCE_M:
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
+                            logging.info(f"[AsvHandler] AI STATIC: Jarak WP < {self.AI_WP_RELEASE_DISTANCE_M}m. Melepas ke Waypoint Nav.")
                         elif esp_status == "WP_COMPLETE" or status == "WP_COMPLETE":
                             command_to_send = "W\n"
                             logging.info("[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W")
@@ -650,9 +653,10 @@ class AsvHandler:
             except Exception as e:
                 logging.error(f"[FATAL] Error di main_logic_loop: {e}", exc_info=True)
 
-            self.socketio.sleep(0.02)
+            self.socketio.sleep(self.LOOP_INTERVAL_SEC)
 
     def process_command(self, command, payload):
+        """Mendistribusikan perintah dari GUI/SocketIO ke handler yang sesuai."""
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
             "CHANGE_MODE": self._handle_mode_change,
@@ -793,7 +797,7 @@ class AsvHandler:
             if is_active:
                 self.current_state.vision_target.update(payload)
 
-    # ... metode-metode lain ...
+
 
     def _handle_manual_capture(self, payload):
         """
@@ -824,12 +828,13 @@ class AsvHandler:
             logging.error(f"[AsvHandler] Capture Gagal: {result.get('message')}")
 
     def _handle_manual_control(self, payload):
+        """Menerjemahkan input keyboard (WASD) ke perintah servo dan motor."""
         with self.state_lock:
             rc_channel_5 = self.current_state.rc_channels[4]
             control_mode = self.current_state.control_mode
             is_inverted = self.current_state.inverse_servo
 
-        if rc_channel_5 < 1500:
+        if rc_channel_5 < self.RC_MODE_SWITCH_THRESHOLD:
             return
         if control_mode != "MANUAL":
             return
@@ -858,6 +863,7 @@ class AsvHandler:
             self.current_state.manual_motor_cmd = int(pwm)
 
     def set_streaming_status(self, status: bool):
+        """Mengatur flag streaming telemetri ke GUI."""
         if self.is_streaming_to_gui != status:
             logging.info(f"[AsvHandler] Status streaming telemetri diatur ke: {status}")
             self.is_streaming_to_gui = status
@@ -890,7 +896,7 @@ class AsvHandler:
             actuator_config = self.config.get("actuators", {})
             pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
             servo_def = actuator_config.get("servo_default_angle", 90)
-            command_str = f"A,{int(servo_def)},{int(pwm_stop)},1500,1500\n"
+            command_str = f"A,{int(servo_def)},{int(pwm_stop)},{self.PWM_NEUTRAL},{self.PWM_NEUTRAL}\n"
             logging.info(
                 f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
             )
@@ -1008,6 +1014,7 @@ class AsvHandler:
             )
 
     def stop(self):
+        """Menghentikan handler, memutus serial, dan menutup logger."""
         self.running = False
         self.serial_handler.disconnect()
         self.logger.log_event("AsvHandler dihentikan.")

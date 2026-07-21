@@ -1,4 +1,4 @@
-# backend/serial_handler.py
+# backend/serial_service.py
 # Modul ini bertanggung jawab untuk semua interaksi serial dengan mikrokontroler.
 
 import serial
@@ -154,6 +154,20 @@ class SerialHandler:
         self.is_connected = False
         self.read_buffer = b""  # <-- [PERBAIKAN] Bersihkan buffer saat disconnect
 
+    # [FIX RED-06] Helper method untuk menghilangkan duplikasi parsing aktuator
+    def _apply_dummy_actuator(self, command_string):
+        """Parse format 'A,servo,motor,...' dan update dummy state."""
+        try:
+            parts = command_string.strip().split(",")
+            if parts and parts[0] == "A" and len(parts) >= 3:
+                servo_val = int(float(parts[1]))
+                motor_val = int(float(parts[2]))
+                with self.serial_lock:
+                    self.dummy_servo = servo_val
+                    self.dummy_motor = motor_val
+        except (ValueError, IndexError):
+            pass
+
     def send_command(self, command_string):
         # Always log outgoing commands for visibility/debugging
         try:
@@ -162,19 +176,10 @@ class SerialHandler:
             # If printing fails for any reason, ignore but continue
             pass
 
+        # [FIX RED-06] Gunakan helper method tunggal untuk kedua jalur simulasi
         # If we're using dummy serial, simulate that the command was applied
         if self.use_dummy_serial:
-            # Try to parse common actuator command format 'A,servo,motor' to update dummy state
-            try:
-                parts = command_string.strip().split(",")
-                if parts and parts[0] == "A" and len(parts) >= 3:
-                    servo_val = int(float(parts[1]))
-                    motor_val = int(float(parts[2]))
-                    with self.serial_lock:
-                        self.dummy_servo = servo_val
-                        self.dummy_motor = motor_val
-            except Exception:
-                pass
+            self._apply_dummy_actuator(command_string)
             return
 
         # If not connected, optionally simulate the command (useful for testing AI without hardware)
@@ -184,23 +189,7 @@ class SerialHandler:
                     print(f"[Serial SIMULATE] (no connection) {command_string.strip()}")
                 except Exception:
                     pass
-                # Try to apply actuator updates to in-memory dummy state so AI logic can reflect them
-                try:
-                    parts = command_string.strip().split(",")
-                    if parts and parts[0] == "A" and len(parts) >= 3:
-                        servo_val = int(float(parts[1]))
-                        motor_val = int(float(parts[2]))
-                        # create dummy attrs if they don't exist
-                        if not hasattr(self, "dummy_servo"):
-                            self.dummy_servo = servo_val
-                        else:
-                            self.dummy_servo = servo_val
-                        if not hasattr(self, "dummy_motor"):
-                            self.dummy_motor = motor_val
-                        else:
-                            self.dummy_motor = motor_val
-                except Exception:
-                    pass
+                self._apply_dummy_actuator(command_string)
                 return
             else:
                 print("[Serial] Tidak terhubung, perintah tidak dikirim.")

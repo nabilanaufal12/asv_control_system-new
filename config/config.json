@@ -49,21 +49,6 @@
       "kotak-biru": 25.0
     }
   },
-  "dwa_params": {
-    "max_speed_mps": 1.5,
-    "min_speed_mps": 0.0,
-    "max_yaw_rate_dps": 40.0,
-    "max_accel_mps2": 0.5,
-    "max_dyaw_rate_dps2": 40.0,
-    "v_resolution": 0.1,
-    "yaw_rate_resolution_dps": 1.0,
-    "dt_seconds": 0.2,
-    "predict_time_seconds": 2.0,
-    "robot_radius_meters": 0.5,
-    "goal_cost_gain": 1.0,
-    "speed_cost_gain": 0.5,
-    "obstacle_cost_gain": 1.5
-  },
   "vision": {
     "device": "cpu",
     "conf_threshold": 0.2,

@@ -23,53 +23,8 @@ from navantara_backend.vision.overlay_utils import (
     apply_overlay,
 )
 
-# ==============================================================
-# PASTE FUNGSI DARI CLAUDE DI SINI
-def refine_blue_class(roi_frame, current_cls_id):
-    # Proteksi: Jika box terlalu kecil (misal objek sangat jauh), percayai saja YOLO
-    if roi_frame.shape[0] < 15 or roi_frame.shape[1] < 15:
-        return current_cls_id
-        
-    # 1. Konversi ke HSV
-    hsv = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2HSV)
-    
-    # 2. HSV Masking Khusus Warna Biru
-    lower_blue = np.array([90, 50, 40]) 
-    upper_blue = np.array([130, 255, 255])
-    mask = cv2.inRange(hsv, lower_blue, upper_blue)
-    
-    # 3. Morfologi Ringan (Optimasi untuk Jetson)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    
-    # 4. Cari Kontur
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    if not contours:
-        return current_cls_id  
-        
-    largest_contour = max(contours, key=cv2.contourArea)
-    area = cv2.contourArea(largest_contour)
-    
-    if area < 50:
-        return current_cls_id
-        
-    # 5. EVALUASI BENTUK (SHAPE ANALYSIS)
-    perimeter = cv2.arcLength(largest_contour, True)
-    epsilon = 0.04 * perimeter 
-    approx = cv2.approxPolyDP(largest_contour, epsilon, True)
-    vertices = len(approx)
-    
-    rect = cv2.minAreaRect(largest_contour)
-    box_area = rect[1][0] * rect[1][1]
-    extent = area / box_area if box_area > 0 else 0
-    
-    if vertices <= 6 and extent > 0.82:
-        return 1  # 1 = 'Blue_Box'
-    else:
-        return 0  # 0 = 'Blue_Ball'
-# ==============================================================
+
+
 
 class ThreadedCamera:
     def __init__(self, src=0):
@@ -141,6 +96,7 @@ class ThreadedCamera:
             self.capture.release()
 
 
+
 class VisionService:
     # --- Variabel Class untuk menyimpan frame terbaru & locks ---
     _latest_processed_frame_cam1 = None
@@ -181,7 +137,6 @@ class VisionService:
 
         # Pengaturan awal
         self.gui_is_listening = False
-        self.is_inverted = False
 
         # Pengaturan dari config.json
         # [MODIFIKASI] Dukungan string path (udev) dengan fallback ke index lama
@@ -230,6 +185,54 @@ class VisionService:
         self.OBJECT_REAL_WIDTHS_CM = cam_detect_cfg.get("object_real_widths_cm", {})
 
         print("[VisionService] Layanan Visi (YOLOv11 + TensorRT Ready) diinisialisasi.")
+
+    # [FIX GRN-06] Dipindahkan dari module-level ke dalam class sebagai @staticmethod
+    @staticmethod
+    def _refine_blue_class(roi_frame, current_cls_id):
+        """Mengkoreksi klasifikasi objek biru (bola vs kotak) menggunakan analisis bentuk HSV."""
+        # Proteksi: Jika box terlalu kecil, percayai saja YOLO
+        if roi_frame.shape[0] < 15 or roi_frame.shape[1] < 15:
+            return current_cls_id
+
+        # 1. Konversi ke HSV
+        hsv = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2HSV)
+
+        # 2. HSV Masking Khusus Warna Biru
+        lower_blue = np.array([90, 50, 40])
+        upper_blue = np.array([130, 255, 255])
+        mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+        # 3. Morfologi Ringan (Optimasi untuk Jetson)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+        # 4. Cari Kontur
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        if not contours:
+            return current_cls_id
+
+        largest_contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest_contour)
+
+        if area < 50:
+            return current_cls_id
+
+        # 5. EVALUASI BENTUK (SHAPE ANALYSIS)
+        perimeter = cv2.arcLength(largest_contour, True)
+        epsilon = 0.04 * perimeter
+        approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+        vertices = len(approx)
+
+        rect = cv2.minAreaRect(largest_contour)
+        box_area = rect[1][0] * rect[1][1]
+        extent = area / box_area if box_area > 0 else 0
+
+        if vertices <= 6 and extent > 0.82:
+            return 1  # 1 = 'Blue_Box'
+        else:
+            return 0  # 0 = 'Blue_Ball'
 
     # --- [REFACTOR: SMART MODEL LOADER - BERSIH] ---
     def _load_yolo_model(self, config):
@@ -349,57 +352,6 @@ class VisionService:
                     )
         return frame
 
-    def _validate_buoy_color(self, frame, detection):
-        """Validates and determines the color of detected buoys with improved thresholds and logging."""
-        if "buoy" not in detection.get("class", "") and "bola" not in detection.get("class", "") and "kotak" not in detection.get("class", ""):
-            return detection.get("class")
-        try:
-            x1, y1, x2, y2 = map(int, detection["xyxy"])
-            h, w = frame.shape[:2]
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(w, x2), min(h, y2)
-            if x1 >= x2 or y1 >= y2:
-                return detection.get("class")
-
-            roi = frame[y1:y2, x1:x2]
-            hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-
-            # Adjusted HSV thresholds
-            lower_red1 = np.array([0, 100, 60])
-            upper_red1 = np.array([10, 255, 255])
-            lower_red2 = np.array([170, 100, 60])
-            upper_red2 = np.array([180, 255, 255])
-            lower_green = np.array([35, 70, 35])
-            upper_green = np.array([85, 255, 255])
-
-            mask_r = cv2.bitwise_or(
-                cv2.inRange(hsv_roi, lower_red1, upper_red1),
-                cv2.inRange(hsv_roi, lower_red2, upper_red2),
-            )
-            mask_g = cv2.inRange(hsv_roi, lower_green, upper_green)
-
-            red_px = cv2.countNonZero(mask_r)
-            green_px = cv2.countNonZero(mask_g)
-            total_px = roi.shape[0] * roi.shape[1]
-
-            if total_px == 0:
-                return detection.get("class")
-
-            red_percentage = (red_px / total_px) * 100
-            green_percentage = (green_px / total_px) * 100
-
-            # Prioritas Mapping Logika Warna Tambahan (Jika label asli tidak spesifik)
-            if green_percentage > 15 and green_px > red_px * 1.2:
-                result = "bola-hijau"
-            elif red_percentage > 15 and red_px > green_px * 1.2:
-                result = "bola-merah"
-            else:
-                result = detection.get("class")
-
-            return result
-        except Exception as e:
-            print(f"[ColorValidation] Error: {e}")
-            return detection.get("class")
 
     def run_capture_loops(self):
         """Memulai greenlet terpisah untuk menangkap frame dari kedua kamera."""
@@ -777,7 +729,7 @@ class VisionService:
                         if (x2_roi > x1_roi) and (y2_roi > y1_roi):
                             roi = frame[y1_roi:y2_roi, x1_roi:x2_roi]
                             # Timpa cls_id lama dengan hasil koreksi bentuk/HSV
-                            cls_id = refine_blue_class(roi, cls_id)
+                            cls_id = self._refine_blue_class(roi, cls_id)
                     # ----------------------------------------
 
                     # Tarik nama kelas SETELAH proses koreksi selesai
@@ -813,13 +765,16 @@ class VisionService:
                 validated_detections_for_nav.append(det)
 
             if is_mode_auto:
+                # [FIX RED-07] Salin hanya value yang dibutuhkan ke variabel lokal,
+                # bukan menyimpan referensi ke objek state utuh yang bisa berubah
+                # dari thread lain setelah lock dilepas.
                 with self.asv_handler.state_lock:
-                    current_state_nav = self.asv_handler.current_state
+                    nav_control_mode = self.asv_handler.current_state.control_mode
 
                 # [ZERO LATENCY TRIGGER]
                 # Kirim perintah ke ESP32
                 self.handle_autonomous_navigation(
-                    validated_detections_for_nav, orig_w, current_state_nav
+                    validated_detections_for_nav, orig_w, nav_control_mode
                 )
 
             # 4. VISUALIZATION (PRIORITAS RENDAH - UI ONLY)
@@ -933,7 +888,7 @@ class VisionService:
 
     # -----------------------------------------
 
-    def handle_autonomous_navigation(self, detections, frame_width, current_state):
+    def handle_autonomous_navigation(self, detections, frame_width, control_mode):
         """Handles autonomous navigation based on object detections."""
 
         # 1. CEK COOLDOWN TERLEBIH DAHULU
@@ -945,7 +900,8 @@ class VisionService:
             return
 
         # 3. Cek Mode Navigasi (PENTING: Kapal harus dalam mode AUTO)
-        if current_state.control_mode != "AUTO":
+        # [FIX RED-07] Gunakan variabel lokal control_mode, bukan current_state.control_mode
+        if control_mode != "AUTO":
             return
 
         valid_buoys = []
@@ -995,9 +951,6 @@ class VisionService:
                 )
                 return
         # -------------------------------------
-
-        if (time.time() - self.last_buoy_seen_time) > self.obstacle_cooldown_period:
-            self.asv_handler.process_command("VISION_TARGET_UPDATE", {"active": False})
 
     def handle_photography_mission(self, current_state, mode="surface"):
         """
@@ -1061,20 +1014,7 @@ class VisionService:
         cv2.imwrite(save_path, snapshot)
         print(f"[Photography] Auto-Capture ({mode}) Disimpan: {save_path}")
 
-    def validate_and_trigger_investigation(self, poi_data, frame, current_state):
-        self.recent_detections.append(poi_data["class"])
-        if len(self.recent_detections) < self.poi_validation_frames:
-            return
-
-        if len(set(self.recent_detections)) == 1:
-            self.recent_detections.clear()
-
     def set_gui_listening(self, status: bool):
         with self.settings_lock:
             if self.gui_is_listening != status:
                 self.gui_is_listening = status
-
-    def set_inversion(self, payload: dict):
-        is_inverted = payload.get("inverted", False)
-        with self.settings_lock:
-            self.is_inverted = is_inverted
