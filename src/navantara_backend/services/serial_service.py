@@ -215,10 +215,12 @@ class SerialHandler:
                     self.disconnect()
 
     def read_line(self):
-        # --- [LOGIKA DUMMY (Tidak Berubah)] ---
+        # --- [LOGIKA DUMMY] ---
         if self.use_dummy_serial:
+            # [FIX RED-05] Sleep di LUAR lock agar thread lain (send_command)
+            # tidak terblokir selama 500ms menunggu serial_lock.
+            time.sleep(0.5)
             with self.serial_lock:
-                time.sleep(0.5)
                 self.dummy_heading = (self.dummy_heading + 1.5) % 360
                 self.dummy_lat += 0.00001 * random.uniform(0.8, 1.2)
                 self.dummy_lon += 0.000005 * random.uniform(0.8, 1.2)

@@ -324,24 +324,43 @@ class AsvHandler:
                 )
                 mode = data.get("mode")
                 if mode == "MANUAL":
-                    self.current_state.manual_servo_cmd = data.get("servo_out")
-                    self.current_state.manual_motor_cmd = data.get("motor_out")
+                    # [FIX RED-04] Fallback ke state saat ini agar tidak None
+                    self.current_state.manual_servo_cmd = data.get(
+                        "servo_out", self.current_state.manual_servo_cmd
+                    )
+                    self.current_state.manual_motor_cmd = data.get(
+                        "motor_out", self.current_state.manual_motor_cmd
+                    )
                 elif mode == "AUTO":
                     status = data.get("status")
                     if status == "WAYPOINT":
+                        # [FIX RED-04] Fallback ke state saat ini agar tidak None
                         self.current_state.nav_target_wp_index = data.get(
-                            "wp_target_idx"
+                            "wp_target_idx", self.current_state.nav_target_wp_index
                         )
-                        self.current_state.nav_dist_to_wp = data.get("wp_dist_m")
+                        self.current_state.nav_dist_to_wp = data.get(
+                            "wp_dist_m", self.current_state.nav_dist_to_wp
+                        )
                         self.current_state.nav_target_bearing = data.get(
-                            "wp_target_brg"
+                            "wp_target_brg", self.current_state.nav_target_bearing
                         )
-                        self.current_state.nav_heading_error = data.get("wp_error_hdg")
-                        self.current_state.nav_servo_cmd = data.get("servo_out")
-                        self.current_state.nav_motor_cmd = data.get("motor_out")
+                        self.current_state.nav_heading_error = data.get(
+                            "wp_error_hdg", self.current_state.nav_heading_error
+                        )
+                        self.current_state.nav_servo_cmd = data.get(
+                            "servo_out", self.current_state.nav_servo_cmd
+                        )
+                        self.current_state.nav_motor_cmd = data.get(
+                            "motor_out", self.current_state.nav_motor_cmd
+                        )
                     elif status == "AI_ACTIVE":
-                        self.current_state.nav_servo_cmd = data.get("servo_out")
-                        self.current_state.nav_motor_cmd = data.get("motor_out")
+                        # [FIX RED-04] Fallback ke state saat ini agar tidak None
+                        self.current_state.nav_servo_cmd = data.get(
+                            "servo_out", self.current_state.nav_servo_cmd
+                        )
+                        self.current_state.nav_motor_cmd = data.get(
+                            "motor_out", self.current_state.nav_motor_cmd
+                        )
         except Exception as e:
             logging.error(
                 f"[AsvHandler] Gagal mem-parsing data JSON: {e}. Data: {data}"
@@ -387,6 +406,8 @@ class AsvHandler:
                                 np.degrees(self.ekf.state[2]) + 360
                             ) % 360
 
+                # [FIX RED-01] Baca SEMUA variabel state dalam satu blok lock
+                # agar pembacaan konsisten dan tidak ada race condition.
                 with self.state_lock:
                     rc_mode_switch = self.current_state.rc_channels[4]
                     control_mode = self.current_state.control_mode
@@ -410,6 +431,12 @@ class AsvHandler:
                     esp_status = self.current_state.esp_status
                     status = self.current_state.status
 
+                    # [FIX RED-01] Variabel inversi sekarang dibaca di dalam lock
+                    active_arena = self.current_state.active_arena
+                    use_dummy_counter = self.current_state.use_dummy_counter
+                    debug_waypoint_counter = self.current_state.debug_waypoint_counter
+                    inversion_trigger_wp = self.current_state.inversion_trigger_wp
+
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
 
@@ -418,8 +445,9 @@ class AsvHandler:
                 # -----------------------------------------------------------
 
                 # 1. Normalisasi Status Arena (Fix Bug "ARENA" contains "A")
+                # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
                 raw_arena_val = (
-                    str(self.current_state.active_arena or "").strip().upper()
+                    str(active_arena or "").strip().upper()
                 )
                 is_arena_b = False
                 # Cek apakah string diakhiri dengan B atau sama dengan B
@@ -427,14 +455,15 @@ class AsvHandler:
                     is_arena_b = True
 
                 # 2. Tentukan Index Waypoint Efektif
-                if self.current_state.use_dummy_counter:
-                    current_effective_index = self.current_state.debug_waypoint_counter
+                # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
+                if use_dummy_counter:
+                    current_effective_index = debug_waypoint_counter
                 else:
-                    current_effective_index = self.current_state.current_waypoint_index
+                    current_effective_index = current_waypoint_index
 
                 # 3. Logika Trigger Dinamis
-                # Menggunakan variabel state yang bisa diupdate GUI
-                trigger_threshold_index = self.current_state.inversion_trigger_wp
+                # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
+                trigger_threshold_index = inversion_trigger_wp
 
                 # Trigger aktif jika kita SEDANG MENUJU atau SUDAH LEWAT waypoint trigger
                 # Misal Trigger WP 6 (index 5). Saat current_index = 5, artinya kita OTW ke WP 6.
@@ -449,8 +478,7 @@ class AsvHandler:
 
                 # 5. Update State
                 with self.state_lock:
-                    prev_inversion = self.current_state.inverse_servo
-                    if prev_inversion != final_inversion_state:
+                    if self.current_state.inverse_servo != final_inversion_state:
                         self.current_state.inverse_servo = final_inversion_state
 
                         mode_lbl = "INVERTED" if final_inversion_state else "NORMAL"
@@ -458,8 +486,6 @@ class AsvHandler:
                         logging.info(
                             f"[Logic Inversi] CHANGE -> {mode_lbl} (Arena={arena_lbl}, CurrWP={current_effective_index}, TrigWP={trigger_threshold_index+1})"
                         )
-
-                    self.current_state.inverse_servo = final_inversion_state
                 # -----------------------------------------------------------
 
                 command_to_send = None
