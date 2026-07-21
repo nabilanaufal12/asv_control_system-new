@@ -46,6 +46,7 @@ TELEMETRY_KEY_MAP = {
     "debug_waypoint_counter": "dbg_cnt",
     "vision_target": "vis",
     "esp_status": "esp_sts",
+    "current_race_id": "r_id",
 }
 # --- [AKHIR OPTIMASI] ---
 
@@ -53,6 +54,7 @@ TELEMETRY_KEY_MAP = {
 @dataclass
 class AsvState:
     control_mode: str = "AUTO"
+    current_race_id: int = 1
     latitude: float = -6.9180
     longitude: float = 107.6185
     heading: float = 90.0
@@ -814,7 +816,7 @@ class AsvHandler:
 
         # Panggil fungsi vision service dengan parameter baru
         result = self.vision_service.trigger_manual_capture(
-            capture_type, raw_mode=is_raw
+            capture_type, raw_mode=is_raw, race_id=self.current_state.current_race_id
         )
         # ------------------------------
 
@@ -887,7 +889,12 @@ class AsvHandler:
 
     def _handle_mode_change(self, payload):
         with self.state_lock:
+            current_mode = self.current_state.control_mode
             new_mode = payload.get("mode", "MANUAL")
+
+            if current_mode == "MANUAL" and new_mode == "AUTO":
+                self.current_state.current_race_id += 1
+
             self.current_state.control_mode = new_mode
             self.logger.log_event(f"Mode kontrol GUI diubah ke: {new_mode}")
 

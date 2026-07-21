@@ -260,16 +260,86 @@ def create_app():
     # --- AKHIR MODIFIKASI ---
 
     # --- MODIFIKASI: RUTE BARU UNTUK API GALERI ---
+    @app.route("/api/races")
+    def get_races():
+        try:
+            captures_dir = os.path.join(os.getcwd(), "logs", "captures")
+            if not os.path.exists(captures_dir):
+                return jsonify({"races": []})
+
+            subdirs = [
+                d
+                for d in os.listdir(captures_dir)
+                if os.path.isdir(os.path.join(captures_dir, d))
+                and d.startswith("race_")
+            ]
+            races = []
+            for d in subdirs:
+                try:
+                    races.append(int(d.split("_")[1]))
+                except ValueError:
+                    pass
+            races.sort()
+            return jsonify({"races": races})
+        except Exception as e:
+            return (
+                jsonify({"error": str(e), "message": "Gagal mencari daftar race."}),
+                500,
+            )
+
     @app.route("/api/gallery")
     def get_gallery():
         """
         Endpoint API HTTP untuk mengambil daftar file gambar galeri sebagai JSON.
+        Mendukung query parameter ?race_id=X.
         """
         try:
+            race_id = request.args.get("race_id")
             captures_dir = os.path.join(os.getcwd(), "logs", "captures")
-            search_path = os.path.join(captures_dir, "*.jpg")
+
+            if not os.path.exists(captures_dir):
+                return jsonify([])
+
+            target_dir = captures_dir
+
+            if race_id:
+                target_dir = os.path.join(captures_dir, f"race_{race_id}")
+            else:
+                # Find latest race folder
+                subdirs = [
+                    d
+                    for d in os.listdir(captures_dir)
+                    if os.path.isdir(os.path.join(captures_dir, d))
+                    and d.startswith("race_")
+                ]
+                if subdirs:
+
+                    def extract_num(d):
+                        try:
+                            return int(d.split("_")[1])
+                        except ValueError:
+                            return -1
+
+                    latest_race = max(subdirs, key=extract_num)
+                    target_dir = os.path.join(captures_dir, latest_race)
+                else:
+                    target_dir = captures_dir
+
+            if not os.path.exists(target_dir):
+                return jsonify([])
+
+            search_path = os.path.join(target_dir, "*.jpg")
             full_paths = glob.glob(search_path)
-            filenames = [os.path.basename(f) for f in full_paths]
+
+            rel_dir = os.path.relpath(target_dir, captures_dir)
+            if rel_dir == ".":
+                filenames = [os.path.basename(f) for f in full_paths]
+            else:
+                filenames = [
+                    os.path.join(rel_dir, os.path.basename(f)).replace("\\", "/")
+                    for f in full_paths
+                ]
+
             filenames.sort()
             return jsonify(filenames)
 

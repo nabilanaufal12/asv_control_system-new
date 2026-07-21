@@ -47,9 +47,42 @@ const REVERSE_KEY_MAP = {
   "dum": "use_dummy_counter",
   "dbg_cnt": "debug_waypoint_counter",
   "vis": "vision_target",
-  "esp_sts": "esp_status"
+  "esp_sts": "esp_status",
+  "r_id": "current_race_id"
 };
 // --- [AKHIR MAPPING] ---
+
+async function fetchRaces() {
+  const selector = document.getElementById("raceSelector");
+  if (!selector) return;
+
+  try {
+    const response = await fetch(`${SERVER_IP}/api/races`);
+    if (!response.ok) throw new Error("Gagal mengambil list race");
+    
+    const data = await response.json();
+    const races = data.races || [];
+    
+    selector.innerHTML = "";
+    if (races.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Belum ada Race";
+      selector.appendChild(opt);
+    } else {
+      races.forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r;
+        opt.textContent = `Race ${r}`;
+        selector.appendChild(opt);
+      });
+      // Pilih yang terbaru
+      selector.value = races[races.length - 1];
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
 
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -62,12 +95,10 @@ document.addEventListener("DOMContentLoaded", () => {
     cogValue: document.getElementById("cog-value"),
     hdgValue: document.getElementById("hdg-value"),
 
-    refreshGalleryBtn: document.getElementById("refresh-gallery-btn"),
     surfaceGallery: document.getElementById("surface-gallery"),
     underwaterGallery: document.getElementById("underwater-gallery"),
 
     // --- [BARU: Elemen Log CSV] ---
-    refreshCsvBtn: document.getElementById("refresh-csv-btn"),
     csvLogList: document.getElementById("csv-log-list"),
     // -----------------------------
 
@@ -137,17 +168,24 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Setup Gallery Refresh
-  if (ELEMENTS.refreshGalleryBtn) {
-    ELEMENTS.refreshGalleryBtn.addEventListener("click", () => refreshGallery(ELEMENTS));
-    refreshGallery(ELEMENTS);
+  const raceSelector = document.getElementById("raceSelector");
+  if (raceSelector) {
+    raceSelector.addEventListener("change", () => refreshGallery(ELEMENTS));
   }
+  
+  fetchRaces().then(() => {
+    refreshGallery(ELEMENTS);
+  });
 
   // --- [BARU: Setup CSV Log Refresh] ---
-  if (ELEMENTS.refreshCsvBtn) {
-    ELEMENTS.refreshCsvBtn.addEventListener("click", () => fetchCsvLogList());
-    // Auto load saat start
+  // Auto load saat start
+  fetchCsvLogList();
+
+  // --- [AUTO-UPDATE REAL-TIME] ---
+  setInterval(() => {
+    refreshGallery(ELEMENTS);
     fetchCsvLogList();
-  }
+  }, 3000);
   // -------------------------------------
 
   if (ELEMENTS.closeModalBtn && ELEMENTS.modal) {
@@ -160,18 +198,19 @@ document.addEventListener("DOMContentLoaded", () => {
 async function refreshGallery(elements) {
   const surfaceGalleryEl = elements.surfaceGallery;
   const underwaterGalleryEl = elements.underwaterGallery;
-  const refreshGalleryBtn = elements.refreshGalleryBtn;
 
-  if (!surfaceGalleryEl || !underwaterGalleryEl || !refreshGalleryBtn) {
+  if (!surfaceGalleryEl || !underwaterGalleryEl) {
     console.error("refreshGallery dipanggil sebelum elemen galeri siap.");
     return;
   }
 
-  refreshGalleryBtn.textContent = "Memuat galeri...";
-  refreshGalleryBtn.disabled = true;
-
   try {
-    const response = await fetch(`${SERVER_IP}/api/gallery`);
+    const raceSelector = document.getElementById("raceSelector");
+    let url = `${SERVER_IP}/api/gallery`;
+    if (raceSelector && raceSelector.value) {
+      url += `?race_id=${raceSelector.value}`;
+    }
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -200,10 +239,13 @@ async function refreshGallery(elements) {
         }
       });
 
-      if (namaFile.startsWith("surface")) {
+      // Ekstrak nama file asli dari path (misal: "race_1/surface_0.jpg" -> "surface_0.jpg")
+      const actualFileName = namaFile.split('/').pop();
+
+      if (actualFileName.startsWith("surface")) {
         surfaceGalleryEl.appendChild(img);
         surfaceCount++;
-      } else if (namaFile.startsWith("underwater")) {
+      } else if (actualFileName.startsWith("underwater")) {
         underwaterGalleryEl.appendChild(img);
         underwaterCount++;
       }
@@ -217,22 +259,13 @@ async function refreshGallery(elements) {
     surfaceGalleryEl.innerHTML = "<p>Gagal memuat galeri.</p>";
     underwaterGalleryEl.innerHTML = "<p>Gagal memuat galeri.</p>";
   }
-
-  refreshGalleryBtn.textContent = "Refresh Gallery";
-  refreshGalleryBtn.disabled = false;
 }
 
 // --- [BARU: FUNGSI FETCH CSV LOG] ---
 async function fetchCsvLogList() {
   const listContainer = document.getElementById('csv-log-list');
-  const refreshBtn = document.getElementById('refresh-csv-btn');
 
   if (!listContainer) return;
-
-  if (refreshBtn) {
-    refreshBtn.textContent = "Memuat...";
-    refreshBtn.disabled = true;
-  }
 
   try {
     const response = await fetch(`${SERVER_IP}/api/logfiles/csv`);
@@ -265,11 +298,6 @@ async function fetchCsvLogList() {
   } catch (error) {
     console.error("Error fetching logs:", error);
     listContainer.innerHTML = '<li class="csv-item" style="justify-content: center; color: #e74c3c;">Gagal memuat list log.</li>';
-  } finally {
-    if (refreshBtn) {
-      refreshBtn.textContent = "Refresh List";
-      refreshBtn.disabled = false;
-    }
   }
 }
 // ------------------------------------
@@ -308,6 +336,14 @@ function setupLocalSocketIO(elements, icons) {
       const longKey = REVERSE_KEY_MAP[key] || key;
       data[longKey] = rawData[key];
     });
+
+    // Simpan current_race_id ke state global
+    if (data.current_race_id !== undefined) {
+      if (data.current_race_id !== window.activeRaceId) {
+        window.activeRaceId = data.current_race_id;
+        fetchRaces();
+      }
+    }
 
     // 1. Normalisasi Nama Arena
     let rawArena = data.active_arena;

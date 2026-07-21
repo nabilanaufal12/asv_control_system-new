@@ -535,7 +535,9 @@ class VisionService:
         print(f"[{cam_id_log}] Loop berhenti.")
 
     # [MODIFIKASI] Menambahkan parameter raw_mode=False sebagai default
-    def trigger_manual_capture(self, capture_type: str, raw_mode: bool = False):
+    def trigger_manual_capture(
+        self, capture_type: str, raw_mode: bool = False, race_id: int = 1
+    ):
         """
         Menangani trigger manual capture dengan dukungan mode RAW (Tanpa Overlay) vs Default (Dengan Overlay).
         Pastikan argumen raw_mode diteruskan dengan benar dari handler perintah.
@@ -620,7 +622,7 @@ class VisionService:
 
         # 3. Penyimpanan File
         filename = f"{filename_prefix}_{image_count}.jpg"
-        save_dir = os.path.join(os.getcwd(), "logs", "captures")
+        save_dir = os.path.join(os.getcwd(), "logs", "captures", f"race_{race_id}")
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 
@@ -1001,6 +1003,8 @@ class VisionService:
         if frame_to_use is None:
             return
 
+        race_id = current_state.current_race_id
+
         # --- PROSES OVERLAY & SIMPAN ---
         try:
             overlay_data = create_overlay_from_html(
@@ -1012,7 +1016,7 @@ class VisionService:
             snapshot = frame_to_use
 
         filename = f"{filename_prefix}_{image_count}.jpg"
-        save_dir = os.path.join(os.getcwd(), "logs", "captures")
+        save_dir = os.path.join(os.getcwd(), "logs", "captures", f"race_{race_id}")
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 

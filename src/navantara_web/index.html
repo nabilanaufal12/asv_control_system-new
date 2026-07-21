@@ -160,7 +160,9 @@
         <section class="capture-section">
           <div class="section-header">
             <h3>Capture Results</h3>
-            <button id="refresh-gallery-btn">Refresh Gallery</button>
+            <div style="display: flex; gap: 10px;">
+              <select id="raceSelector" class="race-selector" style="padding: 5px; border-radius: 4px;"></select>
+            </div>
           </div>
 
           <div class="capture-results">
@@ -190,7 +192,6 @@
         <section class="log-section">
           <div class="section-header">
             <h3>Log Telemetri (CSV)</h3>
-            <button id="refresh-csv-btn" onclick="fetchCsvLogList()">Refresh List</button>
           </div>
           <div class="log-grid" id="csv-log-container">
             <ul id="csv-log-list" class="csv-list">
