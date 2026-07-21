@@ -3,8 +3,8 @@ import os
 # Fix untuk SSH tanpa display — harus di-set SEBELUM import cv2
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-import cv2
-from ultralytics import YOLO
+import cv2  # noqa: E402
+from ultralytics import YOLO  # noqa: E402
 
 # Tambahkan ini di vision_service.py Anda nanti
 CLASS_NAMES = {

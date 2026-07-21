@@ -1,7 +1,7 @@
 // js/main.js
 
 // --- KONFIGURASI IP ---
-const SERVER_IP = "http://192.168.1.27:5000";
+const SERVER_IP = "http://192.168.101.22:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -11,43 +11,43 @@ let trailLine = null;
 let trailCoords = [];
 let waypointLayer = null;
 
-let fullMissionWaypoints = []; 
-let completedPathLayer = null; 
+let fullMissionWaypoints = [];
+let completedPathLayer = null;
 
 // Variabel global untuk state
 let lastKnownArena = null;
-let lastKnownPoint = -1; 
+let lastKnownPoint = -1;
 let lastKnownGps = { lat: 0, lng: 0 };
 
 // --- [OPTIMASI: REVERSE KEY MAPPING] ---
 const REVERSE_KEY_MAP = {
-    "lat": "latitude",
-    "lon": "longitude",
-    "hdg": "heading",
-    "sog": "speed",
-    "bat": "battery_voltage",
-    "sts": "status",
-    "mode": "control_mode",
-    "ar": "active_arena",
-    "inv": "inverse_servo",
-    "wps": "waypoints",
-    "cur_wp": "current_waypoint_index",
-    "wp_idx": "nav_target_wp_index",
-    "wp_dst": "nav_dist_to_wp",
-    "err_hdg": "nav_heading_error",
-    "tgt_brg": "nav_target_bearing",
-    "sat": "nav_gps_sats",
-    "srv": "nav_servo_cmd",
-    "mot": "nav_motor_cmd",
-    "m_srv": "manual_servo_cmd",
-    "m_mot": "manual_motor_cmd",
-    "time": "mission_time",
-    "rc": "rc_channels",
-    "conn": "is_connected_to_serial",
-    "dum": "use_dummy_counter",
-    "dbg_cnt": "debug_waypoint_counter",
-    "vis": "vision_target",
-    "esp_sts": "esp_status"
+  "lat": "latitude",
+  "lon": "longitude",
+  "hdg": "heading",
+  "sog": "speed",
+  "bat": "battery_voltage",
+  "sts": "status",
+  "mode": "control_mode",
+  "ar": "active_arena",
+  "inv": "inverse_servo",
+  "wps": "waypoints",
+  "cur_wp": "current_waypoint_index",
+  "wp_idx": "nav_target_wp_index",
+  "wp_dst": "nav_dist_to_wp",
+  "err_hdg": "nav_heading_error",
+  "tgt_brg": "nav_target_bearing",
+  "sat": "nav_gps_sats",
+  "srv": "nav_servo_cmd",
+  "mot": "nav_motor_cmd",
+  "m_srv": "manual_servo_cmd",
+  "m_mot": "manual_motor_cmd",
+  "time": "mission_time",
+  "rc": "rc_channels",
+  "conn": "is_connected_to_serial",
+  "dum": "use_dummy_counter",
+  "dbg_cnt": "debug_waypoint_counter",
+  "vis": "vision_target",
+  "esp_sts": "esp_status"
 };
 // --- [AKHIR MAPPING] ---
 
@@ -61,11 +61,11 @@ document.addEventListener("DOMContentLoaded", () => {
     sogValue: document.getElementById("sog-value"),
     cogValue: document.getElementById("cog-value"),
     hdgValue: document.getElementById("hdg-value"),
-    
+
     refreshGalleryBtn: document.getElementById("refresh-gallery-btn"),
-    surfaceGallery: document.getElementById("surface-gallery"),        
-    underwaterGallery: document.getElementById("underwater-gallery"), 
-    
+    surfaceGallery: document.getElementById("surface-gallery"),
+    underwaterGallery: document.getElementById("underwater-gallery"),
+
     // --- [BARU: Elemen Log CSV] ---
     refreshCsvBtn: document.getElementById("refresh-csv-btn"),
     csvLogList: document.getElementById("csv-log-list"),
@@ -79,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   try {
     // 🚩 PENGEMBALIAN KE KOORDINAT ASLI/DEFAULT: [0.916, 104.444]
-    const initialCoords = [0.916, 104.444]; 
+    const initialCoords = [0.916, 104.444];
     map = L.map("map-canvas").setView(initialCoords, 17);
 
     L.tileLayer("http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}", {
@@ -99,7 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
       .bindPopup("NAVANTARA ASV");
 
     waypointLayer = L.layerGroup().addTo(map);
-    completedPathLayer = L.layerGroup().addTo(map); 
+    completedPathLayer = L.layerGroup().addTo(map);
 
     console.log("Peta Leaflet (Google Satellite) berhasil dimuat.");
   } catch (e) {
@@ -109,7 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const targetWpIcon = L.icon({
     iconUrl: "lib/leaflet/images/marker-icon.png",
     shadowUrl: "lib/leaflet/images/marker-shadow.png",
-    className: "wp-target", 
+    className: "wp-target",
     iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
   });
   const completedWpIcon = L.icon({
@@ -135,11 +135,11 @@ document.addEventListener("DOMContentLoaded", () => {
   } else {
     console.error("Fungsi setupLocalSocketIO tidak ditemukan.");
   }
-  
+
   // Setup Gallery Refresh
   if (ELEMENTS.refreshGalleryBtn) {
     ELEMENTS.refreshGalleryBtn.addEventListener("click", () => refreshGallery(ELEMENTS));
-    refreshGallery(ELEMENTS); 
+    refreshGallery(ELEMENTS);
   }
 
   // --- [BARU: Setup CSV Log Refresh] ---
@@ -224,59 +224,59 @@ async function refreshGallery(elements) {
 
 // --- [BARU: FUNGSI FETCH CSV LOG] ---
 async function fetchCsvLogList() {
-    const listContainer = document.getElementById('csv-log-list');
-    const refreshBtn = document.getElementById('refresh-csv-btn');
-    
-    if (!listContainer) return;
+  const listContainer = document.getElementById('csv-log-list');
+  const refreshBtn = document.getElementById('refresh-csv-btn');
 
-    if (refreshBtn) {
-        refreshBtn.textContent = "Memuat...";
-        refreshBtn.disabled = true;
-    }
+  if (!listContainer) return;
 
-    try {
-        const response = await fetch(`${SERVER_IP}/api/logfiles/csv`);
-        if (!response.ok) throw new Error('Gagal mengambil data log');
+  if (refreshBtn) {
+    refreshBtn.textContent = "Memuat...";
+    refreshBtn.disabled = true;
+  }
 
-        const files = await response.json();
-        
-        // Bersihkan list lama
-        listContainer.innerHTML = '';
+  try {
+    const response = await fetch(`${SERVER_IP}/api/logfiles/csv`);
+    if (!response.ok) throw new Error('Gagal mengambil data log');
 
-        if (files.length === 0) {
-            listContainer.innerHTML = '<li class="csv-item" style="justify-content: center; color: #7f8c8d;">Belum ada file log.</li>';
-        } else {
-            files.forEach(filename => {
-                const listItem = document.createElement('li');
-                listItem.className = 'csv-item';
-                
-                const downloadUrl = `${SERVER_IP}/download/log/csv/${filename}`;
+    const files = await response.json();
 
-                // Render item
-                listItem.innerHTML = `
+    // Bersihkan list lama
+    listContainer.innerHTML = '';
+
+    if (files.length === 0) {
+      listContainer.innerHTML = '<li class="csv-item" style="justify-content: center; color: #7f8c8d;">Belum ada file log.</li>';
+    } else {
+      files.forEach(filename => {
+        const listItem = document.createElement('li');
+        listItem.className = 'csv-item';
+
+        const downloadUrl = `${SERVER_IP}/download/log/csv/${filename}`;
+
+        // Render item
+        listItem.innerHTML = `
                     <span title="${filename}"><i class="fas fa-file-csv" style="color: #27ae60; margin-right:5px;"></i> ${filename}</span>
                     <a href="${downloadUrl}" class="download-link" download>Unduh</a>
                 `;
-                
-                listContainer.appendChild(listItem);
-            });
-        }
 
-    } catch (error) {
-        console.error("Error fetching logs:", error);
-        listContainer.innerHTML = '<li class="csv-item" style="justify-content: center; color: #e74c3c;">Gagal memuat list log.</li>';
-    } finally {
-        if (refreshBtn) {
-            refreshBtn.textContent = "Refresh List";
-            refreshBtn.disabled = false;
-        }
+        listContainer.appendChild(listItem);
+      });
     }
+
+  } catch (error) {
+    console.error("Error fetching logs:", error);
+    listContainer.innerHTML = '<li class="csv-item" style="justify-content: center; color: #e74c3c;">Gagal memuat list log.</li>';
+  } finally {
+    if (refreshBtn) {
+      refreshBtn.textContent = "Refresh List";
+      refreshBtn.disabled = false;
+    }
+  }
 }
 // ------------------------------------
 
 
 // === MODIFIKASI SSE: MENERAPKAN NORMALISASI KEY DAN LOGIKA MAPPING TERBARU ===
-function setupLocalSocketIO(elements, icons) { 
+function setupLocalSocketIO(elements, icons) {
   const serverURL = `${SERVER_IP}/stream-telemetry`;
   console.log(`[SSE] Menghubungkan ke ${serverURL}`);
   const eventSource = new EventSource(serverURL);
@@ -305,8 +305,8 @@ function setupLocalSocketIO(elements, icons) {
     // --- [REHYDRATE KEYS] ---
     const data = {};
     Object.keys(rawData).forEach(key => {
-        const longKey = REVERSE_KEY_MAP[key] || key;
-        data[longKey] = rawData[key];
+      const longKey = REVERSE_KEY_MAP[key] || key;
+      data[longKey] = rawData[key];
     });
 
     // 1. Normalisasi Nama Arena
@@ -314,27 +314,27 @@ function setupLocalSocketIO(elements, icons) {
     let arena = null;
 
     if (rawArena) {
-        if (rawArena.includes("B") || rawArena === "Arena_B") {
-            arena = "B";
-        } 
-        else if (rawArena.includes("A") || rawArena === "Arena_A") {
-            arena = "A";
-        }
-        else {
-            arena = rawArena; 
-        }
+      if (rawArena.includes("B") || rawArena === "Arena_B") {
+        arena = "B";
+      }
+      else if (rawArena.includes("A") || rawArena === "Arena_A") {
+        arena = "A";
+      }
+      else {
+        arena = rawArena;
+      }
     }
 
     if (arena && arena !== lastKnownArena) {
       console.log(`[UI] Arena berubah dari ${lastKnownArena} ke ${arena} (Raw: ${rawArena})`);
       lastKnownArena = arena;
-      
+
       const switchArenaEvent = new CustomEvent("switchArena", {
         detail: { arena: arena },
       });
       window.dispatchEvent(switchArenaEvent);
     }
-    
+
     if (arena) {
       const mapImageDiv = document.getElementById("map-canvas");
       if (mapImageDiv && mapImageDiv.dataset.currentArena !== arena) {
@@ -351,7 +351,7 @@ function setupLocalSocketIO(elements, icons) {
 
     // --- Visualisasi Waypoint pada Peta Leaflet ---
     const totalWpCount = (data.waypoints && Array.isArray(data.waypoints)) ? data.waypoints.length : 0;
-    
+
     if (data.waypoints && Array.isArray(data.waypoints)) {
       // 💡 Optimasi 2: Hanya gambar ulang Waypoint Layer jika daftar Waypoint berubah
       if (JSON.stringify(fullMissionWaypoints) !== JSON.stringify(data.waypoints)) {
@@ -367,7 +367,7 @@ function setupLocalSocketIO(elements, icons) {
     // Lanjutkan proses penggambaran waypoint hanya jika ada waypoint yang dimuat
     if (targetIndex !== undefined && fullMissionWaypoints.length > 0) {
       // Clear layers dilakukan di blok di atas, ini adalah proses menggambar
-      
+
       let completedPathCoords = [];
       waypointLayer.clearLayers(); // Hapus marker lama untuk digambar ulang
 
@@ -393,12 +393,12 @@ function setupLocalSocketIO(elements, icons) {
             .bindPopup(`WP ${i} (Pending)`);
         }
       }
-      
+
       // Hapus dan gambar ulang Completed Path Line
       completedPathLayer.clearLayers();
       if (completedPathCoords.length > 1) {
         L.polyline(completedPathCoords, {
-          color: "cyan", 
+          color: "cyan",
           weight: 5,
         }).addTo(completedPathLayer);
       }
@@ -406,74 +406,74 @@ function setupLocalSocketIO(elements, icons) {
 
     // 🚩 KONTROL TITIK PADA CANVAS (LOGIKA MAPPING TERBARU)
     let point = 0;
-    
+
     if (data.use_dummy_counter === true) {
       point = data.debug_waypoint_counter || 0;
-      
+
     } else {
       const targetWpIndex = data.nav_target_wp_index;
-      
+
       if (targetWpIndex !== undefined && targetWpIndex >= 0) {
-          
-          // --- LOGIKA PEMETAAN BARU DIMULAI DI SINI ---
-          switch (targetWpIndex) {
-            case 0:
-              point = 0; 
-              break;
-            case 1:
-              point = 1;
-              break;
-            case 2:
-            case 3:
-              point = 2; // Waypoint 2 dan 3 memetakan ke titik ke-2
-              break;
-            case 4:
-              point = 3; // Waypoint 4 memetakan ke titik ke-3
-              break;
-            case 5:
-            case 6:
-            case 7:
-              point = 4; // Waypoint 5, 6, dan 7 memetakan ke titik ke-4
-              break;
-            case 8:
-              point = 5; // Waypoint 8 memetakan ke titik ke-5
-              break;
-            case 9:
-            case 10:
-            case 11:
-              point = 6; // Waypoint 9, 10, dan 11 memetakan ke titik ke-6
-              break;
-            case 12:
-              point = 7; // Waypoint 12 memetakan ke titik ke-7
-              break;
-            case 13:
-              point = 8; // Waypoint 13 memetakan ke titik ke-8
-              break;
-            case 14:
-              point = 9; // Waypoint 14 memetakan ke titik ke-9
-              break;
-            default:
-              // Untuk nilai di luar pemetaan, default ke nilai terakhir yang diketahui atau 0
-              point = lastKnownPoint !== -1 ? lastKnownPoint : 0; 
-              console.warn(`[UI Canvas] targetWpIndex ${targetWpIndex} di luar pemetaan, menggunakan point: ${point}`);
-              break;
-          }
-          // --- LOGIKA PEMETAAN BARU BERAKHIR DI SINI ---
-          
-          // Batasi point agar tidak melebihi jumlah total waypoint yang dimuat dan jumlah titik di canvas (max 9)
-          const maxPoints = fullMissionWaypoints.length;
-          if (maxPoints > 0) {
-            point = Math.min(point, maxPoints, 9); 
-          }
+
+        // --- LOGIKA PEMETAAN BARU DIMULAI DI SINI ---
+        switch (targetWpIndex) {
+          case 0:
+            point = 0;
+            break;
+          case 1:
+            point = 1;
+            break;
+          case 2:
+          case 3:
+            point = 2; // Waypoint 2 dan 3 memetakan ke titik ke-2
+            break;
+          case 4:
+            point = 3; // Waypoint 4 memetakan ke titik ke-3
+            break;
+          case 5:
+          case 6:
+          case 7:
+            point = 4; // Waypoint 5, 6, dan 7 memetakan ke titik ke-4
+            break;
+          case 8:
+            point = 5; // Waypoint 8 memetakan ke titik ke-5
+            break;
+          case 9:
+          case 10:
+          case 11:
+            point = 6; // Waypoint 9, 10, dan 11 memetakan ke titik ke-6
+            break;
+          case 12:
+            point = 7; // Waypoint 12 memetakan ke titik ke-7
+            break;
+          case 13:
+            point = 8; // Waypoint 13 memetakan ke titik ke-8
+            break;
+          case 14:
+            point = 9; // Waypoint 14 memetakan ke titik ke-9
+            break;
+          default:
+            // Untuk nilai di luar pemetaan, default ke nilai terakhir yang diketahui atau 0
+            point = lastKnownPoint !== -1 ? lastKnownPoint : 0;
+            console.warn(`[UI Canvas] targetWpIndex ${targetWpIndex} di luar pemetaan, menggunakan point: ${point}`);
+            break;
+        }
+        // --- LOGIKA PEMETAAN BARU BERAKHIR DI SINI ---
+
+        // Batasi point agar tidak melebihi jumlah total waypoint yang dimuat dan jumlah titik di canvas (max 9)
+        const maxPoints = fullMissionWaypoints.length;
+        if (maxPoints > 0) {
+          point = Math.min(point, maxPoints, 9);
+        }
 
       } else {
-          // Jika Waypoint dimuat, tapi targetIndex belum diset, anggap di titik awal (0)
-          point = 0; 
+        // Jika Waypoint dimuat, tapi targetIndex belum diset, anggap di titik awal (0)
+        point = 0;
       }
     }
-    
+
     // 💡 Optimasi 3: Hanya kirim event jika nilai point berubah
-    if (point !== lastKnownPoint && point >= 0) { 
+    if (point !== lastKnownPoint && point >= 0) {
       console.log(`[UI Canvas] Mengirim event setTrajectoryPoint dengan point: ${point}`);
       lastKnownPoint = point;
       const setPointEvent = new CustomEvent("setTrajectoryPoint", {
@@ -481,44 +481,44 @@ function setupLocalSocketIO(elements, icons) {
       });
       window.dispatchEvent(setPointEvent);
     }
-    
+
     // ----------------------------------------------------------------
     // 🚩 UPDATE DATA SENSOR (GPS & COG)
     // ----------------------------------------------------------------
     let currentLatLng = null;
     const lat = data.latitude;
     const lng = data.longitude;
-    
+
     let isGpsDataValid = false;
     let shouldUpdateMapAndHistory = false;
-    
+
     if (lat !== undefined && lng !== undefined) {
-        try {
-            if (isNaN(lat) || isNaN(lng)) {
-                throw new Error("Lat/Lng bukan angka");
-            }
-
-            // 1. UPDATE TEKS GPS (DIPAKSA TAMPIL)
-            if (elements.gpsValue) {
-                elements.gpsValue.textContent = `${decimalToHemisphere(lat, false)} ${decimalToHemisphere(lng, true)}`;
-            }
-            isGpsDataValid = true;
-
-            // 2. Cek apakah harus update peta dan riwayat (Hanya jika bergerak dan bukan (0,0))
-            if (
-                (lat !== 0 || lng !== 0) &&
-                (lat !== lastKnownGps.lat || lng !== lastKnownGps.lng)
-            ) {
-                shouldUpdateMapAndHistory = true;
-            }
-
-        } catch (e) {
-            console.error("Data GPS tidak valid/format salah:", e);
-            if (elements.gpsValue) elements.gpsValue.textContent = "N/A";
-            currentLatLng = null;
+      try {
+        if (isNaN(lat) || isNaN(lng)) {
+          throw new Error("Lat/Lng bukan angka");
         }
+
+        // 1. UPDATE TEKS GPS (DIPAKSA TAMPIL)
+        if (elements.gpsValue) {
+          elements.gpsValue.textContent = `${decimalToHemisphere(lat, false)} ${decimalToHemisphere(lng, true)}`;
+        }
+        isGpsDataValid = true;
+
+        // 2. Cek apakah harus update peta dan riwayat (Hanya jika bergerak dan bukan (0,0))
+        if (
+          (lat !== 0 || lng !== 0) &&
+          (lat !== lastKnownGps.lat || lng !== lastKnownGps.lng)
+        ) {
+          shouldUpdateMapAndHistory = true;
+        }
+
+      } catch (e) {
+        console.error("Data GPS tidak valid/format salah:", e);
+        if (elements.gpsValue) elements.gpsValue.textContent = "N/A";
+        currentLatLng = null;
+      }
     } else {
-         if (elements.gpsValue) elements.gpsValue.textContent = "N/A";
+      if (elements.gpsValue) elements.gpsValue.textContent = "N/A";
     }
 
     // 3. UPDATE MAP DAN RIWAYAT HANYA JIKA TERJADI PERGERAKAN / PERUBAHAN
@@ -526,25 +526,25 @@ function setupLocalSocketIO(elements, icons) {
       lastKnownGps.lat = lat;
       lastKnownGps.lng = lng;
       currentLatLng = [lat, lng];
-      
+
       if (map && vehicleMarker) {
         vehicleMarker.setLatLng(currentLatLng);
         map.panTo(currentLatLng);
-        
+
         // Logika Trail Line
         try {
-            const last = trailCoords.length ? trailCoords[trailCoords.length - 1] : null;
-            if (!last || last[0] !== currentLatLng[0] || last[1] !== currentLatLng[1]) {
-              // Menambah koordinat hanya jika berbeda dari yang terakhir
-              trailCoords.push(currentLatLng);
-            }
-            if (!trailLine) {
-              trailLine = L.polyline(trailCoords, { color: '#00C853', weight: 3, opacity: 0.9 }).addTo(map);
-            } else {
-              trailLine.setLatLngs(trailCoords);
-            }
+          const last = trailCoords.length ? trailCoords[trailCoords.length - 1] : null;
+          if (!last || last[0] !== currentLatLng[0] || last[1] !== currentLatLng[1]) {
+            // Menambah koordinat hanya jika berbeda dari yang terakhir
+            trailCoords.push(currentLatLng);
+          }
+          if (!trailLine) {
+            trailLine = L.polyline(trailCoords, { color: '#00C853', weight: 3, opacity: 0.9 }).addTo(map);
+          } else {
+            trailLine.setLatLngs(trailCoords);
+          }
         } catch (e) {
-            console.warn('Error updating trail polyline', e);
+          console.warn('Error updating trail polyline', e);
         }
       }
     } else if (map && vehicleMarker && lastKnownGps.lat !== 0) {
@@ -646,7 +646,7 @@ function decimalToHemisphere(dec, isLng) {
 }
 
 function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
-  const R = 6371; 
+  const R = 6371;
   const bearingRad = (bearing * Math.PI) / 180;
   const lat1Rad = (lat1 * Math.PI) / 180;
   const lon1Rad = (lon1 * Math.PI) / 180;
