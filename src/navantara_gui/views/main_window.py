@@ -279,12 +279,91 @@ class MainWindow(QMainWindow):
         # Sebelumnya: self.tab_tengah = QTabWidget() ...
         # Sekarang: VideoView menjadi widget utama di tengah
 
-        # --- Sidebar Kanan (LogPanel Dihapus) ---
+        # =======================================================
+        # --- RIGHT SIDEBAR: Tabbed Top + Always-Visible Bottom ---
+        # =======================================================
         layout_sidebar_kanan = QVBoxLayout()
-        layout_sidebar_kanan.addWidget(self.waypoints_panel)
-        layout_sidebar_kanan.addWidget(self.system_status_panel)
-        # layout_sidebar_kanan.addWidget(self.log_panel) <- Dihapus
-        layout_sidebar_kanan.addStretch()
+        layout_sidebar_kanan.setContentsMargins(4, 4, 4, 4)
+        layout_sidebar_kanan.setSpacing(6)
+
+        # --- TABBED SECTION (Top) ---
+        self.right_tabs = QTabWidget()
+        self.right_tabs.setStyleSheet(
+            "QTabBar::tab { padding: 6px 12px; font-weight: bold; }"
+        )
+
+        # ─── Tab 1: 📍 Route Planner ───
+        tab_route = QWidget()
+        tab_route_layout = QVBoxLayout(tab_route)
+        tab_route_layout.setContentsMargins(4, 8, 4, 4)
+
+        # Predefined Missions - reparent from waypoints_panel
+        from PySide6.QtWidgets import QGroupBox, QFormLayout
+        mission_box = QGroupBox("Predefined Missions")
+        mission_layout_h = QHBoxLayout()
+        mission_layout_h.addWidget(self.waypoints_panel.load_a_button)
+        mission_layout_h.addWidget(self.waypoints_panel.load_b_button)
+        mission_box.setLayout(mission_layout_h)
+        tab_route_layout.addWidget(mission_box)
+
+        # Manual Input - reparent from waypoints_panel
+        input_form = QFormLayout()
+        input_form.addRow("Latitude:", self.waypoints_panel.lat_input)
+        input_form.addRow("Longitude:", self.waypoints_panel.lon_input)
+        tab_route_layout.addLayout(input_form)
+
+        # Waypoints List - reparent from waypoints_panel
+        tab_route_layout.addWidget(self.waypoints_panel.waypoints_list, 1)
+
+        # Add/Delete buttons - reparent from waypoints_panel
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.waypoints_panel.add_manual_button)
+        btn_row.addWidget(self.waypoints_panel.add_current_pos_button)
+        btn_row.addWidget(self.waypoints_panel.delete_button)
+        tab_route_layout.addLayout(btn_row)
+
+        # Send All - reparent from waypoints_panel
+        send_row = QHBoxLayout()
+        send_row.addStretch()
+        send_row.addWidget(self.waypoints_panel.send_all_button)
+        tab_route_layout.addLayout(send_row)
+
+        self.right_tabs.addTab(tab_route, "📍 Route Planner")
+
+        # ─── Tab 2: ⚙️ WP Actions ───
+        tab_wp_actions = QWidget()
+        tab_wp_actions_layout = QVBoxLayout(tab_wp_actions)
+        tab_wp_actions_layout.setContentsMargins(4, 8, 4, 4)
+
+        # Misi Fotografi - reparent from waypoints_panel
+        photo_box = QGroupBox("Misi Fotografi (Segmen)")
+        photo_layout = QVBoxLayout()
+        photo_form = QFormLayout()
+        photo_form.addRow("Start WP Index:", self.waypoints_panel.wp_target1_input)
+        photo_form.addRow("Stop WP Index:", self.waypoints_panel.wp_target2_input)
+        photo_form.addRow("Max Foto:", self.waypoints_panel.photo_count_input)
+        photo_layout.addLayout(photo_form)
+        photo_layout.addWidget(self.waypoints_panel.set_photo_mission_button)
+        photo_box.setLayout(photo_layout)
+        tab_wp_actions_layout.addWidget(photo_box)
+
+        # Konfigurasi Inversi Servo - reparent from waypoints_panel
+        inversion_box = QGroupBox("Konfigurasi Inversi Servo")
+        inversion_layout_h = QHBoxLayout()
+        inversion_layout_h.addWidget(self.waypoints_panel.trigger_wp_input)
+        inversion_layout_h.addWidget(self.waypoints_panel.set_trigger_btn)
+        inversion_box.setLayout(inversion_layout_h)
+        tab_wp_actions_layout.addWidget(inversion_box)
+
+        tab_wp_actions_layout.addStretch()
+        self.right_tabs.addTab(tab_wp_actions, "⚙️ WP Actions")
+
+        layout_sidebar_kanan.addWidget(self.right_tabs, 1)
+
+        # --- ALWAYS VISIBLE SECTION (Bottom): Telemetry Data ---
+        # Reparent sensor_display and status_monitor from system_status_panel (Dashboard)
+        layout_sidebar_kanan.addWidget(self.system_status_panel.sensor_display)
+        layout_sidebar_kanan.addWidget(self.system_status_panel.status_monitor)
 
         widget_sidebar_kanan = QWidget()
         widget_sidebar_kanan.setLayout(layout_sidebar_kanan)
