@@ -30,7 +30,7 @@
     .path-title {
       margin-left: auto;
       font-family: 'Courier New', monospace;
-      color: #00b4d8;
+      color: var(--orange);
       font-size: 1rem;
       letter-spacing: 0.08em;
     }
@@ -60,7 +60,7 @@
   </style>
 </head>
 
-<body>
+<body class="dark-theme">
   <div class="dashboard">
     <header class="header">
       <div class="header-logos-left">
@@ -74,7 +74,7 @@
       <div class="header-logos">
         <button id="theme-toggle-btn" class="theme-btn" aria-label="Toggle Theme" title="Toggle Theme" style="margin-right: 15px;">
           <!-- Sun Icon (Visible in Dark Mode to switch to Light) -->
-          <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+          <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
             <line x1="12" y1="21" x2="12" y2="23"></line>
@@ -86,7 +86,7 @@
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
           </svg>
           <!-- Moon Icon (Visible in Light Mode to switch to Dark) -->
-          <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
           </svg>
         </button>
@@ -171,18 +171,18 @@
             </div>
           </div>
 
-          <!-- [FIX] Vehicle Control Mode Buttons -->
+          <!-- [FIX] Vehicle Control Mode Indicators (Read-Only) -->
           <div style="margin-top: 12px;">
-            <h4 style="margin: 0 0 8px 0; color: #00b4d8; font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; letter-spacing: 0.05em;">VEHICLE CONTROL</h4>
+            <h4 style="margin: 0 0 8px 0; color: var(--orange); font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; letter-spacing: 0.05em;">VEHICLE CONTROL</h4>
             <div style="display: flex; gap: 8px;">
-              <button id="btn-mode-manual" onclick="setAsvMode('MANUAL')"
-                style="flex: 1; padding: 8px 12px; border: 2px solid #e67e22; background: transparent; color: #e67e22; font-weight: bold; font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; border-radius: 6px; cursor: pointer; transition: all 0.3s ease;">
+              <div id="btn-mode-manual"
+                style="flex: 1; padding: 8px 12px; border: 2px solid #e67e22; background: transparent; color: #e67e22; font-weight: bold; font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; border-radius: 6px; text-align: center; pointer-events: none; cursor: default; transition: all 0.3s ease;">
                 MANUAL
-              </button>
-              <button id="btn-mode-auto" onclick="setAsvMode('AUTO')"
-                style="flex: 1; padding: 8px 12px; border: 2px solid #2ecc71; background: #2ecc71; color: white; font-weight: bold; font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; border-radius: 6px; cursor: pointer; transition: all 0.3s ease;">
+              </div>
+              <div id="btn-mode-auto"
+                style="flex: 1; padding: 8px 12px; border: 2px solid #2ecc71; background: #2ecc71; color: white; font-weight: bold; font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; border-radius: 6px; text-align: center; pointer-events: none; cursor: default; transition: all 0.3s ease;">
                 AUTO
-              </button>
+              </div>
             </div>
           </div>
           <!-- [AKHIR Vehicle Control] -->
@@ -261,11 +261,17 @@
       const themeToggleBtn = document.getElementById("theme-toggle-btn");
 
       if (themeToggleBtn) {
+        // --- [FIX] Dark mode SELALU default. Reset localStorage agar konsisten. ---
+        localStorage.setItem('theme', 'dark');
+        // Body sudah punya class="dark-theme" dari HTML, Sun icon visible, Moon hidden.
+
         themeToggleBtn.addEventListener("click", () => {
           document.body.classList.toggle("dark-theme");
           drawBackground(); // redraw background to update fallback color
           
           const isDark = document.body.classList.contains("dark-theme");
+          localStorage.setItem('theme', isDark ? 'dark' : 'light');
+
           const sunIcon = document.getElementById("theme-icon-sun");
           const moonIcon = document.getElementById("theme-icon-moon");
           

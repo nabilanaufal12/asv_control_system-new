@@ -476,7 +476,7 @@ body {
 #refresh-gallery-btn:hover,
 #refresh-csv-btn:hover {
   background: var(--cyan);
-  color: #000;
+  color: var(--white);
   box-shadow: 0 0 14px var(--cyan-glow);
 }
 
@@ -628,7 +628,7 @@ body {
 }
 
 .download-link {
-  color: #000;
+  color: var(--white);
   background: linear-gradient(135deg, var(--green-ok), #00b854);
   text-decoration: none;
   font-size: 0.68rem;
@@ -701,7 +701,7 @@ body {
 
 .btn:hover {
   background: var(--cyan);
-  color: #000;
+  color: var(--white);
   box-shadow: 0 0 16px var(--cyan-glow);
   transform: translateY(-1px);
 }
@@ -770,19 +770,19 @@ body.dark-theme {
   --bg-surface:   #001B36;
   --bg-card:      #001B36;
   --bg-panel:     rgba(0, 27, 54, 0.9);
-  --border-cyan:  #003366;
-  --border-steel: #003366;
+  --border-cyan:  #0e4d7a;
+  --border-steel: #0e4d7a;
   --border-accent:#FF5A15;
-  --cyan:         #003366;
-  --cyan-glow:    rgba(0, 51, 102, 0.35);
-  --cyan-dim:     #001B36;
+  --cyan:         #00b4d8;
+  --cyan-glow:    rgba(0, 180, 216, 0.35);
+  --cyan-dim:     #0096b4;
   --orange:       #FF5A15;
   --orange-glow:  rgba(255, 90, 21, 0.35);
   --orange-dim:   #FF773D;
   --green-ok:     #00e676;
-  --text-primary: #E2E8F0;
-  --text-secondary:#E2E8F0;
-  --text-muted:   #8BA1BB;
+  --text-primary: #FFFFFF;
+  --text-secondary:#B0C4DE;
+  --text-muted:   #BDBDBD;
   --white:        #ffffff;
   --header-bg:    #001224;
   --font-ui:      'Inter', 'Roboto', sans-serif;
@@ -843,4 +843,22 @@ body.dark-theme .capture-results {
 body.dark-theme .capture-grid,
 body.dark-theme .log-grid {
   background: rgba(0,0,0,0.3);
+}
+
+/* [FIX] Dark mode: info-item background agar kontras */
+body.dark-theme .info-item {
+  background: rgba(0, 180, 216, 0.08);
+  border-color: var(--border-steel);
+}
+
+/* [FIX] Dark mode: capture-grid empty text */
+body.dark-theme .capture-grid p {
+  color: var(--text-muted);
+}
+
+/* [FIX] Dark mode: race-selector dropdown */
+body.dark-theme .race-selector {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-steel);
 }

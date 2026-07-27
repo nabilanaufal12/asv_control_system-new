@@ -710,19 +710,7 @@ function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
   return { lat: lat2, lng: lon2 };
 }
 
-// --- [FIX] ASV Control Mode HTTP API call ---
-async function setAsvMode(mode) {
-  try {
-    const response = await fetch(`${SERVER_IP}/api/set_mode`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ mode: mode })
-    });
-    const result = await response.json();
-    console.log(`[HTTP] Set Mode ${mode}:`, result);
-  } catch (error) {
-    console.error(`[HTTP] Gagal mengubah mode ke ${mode}:`, error);
-  }
-}
+// --- [FIX] setAsvMode REMOVED ---
+// Vehicle Control indicators on the web monitoring page are now read-only.
+// Mode changes are only allowed via the PySide6 GUI or the physical RC switch.
+// The SSE telemetry sync (in setupLocalSocketIO) still updates the visual state.
