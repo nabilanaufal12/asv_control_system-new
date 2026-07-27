@@ -44,10 +44,9 @@ class VideoView(QWidget):
         except Exception:
             pass
 
-        control_layout = QHBoxLayout()
-        control_layout.addStretch()
-        control_layout.addWidget(self.invert_button)
-        control_layout.addWidget(self.start_stop_button)
+        # NOTE: start_stop_button and invert_button are created here
+        # but reparented to the left sidebar by main_window.py setup_ui.
+        # Do NOT add them to this layout.
 
         self.label_video_1 = QLabel("Stream nonaktif.")
         self._style_label(self.label_video_1)
@@ -59,11 +58,10 @@ class VideoView(QWidget):
         video_splitter.addWidget(self.label_video_1)
         video_splitter.addWidget(self.label_video_2)
 
-        # --- Top Section: Camera container with max height ---
+        # --- Top Section: Camera feeds ---
         top_widget = QWidget()
         top_layout = QVBoxLayout(top_widget)
         top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.addLayout(control_layout)
         top_layout.addWidget(video_splitter, 1)
         top_widget.setMaximumHeight(400)
 

@@ -117,11 +117,154 @@ class MainWindow(QMainWindow):
         self._apply_theme("light" if self.current_theme == "dark" else "dark")
 
     def setup_ui(self):
-        # --- Sidebar Kiri (Tetap) ---
+        # =======================================================
+        # --- LEFT SIDEBAR: Tabbed Layout ---
+        # =======================================================
         layout_sidebar_kiri = QVBoxLayout()
-        layout_sidebar_kiri.addWidget(self.control_panel)
-        layout_sidebar_kiri.addWidget(self.settings_panel)
-        layout_sidebar_kiri.addStretch()
+        layout_sidebar_kiri.setContentsMargins(4, 4, 4, 4)
+        layout_sidebar_kiri.setSpacing(6)
+
+        # --- ALWAYS VISIBLE: Vehicle Control (MANUAL / AUTO) ---
+        # Extract the mode group from ControlPanel (it was added to its layout)
+        # We reparent it here so it stays always visible above the tabs.
+        from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QTabWidget
+
+        mode_group = QGroupBox("Vehicle Control")
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(self.control_panel.manual_mode_btn)
+        mode_layout.addWidget(self.control_panel.auto_mode_btn)
+        mode_group.setLayout(mode_layout)
+        layout_sidebar_kiri.addWidget(mode_group)
+
+        # --- ALWAYS VISIBLE: Start Stream button ---
+        stream_group = QGroupBox("Camera Stream")
+        stream_layout = QHBoxLayout()
+        stream_layout.addWidget(self.video_view.invert_button)
+        stream_layout.addWidget(self.video_view.start_stop_button)
+        stream_group.setLayout(stream_layout)
+        layout_sidebar_kiri.addWidget(stream_group)
+
+        # --- TABBED WIDGET ---
+        self.left_tabs = QTabWidget()
+        self.left_tabs.setStyleSheet(
+            "QTabBar::tab { padding: 6px 12px; font-weight: bold; }"
+        )
+
+        # ─── Tab 1: 🎮 Manual Drive ───
+        tab_manual = QWidget()
+        tab_manual_layout = QVBoxLayout(tab_manual)
+        tab_manual_layout.setContentsMargins(4, 8, 4, 4)
+
+        # WASD Controls - reparent from control_panel
+        from PySide6.QtWidgets import QGridLayout
+        wasd_group = QGroupBox("WASD Controls")
+        wasd_layout = QVBoxLayout()
+        row_w = QHBoxLayout()
+        row_w.addStretch()
+        row_w.addWidget(self.control_panel.btn_w)
+        row_w.addStretch()
+        row_asd = QHBoxLayout()
+        row_asd.addWidget(self.control_panel.btn_a)
+        row_asd.addWidget(self.control_panel.btn_s)
+        row_asd.addWidget(self.control_panel.btn_d)
+        wasd_layout.addLayout(row_w)
+        wasd_layout.addLayout(row_asd)
+        wasd_group.setLayout(wasd_layout)
+        tab_manual_layout.addWidget(wasd_group)
+
+        # Camera Capture - reparent from control_panel
+        from PySide6.QtWidgets import QLabel
+        capture_group = QGroupBox("Camera Capture")
+        capture_layout = QGridLayout()
+        capture_layout.addWidget(QLabel("<b>Surface (CAM1):</b>"), 0, 0, 1, 2)
+        capture_layout.addWidget(self.control_panel.btn_surf_overlay, 1, 0)
+        capture_layout.addWidget(self.control_panel.btn_surf_raw, 1, 1)
+        capture_layout.addWidget(QLabel("<b>Underwater (CAM2):</b>"), 2, 0, 1, 2)
+        capture_layout.addWidget(self.control_panel.btn_under_overlay, 3, 0)
+        capture_layout.addWidget(self.control_panel.btn_under_raw, 3, 1)
+        capture_group.setLayout(capture_layout)
+        tab_manual_layout.addWidget(capture_group)
+
+        tab_manual_layout.addStretch()
+        self.left_tabs.addTab(tab_manual, "🎮 Manual Drive")
+
+        # ─── Tab 2: 🤖 Auto Mission ───
+        tab_auto = QWidget()
+        tab_auto_layout = QVBoxLayout(tab_auto)
+        tab_auto_layout.setContentsMargins(4, 8, 4, 4)
+
+        # Mission Control - reparent from control_panel
+        mission_group = QGroupBox("Mission Control")
+        mission_layout = QVBoxLayout()
+        mission_layout.addWidget(self.control_panel.start_mission_btn)
+        mission_layout.addWidget(self.control_panel.pause_mission_btn)
+        mission_layout.addWidget(self.control_panel.return_home_btn)
+        mission_group.setLayout(mission_layout)
+        tab_auto_layout.addWidget(mission_group)
+
+        # AI Vision Controls - reparent from settings_panel
+        from PySide6.QtWidgets import QSpinBox
+        ai_group = QGroupBox("AI Vision Mission Control")
+        ai_layout = QVBoxLayout()
+
+        # Avoidance Angle
+        servo_row = QHBoxLayout()
+        servo_row.addWidget(QLabel("Avoidance Angle:"))
+        servo_row.addWidget(self.settings_panel.spin_left)
+        servo_row.addWidget(self.settings_panel.spin_right)
+        ai_layout.addLayout(servo_row)
+
+        # AI Activation Distance
+        dist_row = QHBoxLayout()
+        dist_row.addWidget(QLabel("AI Activation:"))
+        dist_row.addWidget(self.settings_panel.spin_obs_dist)
+        ai_layout.addLayout(dist_row)
+
+        ai_group.setLayout(ai_layout)
+        tab_auto_layout.addWidget(ai_group)
+
+        tab_auto_layout.addStretch()
+        self.left_tabs.addTab(tab_auto, "🤖 Auto Mission")
+
+        # ─── Tab 3: ⚙️ System Tuning ───
+        tab_tuning = QWidget()
+        tab_tuning_layout = QVBoxLayout(tab_tuning)
+        tab_tuning_layout.setContentsMargins(4, 8, 4, 4)
+
+        # PWM Settings - reparent from settings_panel
+        pwm_group = QGroupBox("PWM Settings")
+        pwm_layout = QVBoxLayout()
+
+        speed_row = QHBoxLayout()
+        speed_row.addWidget(self.settings_panel.lbl_ai_speed)
+        speed_row.addWidget(self.settings_panel.slider_ai_speed)
+        pwm_layout.addLayout(speed_row)
+
+        left_front_row = QHBoxLayout()
+        left_front_row.addWidget(self.settings_panel.lbl_front_left)
+        left_front_row.addWidget(self.settings_panel.slider_front_left)
+        pwm_layout.addLayout(left_front_row)
+
+        right_front_row = QHBoxLayout()
+        right_front_row.addWidget(self.settings_panel.lbl_front_right)
+        right_front_row.addWidget(self.settings_panel.slider_front_right)
+        pwm_layout.addLayout(right_front_row)
+
+        pwm_group.setLayout(pwm_layout)
+        tab_tuning_layout.addWidget(pwm_group)
+
+        # PID Controller Settings - reuse existing tab widget from settings_panel
+        pid_group = QGroupBox("PID Controller Settings")
+        pid_layout = QVBoxLayout()
+        pid_layout.addWidget(self.settings_panel.tab_widget)
+        pid_group.setLayout(pid_layout)
+        tab_tuning_layout.addWidget(pid_group)
+
+        tab_tuning_layout.addStretch()
+        self.left_tabs.addTab(tab_tuning, "⚙️ System Tuning")
+
+        # --- Add tabs to left sidebar ---
+        layout_sidebar_kiri.addWidget(self.left_tabs, 1)
 
         widget_sidebar_kiri = QWidget()
         widget_sidebar_kiri.setLayout(layout_sidebar_kiri)
