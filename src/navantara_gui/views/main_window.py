@@ -223,14 +223,6 @@ class MainWindow(QMainWindow):
         ai_group.setLayout(ai_layout)
         tab_auto_layout.addWidget(ai_group)
 
-        tab_auto_layout.addStretch()
-        self.left_tabs.addTab(tab_auto, "🤖 Auto Mission")
-
-        # ─── Tab 3: ⚙️ System Tuning ───
-        tab_tuning = QWidget()
-        tab_tuning_layout = QVBoxLayout(tab_tuning)
-        tab_tuning_layout.setContentsMargins(4, 8, 4, 4)
-
         # PWM Settings - reparent from settings_panel
         pwm_group = QGroupBox("PWM Settings")
         pwm_layout = QVBoxLayout()
@@ -251,7 +243,15 @@ class MainWindow(QMainWindow):
         pwm_layout.addLayout(right_front_row)
 
         pwm_group.setLayout(pwm_layout)
-        tab_tuning_layout.addWidget(pwm_group)
+        tab_auto_layout.addWidget(pwm_group)
+
+        tab_auto_layout.addStretch()
+        self.left_tabs.addTab(tab_auto, "🤖 Auto Mission")
+
+        # ─── Tab 3: ⚙️ System Tuning ───
+        tab_tuning = QWidget()
+        tab_tuning_layout = QVBoxLayout(tab_tuning)
+        tab_tuning_layout.setContentsMargins(4, 8, 4, 4)
 
         # PID Controller Settings - reuse existing tab widget from settings_panel
         pid_group = QGroupBox("PID Controller Settings")
@@ -356,7 +356,7 @@ class MainWindow(QMainWindow):
         tab_wp_actions_layout.addWidget(inversion_box)
 
         tab_wp_actions_layout.addStretch()
-        self.right_tabs.addTab(tab_wp_actions, "⚙️ WP Actions")
+        self.right_tabs.addTab(tab_wp_actions, "📸 WP Actions (Auto)")
 
         layout_sidebar_kanan.addWidget(self.right_tabs, 1)
 
