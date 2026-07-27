@@ -72,7 +72,8 @@
         <h2>Universitas Maritim Raja Ali Haji</h2>
       </div>
       <div class="header-logos">
-        <button id="theme-toggle-btn" class="btn btn-secondary" style="margin-right: 15px; font-size: 0.8rem; padding: 4px 10px;">Toggle Theme</button>
+        <button id="theme-toggle-btn" class="btn btn-secondary"
+          style="margin-right: 15px; font-size: 0.8rem; padding: 4px 10px;">Toggle Theme</button>
         <img src="images/logo-kompetisi.png" alt="Competition Logo" class="logo" />
         <img src="images/logo-kki.png" alt="KKI Logo" class="logo" />
         <img src="images/polbeng-logo.png" alt="UMM Logo" class="logo" />
@@ -118,13 +119,13 @@
           <div class="camera-feed">
             <h3>SURFACE CAM</h3>
             <div class="camera-container" id="cam1-container">
-              <img src="http://192.168.101.22:5000/live_video_feed" alt="Camera 1 Feed" crossorigin="anonymous" />
+              <img src="http://192.168.1.20:5000/live_video_feed" alt="Camera 1 Feed" crossorigin="anonymous" />
             </div>
           </div>
           <div class="camera-feed">
             <h3>UNDERWATER CAM</h3>
             <div class="camera-container" id="cam2-container">
-              <img src="http://192.168.101.22:5000/live_video_feed_cam2" alt="Camera 2 Feed" crossorigin="anonymous" />
+              <img src="http://192.168.1.20:5000/live_video_feed_cam2" alt="Camera 2 Feed" crossorigin="anonymous" />
             </div>
           </div>
         </section>
@@ -310,7 +311,7 @@
         if (!isNaN(pointIndex) && predefinedPoints.length > 0) {
           let actualTarget = pointIndex;
           if (mode !== "AUTO") {
-             actualTarget = 0; // hide wp1 untill AUTO
+            actualTarget = 0; // hide wp1 untill AUTO
           }
           targetPointIndex = Math.max(0, Math.min(actualTarget, predefinedPoints.length - 1));
           boat.targetX = predefinedPoints[targetPointIndex].x;
@@ -435,6 +436,13 @@
         pointCtx.clearRect(0, 0, 800, 500);
 
         if (predefinedPoints.length === 0) {
+          requestAnimationFrame(renderLoop);
+          return;
+        }
+
+        // [FIX Task 1] Jangan render boat dan waypoint aktif jika belum ada GPS lock
+        if (!hasGpsLock) {
+          // Canvas tetap bersih sampai GPS lock diperoleh
           requestAnimationFrame(renderLoop);
           return;
         }

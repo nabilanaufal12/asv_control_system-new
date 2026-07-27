@@ -1,7 +1,7 @@
 // js/main.js
 
 // --- KONFIGURASI IP ---
-const SERVER_IP = "http://192.168.101.22:5000";
+const SERVER_IP = "http://192.168.1.20:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -18,6 +18,23 @@ let completedPathLayer = null;
 let lastKnownArena = null;
 let lastKnownPoint = -1;
 let lastKnownGps = { lat: 0, lng: 0 };
+let hasGpsLock = false; // [FIX] Track GPS lock status for Canvas rendering
+
+// --- [FIX Task 2] ESP to Visual Trajectory Waypoint Mapping ---
+// ESP firmware sends 18 waypoints (0-17), Canvas hanya butuh 9 visual waypoints (1-9)
+function mapEspToVisualWp(espIndex) {
+  if (espIndex <= 0) return 1;        // ESP WP 0 -> Visual WP 1
+  if (espIndex <= 2) return 2;        // ESP WP 1-2 -> Visual WP 2
+  if (espIndex <= 4) return 3;        // ESP WP 3-4 -> Visual WP 3
+  if (espIndex <= 6) return 4;        // ESP WP 5-6 -> Visual WP 4
+  if (espIndex === 7) return 5;       // ESP WP 7 -> Visual WP 5
+  if (espIndex <= 9) return 6;        // ESP WP 8-9 -> Visual WP 6
+  if (espIndex <= 11) return 7;       // ESP WP 10-11 -> Visual WP 7
+  if (espIndex <= 15) return 8;       // ESP WP 12-15 -> Visual WP 8
+  if (espIndex <= 17) return 9;       // ESP WP 16-17 -> Visual WP 9
+  return 9; // Fallback: clamp to max visual WP
+}
+// --- [AKHIR MAPPING FUNCTION] ---
 
 // --- [OPTIMASI: REVERSE KEY MAPPING] ---
 const REVERSE_KEY_MAP = {
@@ -59,10 +76,10 @@ async function fetchRaces() {
   try {
     const response = await fetch(`${SERVER_IP}/api/races`);
     if (!response.ok) throw new Error("Gagal mengambil list race");
-    
+
     const data = await response.json();
     const races = data.races || [];
-    
+
     selector.innerHTML = "";
     if (races.length === 0) {
       const opt = document.createElement("option");
@@ -172,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (raceSelector) {
     raceSelector.addEventListener("change", () => refreshGallery(ELEMENTS));
   }
-  
+
   fetchRaces().then(() => {
     refreshGallery(ELEMENTS);
   });
@@ -447,6 +464,20 @@ function setupLocalSocketIO(elements, icons) {
       }
     }
 
+    // ----------------------------------------------------------------
+    // 🚩 [FIX Task 1] CEK GPS LOCK SEBELUM RENDER CANVAS
+    // ----------------------------------------------------------------
+    const gpsSats = data.nav_gps_sats;
+    if (gpsSats !== undefined) {
+      hasGpsLock = (gpsSats > 0);
+    }
+
+    // Update Voyage Information panel berdasarkan GPS status
+    if (!hasGpsLock) {
+      if (elements.gpsValue) elements.gpsValue.textContent = "Connecting...";
+    }
+    // ----------------------------------------------------------------
+
     // 🚩 KONTROL TITIK PADA CANVAS (LOGIKA MAPPING TERBARU)
     let point = 0;
 
@@ -458,56 +489,13 @@ function setupLocalSocketIO(elements, icons) {
 
       if (targetWpIndex !== undefined && targetWpIndex >= 0) {
 
-        // --- LOGIKA PEMETAAN BARU DIMULAI DI SINI ---
-        switch (targetWpIndex) {
-          case 0:
-            point = 0;
-            break;
-          case 1:
-            point = 1;
-            break;
-          case 2:
-          case 3:
-            point = 2; // Waypoint 2 dan 3 memetakan ke titik ke-2
-            break;
-          case 4:
-            point = 3; // Waypoint 4 memetakan ke titik ke-3
-            break;
-          case 5:
-          case 6:
-          case 7:
-            point = 4; // Waypoint 5, 6, dan 7 memetakan ke titik ke-4
-            break;
-          case 8:
-            point = 5; // Waypoint 8 memetakan ke titik ke-5
-            break;
-          case 9:
-          case 10:
-          case 11:
-            point = 6; // Waypoint 9, 10, dan 11 memetakan ke titik ke-6
-            break;
-          case 12:
-            point = 7; // Waypoint 12 memetakan ke titik ke-7
-            break;
-          case 13:
-            point = 8; // Waypoint 13 memetakan ke titik ke-8
-            break;
-          case 14:
-            point = 9; // Waypoint 14 memetakan ke titik ke-9
-            break;
-          default:
-            // Untuk nilai di luar pemetaan, default ke nilai terakhir yang diketahui atau 0
-            point = lastKnownPoint !== -1 ? lastKnownPoint : 0;
-            console.warn(`[UI Canvas] targetWpIndex ${targetWpIndex} di luar pemetaan, menggunakan point: ${point}`);
-            break;
-        }
-        // --- LOGIKA PEMETAAN BARU BERAKHIR DI SINI ---
+        // --- [FIX Task 2] Gunakan fungsi mapping ESP -> Visual WP ---
+        // mapEspToVisualWp mengembalikan 1-9, kurangi 1 untuk 0-based canvas index
+        point = mapEspToVisualWp(targetWpIndex) - 1;
+        // --- [AKHIR MAPPING] ---
 
-        // Batasi point agar tidak melebihi jumlah total waypoint yang dimuat dan jumlah titik di canvas (max 9)
-        const maxPoints = fullMissionWaypoints.length;
-        if (maxPoints > 0) {
-          point = Math.min(point, maxPoints, 9);
-        }
+        // Batasi point agar tidak melebihi jumlah titik di canvas (max 8, yaitu index 0-8)
+        point = Math.min(point, 8);
 
       } else {
         // Jika Waypoint dimuat, tapi targetIndex belum diset, anggap di titik awal (0)
@@ -515,9 +503,10 @@ function setupLocalSocketIO(elements, icons) {
       }
     }
 
-    // 💡 Optimasi 3: Hanya kirim event jika nilai point berubah
-    if (point !== lastKnownPoint && point >= 0) {
-      console.log(`[UI Canvas] Mengirim event setTrajectoryPoint dengan point: ${point}`);
+    // 💡 Optimasi 3: Hanya kirim event jika nilai point berubah DAN GPS sudah lock
+    // [FIX Task 1] Jangan dispatch event ke Canvas jika belum ada GPS lock
+    if (hasGpsLock && point !== lastKnownPoint && point >= 0) {
+      console.log(`[UI Canvas] Mengirim event setTrajectoryPoint dengan point: ${point} (GPS Sats: ${gpsSats})`);
       lastKnownPoint = point;
       const setPointEvent = new CustomEvent("setTrajectoryPoint", {
         detail: { point: point, mode: data.control_mode },
