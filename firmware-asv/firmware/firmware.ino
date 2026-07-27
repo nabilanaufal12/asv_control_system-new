@@ -232,6 +232,7 @@ void displayAllData() {
 
 // ---------------- MODE FLAG ----------------
 bool isManual = true;
+int last_rc_ch5 = 1000; // [FIX] Track previous RC CH5 for edge detection
 
 // --- FUNGSI MEMBACA PERINTAH SERIAL ---
 void checkSerialInput() {
@@ -262,6 +263,24 @@ void checkSerialInput() {
             ai_motor_val             = motorBwhStr.toInt();
             ai_motor_depan_kiri_val  = motorDepanKiriStr.toInt();
             ai_motor_depan_kanan_val = motorDepanKananStr.toInt();
+          }
+        }
+        // [FIX] Perintah Mode dari GUI/Jetson: "M,AUTO" atau "M,MANUAL"
+        else if (serialCommand == 'M') {
+          int comma1 = serialInputBuffer.indexOf(',');
+          if (comma1 > 0) {
+            String modeStr = serialInputBuffer.substring(comma1 + 1);
+            modeStr.trim();
+            if (modeStr == "AUTO" && isManual) {
+              Serial.println("[Serial CMD] Switching to AUTO (from GUI)...");
+              isManual = false;
+              counter = 0;
+            } else if (modeStr == "MANUAL" && !isManual) {
+              Serial.println("[Serial CMD] Switching to MANUAL (from GUI)...");
+              isManual = true;
+              wasInCaptureMode = false;
+              wasInSaveMode = false;
+            }
           }
         }
       }
@@ -390,15 +409,31 @@ void loop() {
   double wp_target_brg = 0.0;
   double wp_error_hdg = 0.0;
 
-  // ----------------- MANUAL MODE -----------------
-  if (ch5 < 1500) { 
-    if (!isManual) {
-      Serial.println("Switching to MANUAL...");
+  // ----------------- MODE SWITCHING (EDGE-TRIGGERED) -----------------
+  // [FIX] Hanya ubah mode via RC jika switch benar-benar BERGERAK
+  // (crossing threshold 1500 dari posisi sebelumnya). Ini mencegah
+  // bouncing antara RC dan GUI.
+  bool rc_wants_manual = (ch5 < 1500);
+  bool rc_was_manual = (last_rc_ch5 < 1500);
+  
+  // Deteksi edge: RC switch bergerak melewati threshold
+  if (rc_wants_manual != rc_was_manual) {
+    // RC switch berpindah posisi
+    if (rc_wants_manual && !isManual) {
+      Serial.println("[RC Edge] Switching to MANUAL...");
       isManual = true;
       wasInCaptureMode = false;
       wasInSaveMode = false;
+    } else if (!rc_wants_manual && isManual) {
+      Serial.println("[RC Edge] Switching to AUTO...");
+      isManual = false;
+      counter = 0;
     }
+  }
+  last_rc_ch5 = ch5; // Update state RC terakhir
 
+  // ----------------- MANUAL MODE -----------------
+  if (isManual) {
     mode = "MANUAL";
 
     int ch1 = readChannel(0); 
@@ -453,13 +488,7 @@ void loop() {
   }
 
   // ----------------- AUTO MODE -----------------
-  else { 
-    if (isManual) {
-      Serial.println("Switching to AUTO...");
-      isManual = false;
-      counter = 0; 
-    }
-
+  else {
     mode = "AUTO";
     finalDir = 1500; 
 

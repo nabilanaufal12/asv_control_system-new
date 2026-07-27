@@ -1,6 +1,7 @@
 # src/navantara_backend/core/asv_handler.py
 import threading
 import time
+import re
 import numpy as np
 import json
 import logging
@@ -152,11 +153,22 @@ class AsvHandler:
         self.use_dummy_serial = self.config.get("serial_connection", {}).get(
             "use_dummy_serial", False
         )
-        self.logger = MissionLogger()
+
+        # [FIX] Scan filesystem untuk menentukan race_id awal
+        initial_race_id = self._scan_next_race_id() - 1  # -1 karena belum mulai race baru
+        if initial_race_id < 1:
+            initial_race_id = 1
+        self.current_state.current_race_id = initial_race_id
+
+        self.logger = MissionLogger(race_id=initial_race_id)
         self.is_logging_csv = False
         self.custom_csv_headers = ["Day", "Date", "Time", "GPS", "SOG", "COG", "HDG"]
+
+        # [FIX] Track previous ESP mode untuk edge-triggered race creation
+        self._previous_esp_mode = None
+
         self.logger.log_event("AsvHandler diinisialisasi.")
-        logging.info("[AsvHandler] Handler diinisialisasi untuk operasi backend.")
+        logging.info(f"[AsvHandler] Handler diinisialisasi. Initial Race ID: {initial_race_id}")
         self.initiate_auto_connection()
 
     def initiate_auto_connection(self):
@@ -321,6 +333,29 @@ class AsvHandler:
             self.current_state.rc_channels = data.get(
                 "rc_ch", self.current_state.rc_channels
             )
+
+            # [FIX] Sinkronisasi mode ESP -> Backend state (two-way sync)
+            esp_mode = data.get("mode")
+            if esp_mode and esp_mode in ("MANUAL", "AUTO"):
+                previous_mode = self.current_state.control_mode
+
+                # Update control_mode dari ESP
+                if previous_mode != esp_mode:
+                    self.current_state.control_mode = esp_mode
+                    logging.info(
+                        f"[AsvHandler] Mode disinkronkan dari ESP: {previous_mode} -> {esp_mode}"
+                    )
+
+                # [FIX] Edge-triggered race creation: MANUAL -> AUTO
+                if self._previous_esp_mode == "MANUAL" and esp_mode == "AUTO":
+                    new_race_id = self._scan_next_race_id()
+                    self.current_state.current_race_id = new_race_id
+                    logging.info(
+                        f"[AsvHandler] ESP MANUAL->AUTO transition. New Race ID: {new_race_id}"
+                    )
+
+                self._previous_esp_mode = esp_mode
+
             mode = data.get("mode")
             if mode == "MANUAL":
                 # [FIX RED-04] Fallback ke state saat ini agar tidak None
@@ -887,17 +922,46 @@ class AsvHandler:
         else:
             self.serial_handler.connect(port, baud)
 
+    @staticmethod
+    def _scan_next_race_id():
+        """Scan filesystem untuk menentukan race_id berikutnya.
+        Jika race_1, race_2, race_3 ada, return 4."""
+        import os
+        captures_dir = os.path.join(os.getcwd(), "logs", "captures")
+        if not os.path.exists(captures_dir):
+            return 1
+
+        max_id = 0
+        for d in os.listdir(captures_dir):
+            match = re.match(r"^race_(\d+)$", d)
+            if match and os.path.isdir(os.path.join(captures_dir, d)):
+                race_num = int(match.group(1))
+                if race_num > max_id:
+                    max_id = race_num
+        return max_id + 1
+
     def _handle_mode_change(self, payload):
+        """Menangani perubahan mode dari GUI. Juga forward perintah ke ESP via serial."""
         with self.state_lock:
             current_mode = self.current_state.control_mode
             new_mode = payload.get("mode", "MANUAL")
 
             if current_mode == "MANUAL" and new_mode == "AUTO":
-                self.current_state.current_race_id += 1
-                self.logger.start_new_race_log(self.current_state.current_race_id)
+                # [FIX] Scan filesystem untuk race_id, bukan increment sederhana
+                new_race_id = self._scan_next_race_id()
+                self.current_state.current_race_id = new_race_id
+                self.logger.start_new_race_log(new_race_id)
+                logging.info(
+                    f"[AsvHandler] GUI MANUAL->AUTO transition. New Race ID: {new_race_id}"
+                )
 
             self.current_state.control_mode = new_mode
             self.logger.log_event(f"Mode kontrol GUI diubah ke: {new_mode}")
+
+        # [FIX] Forward mode command ke ESP via serial: "M,AUTO\n" atau "M,MANUAL\n"
+        mode_cmd = f"M,{new_mode}\n"
+        self.serial_handler.send_command(mode_cmd)
+        logging.info(f"[AsvHandler] Mode command forwarded to ESP: {mode_cmd.strip()}")
 
         if new_mode == "MANUAL":
             actuator_config = self.config.get("actuators", {})

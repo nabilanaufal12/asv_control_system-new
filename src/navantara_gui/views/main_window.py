@@ -309,6 +309,20 @@ class MainWindow(QMainWindow):
         status_text = data.get("status", "")
         self.is_rc_override = "RC MANUAL OVERRIDE" in status_text.upper()
 
+        # [FIX] Sinkronisasi mode dari ESP telemetry ke GUI buttons
+        # Jika ESP melaporkan mode berbeda (misal RC switch digeser),
+        # update tampilan GUI tanpa mengirim perintah balik ke backend
+        esp_reported_mode = data.get("mode")
+        if esp_reported_mode and esp_reported_mode in ("MANUAL", "AUTO"):
+            if esp_reported_mode != self.current_control_mode:
+                logging.info(
+                    f"[GUI] Mode sync dari ESP: {self.current_control_mode} -> {esp_reported_mode}"
+                )
+                self.current_control_mode = esp_reported_mode
+                is_manual = esp_reported_mode == "MANUAL"
+                self.control_panel.manual_mode_btn.setChecked(is_manual)
+                self.control_panel.auto_mode_btn.setChecked(not is_manual)
+
         # Perbarui semua panel
         self.system_status_panel.update_data(data)
 
