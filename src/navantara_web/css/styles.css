@@ -4,24 +4,25 @@
    ============================================================ */
 
 :root {
-  --bg-base:      #f4f7f6;
-  --bg-surface:   #ffffff;
-  --bg-card:      #ffffff;
+  --bg-base:      #F4F7F9;
+  --bg-surface:   #FFFFFF;
+  --bg-card:      #FFFFFF;
   --bg-panel:     rgba(255, 255, 255, 0.9);
-  --border-cyan:  #0080a0;
-  --border-steel: #cccccc;
-  --border-accent:#ff4500;
-  --cyan:         #005577;
-  --cyan-glow:    rgba(0, 85, 119, 0.2);
-  --cyan-dim:     #003d55;
-  --orange:       #e63900;
-  --orange-glow:  rgba(230, 57, 0, 0.2);
-  --orange-dim:   #b32d00;
+  --border-cyan:  #D1D9E0;
+  --border-steel: #D1D9E0;
+  --border-accent:#FF4F00;
+  --cyan:         #002244;
+  --cyan-glow:    rgba(0, 34, 68, 0.2);
+  --cyan-dim:     #001122;
+  --orange:       #FF4F00;
+  --orange-glow:  rgba(255, 79, 0, 0.2);
+  --orange-dim:   #CC3F00;
   --green-ok:     #118833;
-  --text-primary: #111111;
-  --text-secondary:#333333;
-  --text-muted:   #666666;
+  --text-primary: #002244;
+  --text-secondary:#1A3A5A;
+  --text-muted:   #5C6F82;
   --white:        #ffffff;
+  --header-bg:    #FFFFFF;
   --font-ui:      'Inter', 'Roboto', sans-serif;
   --font-mono:    'Courier New', 'Consolas', monospace;
   --font-tactical:'Rajdhani', 'Inter', sans-serif;
@@ -96,6 +97,26 @@ body {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+/* ── Theme Button ──────────────────────────────────────── */
+.theme-btn {
+  background: transparent;
+  border: 1px solid var(--border-steel);
+  border-radius: 50%;
+  padding: 8px;
+  cursor: pointer;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.theme-btn:hover {
+  background: var(--bg-base);
+  color: var(--orange);
+  border-color: var(--orange);
 }
 
 .logo {
@@ -745,24 +766,25 @@ body {
 
 /* ── Dark Theme Overrides ── */
 body.dark-theme {
-  --bg-base:      #0b132b;
-  --bg-surface:   #1c2541;
-  --bg-card:      #162033;
-  --bg-panel:     rgba(28, 45, 66, 0.85);
-  --border-cyan:  #00b4d8;
-  --border-steel: #1e3a5f;
-  --border-accent:#ff4500;
-  --cyan:         #00b4d8;
-  --cyan-glow:    rgba(0, 180, 216, 0.35);
-  --cyan-dim:     #0096b4;
-  --orange:       #ff4500;
-  --orange-glow:  rgba(255, 69, 0, 0.35);
-  --orange-dim:   #cc3700;
+  --bg-base:      #010B19;
+  --bg-surface:   #001B36;
+  --bg-card:      #001B36;
+  --bg-panel:     rgba(0, 27, 54, 0.9);
+  --border-cyan:  #003366;
+  --border-steel: #003366;
+  --border-accent:#FF5A15;
+  --cyan:         #003366;
+  --cyan-glow:    rgba(0, 51, 102, 0.35);
+  --cyan-dim:     #001B36;
+  --orange:       #FF5A15;
+  --orange-glow:  rgba(255, 90, 21, 0.35);
+  --orange-dim:   #FF773D;
   --green-ok:     #00e676;
-  --text-primary: #e8f4fd;
-  --text-secondary:#8ab4d0;
-  --text-muted:   #4a6880;
+  --text-primary: #E2E8F0;
+  --text-secondary:#E2E8F0;
+  --text-muted:   #8BA1BB;
   --white:        #ffffff;
+  --header-bg:    #001224;
   --font-ui:      'Inter', 'Roboto', sans-serif;
   --font-mono:    'Courier New', 'Consolas', monospace;
   --font-tactical:'Rajdhani', 'Inter', sans-serif;

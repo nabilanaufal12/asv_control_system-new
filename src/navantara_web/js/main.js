@@ -630,6 +630,27 @@ function setupLocalSocketIO(elements, icons) {
           : "N/A";
     }
 
+    // --- [FIX] Sinkronisasi Mode dari SSE ke UI ---
+    if (data.control_mode) {
+      const btnManual = document.getElementById("btn-mode-manual");
+      const btnAuto = document.getElementById("btn-mode-auto");
+      
+      if (btnManual && btnAuto) {
+        if (data.control_mode === "MANUAL") {
+          btnManual.style.background = "#e67e22";
+          btnManual.style.color = "white";
+          btnAuto.style.background = "transparent";
+          btnAuto.style.color = "#2ecc71";
+        } else if (data.control_mode === "AUTO") {
+          btnAuto.style.background = "#2ecc71";
+          btnAuto.style.color = "white";
+          btnManual.style.background = "transparent";
+          btnManual.style.color = "#e67e22";
+        }
+      }
+    }
+    // ----------------------------------------------
+
     updateDateTime(elements);
 
     if (map && currentLatLng && currentHdg !== null && !isNaN(currentHdg)) {
@@ -687,4 +708,21 @@ function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
   const lat2 = (lat2Rad * 180) / Math.PI;
   const lon2 = (lon2Rad * 180) / Math.PI;
   return { lat: lat2, lng: lon2 };
+}
+
+// --- [FIX] ASV Control Mode HTTP API call ---
+async function setAsvMode(mode) {
+  try {
+    const response = await fetch(`${SERVER_IP}/api/set_mode`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ mode: mode })
+    });
+    const result = await response.json();
+    console.log(`[HTTP] Set Mode ${mode}:`, result);
+  } catch (error) {
+    console.error(`[HTTP] Gagal mengubah mode ke ${mode}:`, error);
+  }
 }
