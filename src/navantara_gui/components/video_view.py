@@ -59,9 +59,37 @@ class VideoView(QWidget):
         video_splitter.addWidget(self.label_video_1)
         video_splitter.addWidget(self.label_video_2)
 
+        # --- Top Section: Camera container with max height ---
+        top_widget = QWidget()
+        top_layout = QVBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.addLayout(control_layout)
+        top_layout.addWidget(video_splitter, 1)
+        top_widget.setMaximumHeight(400)
+
+        # --- Bottom Section: Placeholder for future Data Log ---
+        from PySide6.QtWidgets import QFrame, QTextEdit
+        self.log_placeholder = QTextEdit()
+        self.log_placeholder.setReadOnly(True)
+        self.log_placeholder.setPlaceholderText(
+            "System Log / Data Terminal (Placeholder)"
+        )
+        self.log_placeholder.setStyleSheet(
+            "background-color: #1a1a2e; color: #00b4d8; "
+            "font-family: 'Courier New', monospace; font-size: 13px; "
+            "border: 1px solid #003366; border-radius: 6px; padding: 8px;"
+        )
+
+        # --- Main vertical splitter: top (cameras) + bottom (log) ---
+        main_vertical_splitter = QSplitter(Qt.Vertical)
+        main_vertical_splitter.addWidget(top_widget)
+        main_vertical_splitter.addWidget(self.log_placeholder)
+        main_vertical_splitter.setSizes([400, 300])
+        main_vertical_splitter.setCollapsible(0, False)
+        main_vertical_splitter.setCollapsible(1, False)
+
         layout = QVBoxLayout(self)
-        layout.addLayout(control_layout)
-        layout.addWidget(video_splitter, 1)
+        layout.addWidget(main_vertical_splitter, 1)
         self.setLayout(layout)
 
         self.start_stop_button.clicked.connect(self.toggle_camera_stream)
