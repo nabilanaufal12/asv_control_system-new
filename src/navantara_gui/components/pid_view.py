@@ -33,13 +33,19 @@ class PidView(QGroupBox):
         validator = QDoubleValidator(0.0, 999.0, 5, self)
         validator.setNotation(QDoubleValidator.StandardNotation)
 
-        self.p_input = QLineEdit("0.0")
+        # Mengambil nilai PID default dari config.json (jika ada), samakan dengan backend
+        nav_config = self.config.get("navigation", {}).get("heading_pid", {})
+        default_p = str(nav_config.get("kp", 2.0))
+        default_i = str(nav_config.get("ki", 0.0))
+        default_d = str(nav_config.get("kd", 0.5))
+
+        self.p_input = QLineEdit(default_p)
         self.p_input.setValidator(validator)
 
-        self.i_input = QLineEdit("0.0")
+        self.i_input = QLineEdit(default_i)
         self.i_input.setValidator(validator)
 
-        self.d_input = QLineEdit("0.0")
+        self.d_input = QLineEdit(default_d)
         self.d_input.setValidator(validator)
 
         form_layout.addRow("P (Proportional):", self.p_input)

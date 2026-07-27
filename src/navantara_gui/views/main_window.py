@@ -409,7 +409,21 @@ class MainWindow(QMainWindow):
             self.api_client.request_data_stream
         )
 
+        self.api_client.log_received.connect(self.video_view.append_log)
+
         self.settings_panel.debug_command_sent.connect(self.api_client.send_command)
+
+        # --- [TAMBAHAN BARU] Koneksi PID, Servo, dan Thruster ---
+        self.settings_panel.pid_updated.connect(
+            lambda payload: self.api_client.send_command("UPDATE_PID", payload)
+        )
+        self.settings_panel.servo_settings_updated.connect(
+            lambda payload: self.api_client.send_command("UPDATE_SERVO", payload)
+        )
+        self.settings_panel.manual_speed_changed.connect(
+            lambda speed: self.api_client.send_command("UPDATE_THRUSTER", {"speed": speed})
+        )
+        # -----------------------------------
 
         self.settings_panel.vision_speed_updated.connect(
             lambda val: self.api_client.send_command(

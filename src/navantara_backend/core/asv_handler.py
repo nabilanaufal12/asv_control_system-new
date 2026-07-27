@@ -300,6 +300,10 @@ class AsvHandler:
                         self._parse_json_telemetry(data)
                     # Jika data adalah integer/string tunggal (seperti '1'), ia akan diabaikan dengan aman
                 except json.JSONDecodeError:
+                    line_str = line.strip()
+                    if line_str and (line_str.startswith("ACK:") or line_str.startswith("[") or " " in line_str):
+                        # Asumsikan ini adalah pesan log/debug dari ESP32
+                        self.socketio.emit("log_message", {"text": line_str})
                     pass
                 # [FIX RED-03] Tangkap hanya exception spesifik dari parsing,
                 # bukan 'Exception' yang terlalu luas dan menyembunyikan bug.
@@ -701,6 +705,8 @@ class AsvHandler:
             "NAV_START": self._handle_start_mission,
             "NAV_RETURN": self._handle_initiate_rth,
             "UPDATE_PID": self._handle_update_pid,
+            "UPDATE_SERVO": self._handle_update_servo,
+            "UPDATE_THRUSTER": self._handle_update_thruster,
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
             "UPDATE_VISION_SPEED": self._handle_update_vision_speed,
             "UPDATE_VISION_FRONT_MOTOR": self._handle_update_vision_front_motor,
@@ -781,6 +787,22 @@ class AsvHandler:
             )
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
+
+    def _handle_mode_change(self, payload):
+        """Memproses permintaan perubahan mode (MANUAL/AUTO)."""
+        mode = payload.get("mode")
+        if mode in ["MANUAL", "AUTO"]:
+            cmd = f"M,{mode}\n"
+            self.serial_handler.send_command(cmd)
+            logging.info(f"[AsvHandler] Command '{mode}' diteruskan ke serial.")
+            self.socketio.emit("log_message", {"text": f"[System] Mode changed to {mode}"})
+
+    def _handle_manual_control(self, payload):
+        with self.state_lock:
+            if payload.get("toggle"):
+                self.current_state.inverse_servo = not self.current_state.inverse_servo
+            elif "value" in payload:
+                self.current_state.inverse_servo = bool(payload["value"])
 
     def _handle_set_inversion(self, payload):
         with self.state_lock:
@@ -913,7 +935,31 @@ class AsvHandler:
                 kd,
             )
             self.pid_controller.reset()
-            logging.info(f"[AsvHandler] PID updated: P={kp}, I={ki}, D={kd}")
+            logging.info(f"[AsvHandler] Local PID updated: P={kp}, I={ki}, D={kd}")
+            
+            # --- [TAMBAHAN BARU] Kirim ke Firmware ---
+            # Format protokol: T,PID,<P>,<I>,<D>\n
+            tuning_cmd = f"T,PID,{kp},{ki},{kd}\n"
+            if hasattr(self, 'serial_handler') and self.serial_handler:
+                self.serial_handler.send_data(tuning_cmd)
+                logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
+
+    def _handle_update_servo(self, payload):
+        left = payload.get("left_angle")
+        right = payload.get("right_angle")
+        if left is not None and right is not None:
+            tuning_cmd = f"T,SRV,{left},{right}\n"
+            if hasattr(self, 'serial_handler') and self.serial_handler:
+                self.serial_handler.send_data(tuning_cmd)
+                logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
+
+    def _handle_update_thruster(self, payload):
+        speed = payload.get("speed")
+        if speed is not None:
+            tuning_cmd = f"T,THR,{speed}\n"
+            if hasattr(self, 'serial_handler') and self.serial_handler:
+                self.serial_handler.send_data(tuning_cmd)
+                logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
 
     def _handle_serial_configuration(self, payload):
         port, baud = payload.get("serial_port"), payload.get("baud_rate")

@@ -93,6 +93,13 @@ class VideoView(QWidget):
         self.start_stop_button.clicked.connect(self.toggle_camera_stream)
         self.invert_button.clicked.connect(self.on_inversion_toggled)
 
+    @Slot(str)
+    def append_log(self, text):
+        from PySide6.QtGui import QTextCursor
+        self.log_placeholder.moveCursor(QTextCursor.End)
+        self.log_placeholder.insertPlainText(text + "\n")
+        self.log_placeholder.moveCursor(QTextCursor.End)
+
     def _style_label(self, label):
         label.setAlignment(Qt.AlignCenter)
         label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)

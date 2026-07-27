@@ -15,6 +15,8 @@ class ApiClient(QObject):
 
     data_updated = Signal(dict)
     connection_status_changed = Signal(bool, str)
+    # Sinyal untuk terminal log
+    log_received = Signal(str)
     # Sinyal untuk frame video (tetap menggunakan np.ndarray agar kompatibel dengan VideoView lama)
     frame_cam1_updated = Signal(np.ndarray)
     frame_cam2_updated = Signal(np.ndarray)
@@ -67,6 +69,14 @@ class ApiClient(QObject):
                 self.data_updated.emit(self.full_gui_state.copy())
             except Exception as e:
                 print(f"[ApiClient] Gagal memproses telemetry_update: {e}")
+
+        @self.sio.on("log_message")
+        def on_log_message(data):
+            try:
+                if "text" in data:
+                    self.log_received.emit(data["text"])
+            except Exception as e:
+                print(f"[ApiClient] Gagal memproses log_message: {e}")
 
         # --- [PERBAIKAN HANDLER VIDEO] ---
         @self.sio.on("frame_cam1")

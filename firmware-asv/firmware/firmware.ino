@@ -51,6 +51,11 @@ Servo dirBawahKanan;
 // ---------------- PID ----------------
 double Kp = 2.0, Ki = 0.0, Kd = 0.5; // Konstanta PID
 
+// --- Tuning Variables ---
+int servo_min_angle = 0;
+int servo_max_angle = 180;
+int thruster_manual_pwm = 1500;
+
 // --- Waypoint Inversion Control for AI Mode ---
 const int AI_SERVO_INVERSION_INDEX = 7; 
 
@@ -283,6 +288,45 @@ void checkSerialInput() {
             }
           }
         }
+        // --- [TAMBAHAN BARU] Perintah Tuning dari GUI: "T,PID,<P>,<I>,<D>" ---
+        else if (serialCommand == 'T') {
+          int comma1 = serialInputBuffer.indexOf(',');
+          int comma2 = serialInputBuffer.indexOf(',', comma1 + 1);
+          int comma3 = serialInputBuffer.indexOf(',', comma2 + 1);
+          int comma4 = serialInputBuffer.indexOf(',', comma3 + 1);
+          
+          if (comma1 > 0 && comma2 > 0) {
+            String typeStr = serialInputBuffer.substring(comma1 + 1, comma2);
+            if (typeStr == "PID" && comma3 > 0 && comma4 > 0) {
+              String pStr = serialInputBuffer.substring(comma2 + 1, comma3);
+              String iStr = serialInputBuffer.substring(comma3 + 1, comma4);
+              String dStr = serialInputBuffer.substring(comma4 + 1);
+              
+              Kp = pStr.toDouble();
+              Ki = iStr.toDouble();
+              Kd = dStr.toDouble();
+              
+              Serial.println("ACK:PID_UPDATED");
+            }
+            else if (typeStr == "SRV" && comma3 > 0) {
+              String leftStr = serialInputBuffer.substring(comma2 + 1, comma3);
+              String rightStr = serialInputBuffer.substring(comma3 + 1);
+              
+              servo_min_angle = leftStr.toInt();
+              servo_max_angle = rightStr.toInt();
+              
+              Serial.println("ACK:SERVO_UPDATED");
+            }
+            else if (typeStr == "THR") {
+              String speedStr = (comma3 > 0) ? serialInputBuffer.substring(comma2 + 1, comma3) : serialInputBuffer.substring(comma2 + 1);
+              int pct = speedStr.toInt();
+              thruster_manual_pwm = 1500 + (pct * 5); // 0-100% -> 1500-2000 PWM
+              
+              Serial.println("ACK:THRUSTER_UPDATED");
+            }
+          }
+        }
+        // ---------------------------------------------------------------------
       }
       serialInputBuffer = "";
     } else {
