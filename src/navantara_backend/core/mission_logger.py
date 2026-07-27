@@ -6,32 +6,48 @@ from datetime import datetime
 
 
 class MissionLogger:
-    def __init__(self, log_dir="logs/captures/race_1"):
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
-        # Nama file menggunakan timestamp saat start
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.telemetry_log_path = os.path.join(log_dir, f"mission_data_{timestamp}.csv")
-        self.event_log_path = os.path.join(log_dir, f"events_{timestamp}.log")
-
+    def __init__(self, race_id=1):
+        self.telemetry_file = None
+        self.telemetry_writer = None
+        self.fieldnames = ["Day", "Date", "Time", "GPS", "SOG", "COG", "HDG"]
         self._lock = threading.Lock()
 
-        # --- SETUP CSV DENGAN FORMAT SESUAI PERMINTAAN ---
-        # [FIX RED-08] Gunakan buffering=1 (line-buffered) agar data langsung
-        # ditulis ke disk setiap baris, mencegah data loss saat crash/mati listrik.
-        self.telemetry_file = open(
-            self.telemetry_log_path, "w", newline="", buffering=1
-        )
+        # Mulai log untuk race default
+        self.start_new_race_log(race_id)
 
-        # Header kolom yang Anda minta
-        self.fieldnames = ["Day", "Date", "Time", "GPS", "SOG", "COG", "HDG"]
+    def start_new_race_log(self, race_id):
+        with self._lock:
+            if self.telemetry_file:
+                self.telemetry_file.close()
 
-        # Menggunakan DictWriter agar penulisan lebih rapi dan aman
-        self.telemetry_writer = csv.DictWriter(
-            self.telemetry_file, fieldnames=self.fieldnames
-        )
-        self.telemetry_writer.writeheader()
+            log_dir = os.path.join(os.getcwd(), "logs", "captures", f"race_{race_id}")
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
+
+            self.telemetry_log_path = os.path.join(log_dir, "telemetry.csv")
+            self.event_log_path = os.path.join(log_dir, "events.log")
+
+            # Periksa apakah file sudah ada dan ukurannya > 0
+            file_exists = (
+                os.path.exists(self.telemetry_log_path)
+                and os.path.getsize(self.telemetry_log_path) > 0
+            )
+
+            # Buka dengan mode append ("a")
+            self.telemetry_file = open(
+                self.telemetry_log_path, "a", newline="", buffering=1
+            )
+            self.telemetry_writer = csv.DictWriter(
+                self.telemetry_file, fieldnames=self.fieldnames
+            )
+
+            # Tulis header HANYA JIKA file baru/kosong
+            if not file_exists:
+                self.telemetry_writer.writeheader()
+
+            print(
+                f"[Logger] Started CSV log for race_{race_id} at {self.telemetry_log_path}"
+            )
 
     def log_telemetry(self, state_data):
         """
@@ -39,6 +55,9 @@ class MissionLogger:
         """
         with self._lock:
             try:
+                if not self.telemetry_file or not self.telemetry_writer:
+                    return
+
                 now = datetime.now()
 
                 # Ambil data dari state (dengan nilai default 0 jika error/kosong)
@@ -74,31 +93,17 @@ class MissionLogger:
             except Exception as e:
                 print(f"[Logger] Gagal menulis log event: {e}")
 
-    def start_new_race_log(self, race_id):
-        with self._lock:
-            if self.telemetry_file:
-                self.telemetry_file.close()
-
-            log_dir = f"logs/captures/race_{race_id}"
-            if not os.path.exists(log_dir):
-                os.makedirs(log_dir, exist_ok=True)
-
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.telemetry_log_path = os.path.join(log_dir, f"mission_data_{timestamp}.csv")
-            self.event_log_path = os.path.join(log_dir, f"events_{timestamp}.log")
-            
-            self.telemetry_file = open(
-                self.telemetry_log_path, "w", newline="", buffering=1
-            )
-            self.telemetry_writer = csv.DictWriter(
-                self.telemetry_file, fieldnames=self.fieldnames
-            )
-            self.telemetry_writer.writeheader()
-            print(f"[Logger] Started new CSV log for race_{race_id} at {self.telemetry_log_path}")
-
     def stop(self):
         with self._lock:
             if self.telemetry_file:
                 self.telemetry_file.close()
                 self.telemetry_file = None
                 print("[Logger] File log ditutup.")
+
+    # --- DUMMY FUNCTIONS ---
+    # Agar jika dipanggil oleh kode GUI lama tidak terjadi error
+    def start_csv_log(self, headers=None):
+        pass
+
+    def stop_csv_log(self):
+        pass

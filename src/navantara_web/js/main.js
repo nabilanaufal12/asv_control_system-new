@@ -520,7 +520,7 @@ function setupLocalSocketIO(elements, icons) {
       console.log(`[UI Canvas] Mengirim event setTrajectoryPoint dengan point: ${point}`);
       lastKnownPoint = point;
       const setPointEvent = new CustomEvent("setTrajectoryPoint", {
-        detail: { point: point },
+        detail: { point: point, mode: data.control_mode },
       });
       window.dispatchEvent(setPointEvent);
     }

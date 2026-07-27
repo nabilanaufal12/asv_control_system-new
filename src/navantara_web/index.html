@@ -40,14 +40,12 @@
       height: 100%;
       object-fit: cover;
       border-radius: 8px;
-      background-color: #050d1a;
     }
 
     #map-canvas {
       width: 100%;
       height: 100%;
       border-radius: 8px;
-      background-color: #07111f;
     }
 
     .leaflet-control-attribution {
@@ -74,6 +72,7 @@
         <h2>Universitas Maritim Raja Ali Haji</h2>
       </div>
       <div class="header-logos">
+        <button id="theme-toggle-btn" class="btn btn-secondary" style="margin-right: 15px; font-size: 0.8rem; padding: 4px 10px;">Toggle Theme</button>
         <img src="images/logo-kompetisi.png" alt="Competition Logo" class="logo" />
         <img src="images/logo-kki.png" alt="KKI Logo" class="logo" />
         <img src="images/polbeng-logo.png" alt="UMM Logo" class="logo" />
@@ -147,7 +146,7 @@
               <span>GPS:</span><span id="gps-value" class="telemetry-val">Connecting...</span>
             </div>
             <div class="info-item">
-              <span>SOG:</span><span id="sog-value" class="telemetry-val">0 km/jam</span>
+              <span>SOG:</span><span id="sog-value" class="telemetry-val">0 km/jam (0 kt)</span>
             </div>
 
             <div class="info-item">
@@ -226,6 +225,14 @@
       const arenaABtn = document.getElementById("arena-a-btn");
       const arenaBBtn = document.getElementById("arena-b-btn");
       const arenaDisplay = document.getElementById("arena-display");
+      const themeToggleBtn = document.getElementById("theme-toggle-btn");
+
+      if (themeToggleBtn) {
+        themeToggleBtn.addEventListener("click", () => {
+          document.body.classList.toggle("dark-theme");
+          drawBackground(); // redraw background to update fallback color
+        });
+      }
 
       if (!backgroundCtx || !gridCtx || !lineCtx || !pointCtx || !arenaDisplay) {
         console.warn("Salah satu elemen canvas atau arenaDisplay tidak ditemukan.");
@@ -298,9 +305,14 @@
 
       window.addEventListener("setTrajectoryPoint", function (event) {
         const pointIndex = parseInt(event.detail.point, 10);
-        console.log("[Canvas Script] Event 'setTrajectoryPoint' diterima. Titik target:", pointIndex);
+        const mode = event.detail.mode;
+        console.log("[Canvas Script] Event 'setTrajectoryPoint' diterima. Titik target:", pointIndex, "Mode:", mode);
         if (!isNaN(pointIndex) && predefinedPoints.length > 0) {
-          targetPointIndex = Math.max(0, Math.min(pointIndex, predefinedPoints.length - 1));
+          let actualTarget = pointIndex;
+          if (mode !== "AUTO") {
+             actualTarget = 0; // hide wp1 untill AUTO
+          }
+          targetPointIndex = Math.max(0, Math.min(actualTarget, predefinedPoints.length - 1));
           boat.targetX = predefinedPoints[targetPointIndex].x;
           boat.targetY = predefinedPoints[targetPointIndex].y;
           boat.isMoving = true;
@@ -324,15 +336,21 @@
         const img = new Image();
         img.onload = () => backgroundCtx.drawImage(img, 0, 0, 800, 500);
         img.onerror = () => {
-          backgroundCtx.fillStyle = '#07111f';
+          const isDark = document.body.classList.contains("dark-theme");
+          backgroundCtx.fillStyle = isDark ? '#07111f' : '#eef2f5';
           backgroundCtx.fillRect(0, 0, 800, 500);
           const grad = backgroundCtx.createLinearGradient(0, 0, 0, 500);
-          grad.addColorStop(0, 'rgba(0,60,90,0.6)');
-          grad.addColorStop(1, 'rgba(0,20,40,0.8)');
+          if (isDark) {
+            grad.addColorStop(0, 'rgba(0,60,90,0.6)');
+            grad.addColorStop(1, 'rgba(0,20,40,0.8)');
+          } else {
+            grad.addColorStop(0, 'rgba(173, 216, 230, 0.6)');
+            grad.addColorStop(1, 'rgba(135, 206, 235, 0.8)');
+          }
           backgroundCtx.fillStyle = grad;
           backgroundCtx.fillRect(0, 0, 800, 500);
           backgroundCtx.font = 'bold 20px Rajdhani, Inter, sans-serif';
-          backgroundCtx.fillStyle = 'rgba(0,180,216,0.2)';
+          backgroundCtx.fillStyle = isDark ? 'rgba(0,180,216,0.2)' : 'rgba(0,0,0,0.1)';
           backgroundCtx.textAlign = 'center';
           backgroundCtx.fillText('KKI 2026 — ASV TRACK', 400, 250);
         };
@@ -341,7 +359,7 @@
 
       function drawGrid() {
         gridCtx.clearRect(0, 0, 800, 500);
-        gridCtx.strokeStyle = 'rgba(0,180,216,0.08)';
+        gridCtx.strokeStyle = 'rgba(0,0,0,0.08)';
         gridCtx.lineWidth = 1;
         for (let x = 50; x < 800; x += 50) {
           gridCtx.beginPath(); gridCtx.moveTo(x, 0); gridCtx.lineTo(x, 500); gridCtx.stroke();
@@ -349,7 +367,7 @@
         for (let y = 50; y < 500; y += 50) {
           gridCtx.beginPath(); gridCtx.moveTo(0, y); gridCtx.lineTo(800, y); gridCtx.stroke();
         }
-        gridCtx.strokeStyle = 'rgba(0,180,216,0.4)';
+        gridCtx.strokeStyle = 'rgba(0,0,0,0.3)';
         gridCtx.lineWidth = 2;
         gridCtx.strokeRect(1, 1, 798, 498);
       }

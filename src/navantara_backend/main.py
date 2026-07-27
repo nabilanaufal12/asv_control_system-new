@@ -40,20 +40,6 @@ def create_app():
 
     CORS(app)
 
-    # --- [KONFIGURASI FOLDER LOG CSV] ---
-    # Menggunakan os.getcwd() agar konsisten dengan folder captures
-    csv_log_dir = os.path.join(os.getcwd(), "mission_logs")
-    print(f"[Backend] Mencari Log CSV di: {csv_log_dir}")
-
-    # Pastikan folder ada saat server start
-    if not os.path.exists(csv_log_dir):
-        try:
-            os.makedirs(csv_log_dir)
-            print(f"[Server] Folder log CSV dibuat: {csv_log_dir}")
-        except Exception as e:
-            print(f"[Server] Gagal membuat folder log CSV: {e}")
-    # ------------------------------------
-
     # --- [FIX KRITIS CORS: Preflight & Anti-Cache] ---
     @app.before_request
     def handle_options_request():
@@ -181,9 +167,9 @@ def create_app():
         atau race_X terbaru.
         """
         try:
-            race_id = request.args.get('race_id')
+            race_id = request.args.get("race_id")
             base_dir = os.path.join(os.getcwd(), "logs", "captures")
-            
+
             if race_id:
                 target_dir = os.path.join(base_dir, f"race_{race_id}")
             else:
@@ -191,9 +177,9 @@ def create_app():
                 if os.path.exists(base_dir):
                     races = [d for d in os.listdir(base_dir) if d.startswith("race_")]
                     if races:
-                        races.sort(key=lambda x: int(x.split('_')[1]))
+                        races.sort(key=lambda x: int(x.split("_")[1]))
                         target_dir = os.path.join(base_dir, races[-1])
-            
+
             if not target_dir or not os.path.exists(target_dir):
                 return jsonify([])
 
@@ -213,7 +199,9 @@ def create_app():
         Download file CSV log sebagai attachment.
         """
         try:
-            target_dir = os.path.join(os.getcwd(), "logs", "captures", f"race_{race_id}")
+            target_dir = os.path.join(
+                os.getcwd(), "logs", "captures", f"race_{race_id}"
+            )
             return send_from_directory(target_dir, filename, as_attachment=True)
         except Exception:
             return jsonify({"error": "File not found"}), 404
