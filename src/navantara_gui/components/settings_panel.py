@@ -130,8 +130,12 @@ class SettingsPanel(QGroupBox):
         self.debug_tab = DebugPanel(config=self.config)
 
         self.tab_widget.addTab(self.pid_tab, "PID")
-        self.tab_widget.addTab(self.servo_tab, "Servo")
-        self.tab_widget.addTab(self.thruster_tab, "Thruster")
+        
+        idx_servo = self.tab_widget.addTab(self.servo_tab, "Servo Trim / Range")
+        self.tab_widget.setTabToolTip(idx_servo, "(Set hardware center and physical limits)")
+        
+        idx_thruster = self.tab_widget.addTab(self.thruster_tab, "Thruster Calibration")
+        self.tab_widget.setTabToolTip(idx_thruster, "(Set absolute ESC hardware limits)")
         self.tab_widget.addTab(self.connection_tab, "Connection")
         self.tab_widget.addTab(self.debug_tab, "Debug")
 
@@ -148,9 +152,9 @@ class SettingsPanel(QGroupBox):
         # Koneksi Kontrol AI
         self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
 
-        # [UBAH] Sambungkan kedua slider depan ke fungsi yang sama
-        self.slider_front_left.valueChanged.connect(self._on_front_speed_changed)
-        self.slider_front_right.valueChanged.connect(self._on_front_speed_changed)
+        # [UBAH] Sambungkan kedua slider depan
+        self.slider_front_left.valueChanged.connect(self._on_front_left_changed)
+        self.slider_front_right.valueChanged.connect(self._on_front_right_changed)
 
         self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
@@ -158,16 +162,19 @@ class SettingsPanel(QGroupBox):
 
     # --- SLOT HANDLERS ---
     def _on_ai_speed_changed(self, value):
-        self.lbl_ai_speed.setText(f"PWM Motor Utama: {value}")
+        self.lbl_ai_speed.setText(f"Max Forward Cruise: {value}")
         self.vision_speed_updated.emit(value)
 
-    def _on_front_speed_changed(self):
-        val_l = self.slider_front_left.value()
-        val_r = self.slider_front_right.value()
-        self.lbl_front_left.setText(f"PWM Depan Kiri: {val_l}")
-        self.lbl_front_right.setText(f"PWM Depan Kanan: {val_r}")
-        # Kirim payload data ke backend
-        self.vision_front_motor_updated.emit({"left": val_l, "right": val_r})
+    def _on_front_left_changed(self, value):
+        self.lbl_front_left.setText(f"Max Left Steering: {value}")
+        # Kirim pasangan nilai saat ini ke backend
+        right_val = self.slider_front_right.value()
+        self.vision_front_motor_updated.emit({"left": value, "right": right_val})
+
+    def _on_front_right_changed(self, value):
+        self.lbl_front_right.setText(f"Max Right Steering: {value}")
+        left_val = self.slider_front_left.value()
+        self.vision_front_motor_updated.emit({"left": left_val, "right": value})
 
     def _on_ai_servo_changed(self):
         payload = {"left": self.spin_left.value(), "right": self.spin_right.value()}

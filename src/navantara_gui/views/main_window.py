@@ -224,7 +224,7 @@ class MainWindow(QMainWindow):
         tab_auto_layout.addWidget(ai_group)
 
         # PWM Settings - reparent from settings_panel
-        pwm_group = QGroupBox("PWM Settings")
+        pwm_group = QGroupBox("Auto Cruise Speed Limits")
         pwm_layout = QVBoxLayout()
 
         speed_row = QHBoxLayout()
@@ -348,7 +348,7 @@ class MainWindow(QMainWindow):
         tab_wp_actions_layout.addWidget(photo_box)
 
         # Konfigurasi Inversi Servo - reparent from waypoints_panel
-        inversion_box = QGroupBox("Konfigurasi Inversi Servo")
+        inversion_box = QGroupBox("Waypoint Payload/Triggers (Inversi)")
         inversion_layout_h = QHBoxLayout()
         inversion_layout_h.addWidget(self.waypoints_panel.trigger_wp_input)
         inversion_layout_h.addWidget(self.waypoints_panel.set_trigger_btn)

@@ -21,9 +21,9 @@
     "slow_approach_distance_m": 15.0,
     "max_turn_error_deg": 45.0,
     "heading_pid": {
-      "kp": 1.2,
-      "ki": 0.1,
-      "kd": 0.05
+      "kp": 2.0,
+      "ki": 0.0,
+      "kd": 0.5
     },
     "avoidance_pid": {
       "kp": 0.4,
