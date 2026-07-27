@@ -166,10 +166,16 @@ class SensorDisplay(QGroupBox):
         # Baris Koordinat
         self.val_lat = QLabel("0.0")
         self.val_lon = QLabel("0.0")
-        layout.addWidget(QLabel("Latitude:"))
-        layout.addWidget(self.val_lat)
-        layout.addWidget(QLabel("Longitude:"))
-        layout.addWidget(self.val_lon)
+        
+        row_lat = QHBoxLayout()
+        row_lat.addWidget(QLabel("Latitude:"))
+        row_lat.addWidget(self.val_lat)
+        layout.addLayout(row_lat)
+
+        row_lon = QHBoxLayout()
+        row_lon.addWidget(QLabel("Longitude:"))
+        row_lon.addWidget(self.val_lon)
+        layout.addLayout(row_lon)
 
         # Baris Speed
         row_spd = QHBoxLayout()

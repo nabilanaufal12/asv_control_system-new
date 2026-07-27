@@ -418,12 +418,14 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: nowrap;
   padding: 7px 12px;
   background: rgba(0,180,216,0.05);
   border: 1px solid var(--border-steel);
   border-left: 3px solid var(--cyan);
   border-radius: 5px;
   transition: background 0.2s, box-shadow 0.2s;
+  gap: 8px;
 }
 
 .info-item:hover {
@@ -438,16 +440,22 @@ body {
   letter-spacing: 0.12em;
   color: var(--text-secondary);
   text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .info-item span:last-child,
 .telemetry-val {
   font-family: var(--font-mono);
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--cyan);
   text-shadow: 0 0 6px var(--cyan-glow);
   letter-spacing: 0.05em;
+  white-space: nowrap;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Capture Section ───────────────────────────────────── */
