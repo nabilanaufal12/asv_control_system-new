@@ -912,20 +912,19 @@ class AsvHandler:
     # [BARU] Handler untuk mengubah titik trigger inversi secara dinamis
     def _handle_update_inversion_trigger(self, payload):
         try:
-            # Terima input 1-based dari GUI (misal: WP 6)
-            raw_wp_number = int(payload.get("index", 6))
+            # [FIX] GUI sudah mengirim 0-based index, langsung gunakan tanpa dikurangi 1
+            trigger_index = int(payload.get("index", 5))
 
-            # Konversi ke 0-based index untuk logika internal
-            # Contoh: User ingin trigger di WP 6, maka index target adalah 5
-            trigger_index = max(0, raw_wp_number - 1)
+            # Proteksi agar index tidak negatif
+            trigger_index = max(0, trigger_index)
 
             with self.state_lock:
                 self.current_state.inversion_trigger_wp = trigger_index
 
             logging.info(
-                f"[AsvHandler] Inversion Trigger Updated: WP {raw_wp_number} (Index {trigger_index})"
+                f"[AsvHandler] Inversion Trigger Updated: Index {trigger_index} (WP {trigger_index + 1})"
             )
-            self.logger.log_event(f"Trigger Inversi diubah ke Waypoint {raw_wp_number}")
+            self.logger.log_event(f"Trigger Inversi diubah ke Index {trigger_index}")
 
         except ValueError:
             logging.warning("[AsvHandler] Payload inversion trigger tidak valid")
@@ -994,13 +993,14 @@ class AsvHandler:
 
     def _handle_set_photo_mission(self, payload):
         try:
+            # [FIX] GUI mengirimkan indeks 0-based, langsung gunakan tanpa pengurangan
             wp1 = int(payload.get("wp1", -1))
             wp2 = int(payload.get("wp2", -1))
             count = int(payload.get("count", 0))
 
             with self.state_lock:
-                self.current_state.photo_mission_target_wp1 = wp1  # Start Index
-                self.current_state.photo_mission_target_wp2 = wp2  # Stop Index
+                self.current_state.photo_mission_target_wp1 = wp1  # Start Index (0-based)
+                self.current_state.photo_mission_target_wp2 = wp2  # Stop Index (0-based)
                 self.current_state.photo_mission_qty_requested = count
                 # Reset counter
                 self.current_state.photo_mission_qty_taken_1 = (
@@ -1011,9 +1011,9 @@ class AsvHandler:
                 )
 
             logging.info(
-                f"[AsvHandler] Misi Segmen Foto diatur: Start WP={wp1}, Stop WP={wp2}, Max={count} foto."
+                f"[AsvHandler] Misi Segmen Foto diatur: Start Index={wp1}, Stop Index={wp2}, Max={count} foto."
             )
-            self.logger.log_event(f"Misi Foto Segmen: {wp1}-{wp2}, max {count}.")
+            self.logger.log_event(f"Misi Foto Segmen: Index {wp1}-{wp2}, max {count}.")
 
         except Exception as e:
             logging.warning(
