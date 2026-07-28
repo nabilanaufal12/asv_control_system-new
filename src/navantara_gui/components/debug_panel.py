@@ -31,21 +31,21 @@ class DebugPanel(QWidget):
         main_layout = QVBoxLayout(self)
 
         # === Panel Kontrol AI & Motor ===
-        ai_control_group = QGroupBox("Panel Kontrol AI & Motor")
+        ai_control_group = QGroupBox("Raw Motor Diagnostics")
         ai_layout = QVBoxLayout()
 
         ai_buttons_layout = QHBoxLayout()
-        self.counter_plus_btn = QPushButton("Counter Plus")
-        self.counter_min_btn = QPushButton("Counter Min")
-        self.inverse_btn = QPushButton("Inverse")
+        self.counter_plus_btn = QPushButton("Step PWM (+)")
+        self.counter_min_btn = QPushButton("Step PWM (-)")
+        self.inverse_btn = QPushButton("Invert Motor Polarity")
         self.inverse_btn.setCheckable(True)
         ai_buttons_layout.addWidget(self.counter_plus_btn)
         ai_buttons_layout.addWidget(self.counter_min_btn)
         ai_buttons_layout.addWidget(self.inverse_btn)
 
         motor_buttons_layout = QHBoxLayout()
-        self.motor_set_btn = QPushButton("Motor Set")
-        self.reset_btn = QPushButton("Reset")
+        self.motor_set_btn = QPushButton("Send Raw PWM")
+        self.reset_btn = QPushButton("Kill/Reset Motors")
         motor_buttons_layout.addWidget(self.motor_set_btn)
         motor_buttons_layout.addWidget(self.reset_btn)
 
@@ -54,7 +54,7 @@ class DebugPanel(QWidget):
         ai_control_group.setLayout(ai_layout)
 
         # === Panel Input Data Spesifik ===
-        specific_data_group = QGroupBox("Input Data Spesifik")
+        specific_data_group = QGroupBox("Sensor Spoofing (Simulasi Data)")
         form_layout = QFormLayout()
 
         self.azimuth_input = QLineEdit()
@@ -65,7 +65,7 @@ class DebugPanel(QWidget):
         form_layout.addRow("Lat Direction:", self.lat_direction_input)
         form_layout.addRow("Long Direction:", self.long_direction_input)
 
-        self.send_specific_data_btn = QPushButton("Send Specific Data")
+        self.send_specific_data_btn = QPushButton("Inject Fake Sensor Data")
         form_layout.addRow(self.send_specific_data_btn)
 
         specific_data_group.setLayout(form_layout)

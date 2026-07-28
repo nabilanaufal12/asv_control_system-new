@@ -117,6 +117,25 @@ class AsvHandler:
     def __init__(self, config, socketio):
         self.config = config
         self.socketio = socketio
+        
+        # --- [NEW] Route Python Logs to GUI ---
+        class SocketIOLogHandler(logging.Handler):
+            def __init__(self, sio):
+                super().__init__()
+                self.sio = sio
+
+            def emit(self, record):
+                try:
+                    msg = self.format(record)
+                    self.sio.emit("log_message", {"text": msg})
+                except Exception:
+                    pass
+
+        self.gui_log_handler = SocketIOLogHandler(self.socketio)
+        formatter = logging.Formatter('%(levelname)s: %(message)s')
+        self.gui_log_handler.setFormatter(formatter)
+        logging.getLogger().addHandler(self.gui_log_handler)
+        # --------------------------------------
         self.serial_handler = SerialHandler(config)
         self.running = True
         self.state_lock = threading.Lock()
@@ -941,7 +960,7 @@ class AsvHandler:
             # Format protokol: T,PID,<P>,<I>,<D>\n
             tuning_cmd = f"T,PID,{kp},{ki},{kd}\n"
             if hasattr(self, 'serial_handler') and self.serial_handler:
-                self.serial_handler.send_data(tuning_cmd)
+                self.serial_handler.send_command(tuning_cmd)
                 logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
 
     def _handle_update_servo(self, payload):
@@ -950,7 +969,7 @@ class AsvHandler:
         if left is not None and right is not None:
             tuning_cmd = f"T,SRV,{left},{right}\n"
             if hasattr(self, 'serial_handler') and self.serial_handler:
-                self.serial_handler.send_data(tuning_cmd)
+                self.serial_handler.send_command(tuning_cmd)
                 logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
 
     def _handle_update_thruster(self, payload):
@@ -958,7 +977,7 @@ class AsvHandler:
         if speed is not None:
             tuning_cmd = f"T,THR,{speed}\n"
             if hasattr(self, 'serial_handler') and self.serial_handler:
-                self.serial_handler.send_data(tuning_cmd)
+                self.serial_handler.send_command(tuning_cmd)
                 logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
 
     def _handle_serial_configuration(self, payload):
