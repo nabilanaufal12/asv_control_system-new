@@ -219,31 +219,6 @@ class MainWindow(QMainWindow):
         ai_group.setLayout(ai_layout)
         tab_auto_layout.addWidget(ai_group)
 
-        # PWM Settings - reparent from settings_panel
-        pwm_group = QGroupBox("Auto Cruise Speed Limits")
-        pwm_layout = QVBoxLayout()
-
-        speed_row = QHBoxLayout()
-        speed_row.addWidget(self.settings_panel.lbl_ai_speed)
-        speed_row.addWidget(self.settings_panel.slider_ai_speed)
-        speed_row.addWidget(self.settings_panel.spin_ai_speed)
-        pwm_layout.addLayout(speed_row)
-
-        left_front_row = QHBoxLayout()
-        left_front_row.addWidget(self.settings_panel.lbl_front_left)
-        left_front_row.addWidget(self.settings_panel.slider_front_left)
-        left_front_row.addWidget(self.settings_panel.spin_front_left)
-        pwm_layout.addLayout(left_front_row)
-
-        right_front_row = QHBoxLayout()
-        right_front_row.addWidget(self.settings_panel.lbl_front_right)
-        right_front_row.addWidget(self.settings_panel.slider_front_right)
-        right_front_row.addWidget(self.settings_panel.spin_front_right)
-        pwm_layout.addLayout(right_front_row)
-
-        pwm_group.setLayout(pwm_layout)
-        tab_auto_layout.addWidget(pwm_group)
-
         tab_auto_layout.addStretch()
         self.left_tabs.addTab(tab_auto, "🤖 Auto Mission")
 
@@ -434,20 +409,6 @@ class MainWindow(QMainWindow):
             )
         )
         # -----------------------------------
-
-        self.settings_panel.vision_speed_updated.connect(
-            lambda val: self.api_client.send_command(
-                "UPDATE_VISION_SPEED", {"pwm": val}
-            )
-        )
-
-        # --- [TAMBAHAN BARU] Koneksi Motor Depan (Kiri & Kanan) ---
-        self.settings_panel.vision_front_motor_updated.connect(
-            lambda payload: self.api_client.send_command(
-                "UPDATE_VISION_FRONT_MOTOR", payload
-            )
-        )
-        # ----------------------------------------------------------
 
         self.settings_panel.vision_mission_updated.connect(
             lambda p: self.api_client.send_command("UPDATE_VISION_MISSION", p)

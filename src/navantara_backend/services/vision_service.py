@@ -932,14 +932,13 @@ class VisionService:
             if conf < self.poi_confidence_threshold:
                 continue
 
-            # --- [PERBAIKAN] Kumpulkan semua 5 kelas baru ---
-            if cls in [
-                "bola-merah",
-                "bola-hijau",
-                "kotak-hijau",
-                "kotak-biru",
-                "bola-biru",
-            ]:
+            # Ambil profil misi aktif dari asv_handler
+            active_profile = self.asv_handler._get_active_vision_profile()
+
+            # --- [PERBAIKAN] Gunakan kelas valid dari profil aktif ---
+            if (
+                cls in active_profile["valid_classes"] or cls == "bola-biru"
+            ):  # bola-biru selalu valid (docking)
                 valid_buoys.append(det)
 
         if valid_buoys:
@@ -957,8 +956,8 @@ class VisionService:
             if distance_to_closest is None:
                 distance_to_closest = float("inf")
 
-            # Jika objek berada dalam jarak aktivasi penghindaran
-            if distance_to_closest < self.obstacle_activation_distance:
+            # Jika objek berada dalam jarak aktivasi penghindaran (dari profil)
+            if distance_to_closest < active_profile["trigger_dist"]:
                 self.last_buoy_seen_time = time.time()
 
                 payload_obs = {

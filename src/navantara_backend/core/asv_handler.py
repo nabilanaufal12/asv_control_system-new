@@ -111,12 +111,18 @@ class AsvState:
     mission_bola_trigger_dist: int = 165
     mission_bola_angle_left: int = 70
     mission_bola_angle_right: int = 110
+    mission_bola_pwm_utama: int = 1500
+    mission_bola_pwm_kiri: int = 1500
+    mission_bola_pwm_kanan: int = 1500
 
     mission_kotak_wp_start: int = 11
     mission_kotak_wp_end: int = 15
     mission_kotak_trigger_dist: int = 165
     mission_kotak_angle_left: int = 70
     mission_kotak_angle_right: int = 110
+    mission_kotak_pwm_utama: int = 1500
+    mission_kotak_pwm_kiri: int = 1500
+    mission_kotak_pwm_kanan: int = 1500
 
 
 class AsvHandler:
@@ -585,8 +591,9 @@ class AsvHandler:
                             self.current_state.is_avoiding = True
                             self.current_state.gate_context["last_gate_config"] = None
 
+                            profile = self._get_active_vision_profile()
                             # Ambil kecepatan motor belakang dari GUI
-                            current_ai_pwm = self.current_state.vision_auto_motor_cmd
+                            current_ai_pwm = profile["pwm_utama"]
                             # Kita TIDAK butuh nilai servo dari GUI karena akan di-set selalu 90
 
                         obj_class = vision_target_obj_class
@@ -624,18 +631,11 @@ class AsvHandler:
                         motor_depan_kiri = self.FRONT_MOTOR_STOP
                         motor_depan_kanan = self.FRONT_MOTOR_STOP
 
-                        # Ambil nilai servo dan motor depan dari GUI secara realtime
-                        with self.state_lock:
-                            pwm_depan_kiri_aktif = (
-                                self.current_state.vision_front_motor_left_cmd
-                            )
-                            pwm_depan_kanan_aktif = (
-                                self.current_state.vision_front_motor_right_cmd
-                            )
-                            servo_kiri_aktif = self.current_state.vision_servo_left_cmd
-                            servo_kanan_aktif = (
-                                self.current_state.vision_servo_right_cmd
-                            )
+                        # Ambil nilai servo dan motor depan dari profil misi secara realtime
+                        pwm_depan_kiri_aktif = profile["pwm_kiri"]
+                        pwm_depan_kanan_aktif = profile["pwm_kanan"]
+                        servo_kiri_aktif = profile["angle_left"]
+                        servo_kanan_aktif = profile["angle_right"]
 
                         if turn_direction == "LEFT":
                             # Belok Kiri: Menggunakan settingan servo kiri dari GUI
@@ -746,8 +746,6 @@ class AsvHandler:
             "UPDATE_SERVO": self._handle_update_servo,
             "UPDATE_THRUSTER": self._handle_update_thruster,
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
-            "UPDATE_VISION_SPEED": self._handle_update_vision_speed,
-            "UPDATE_VISION_FRONT_MOTOR": self._handle_update_vision_front_motor,
             "UPDATE_VISION_SERVO": self._handle_update_vision_servo,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "INVERSE_SERVO": self._handle_inverse_servo,
@@ -801,32 +799,6 @@ class AsvHandler:
             )
         except ValueError:
             logging.warning("[AsvHandler] Payload servo tidak valid")
-
-    def _handle_update_vision_speed(self, payload):
-        try:
-            pwm_val = int(payload.get("pwm", 1500))
-            # Batasi safety range di sisi backend juga
-            pwm_val = max(1300, min(1800, pwm_val))
-
-            with self.state_lock:
-                self.current_state.vision_auto_motor_cmd = pwm_val
-
-            logging.info(f"[AsvHandler] Kecepatan AI Vision diupdate ke PWM: {pwm_val}")
-        except ValueError:
-            logging.warning("[AsvHandler] Payload PWM tidak valid untuk vision speed")
-
-    def _handle_update_vision_front_motor(self, payload):
-        try:
-            left_val = int(payload.get("left", 1650))
-            right_val = int(payload.get("right", 1650))
-            with self.state_lock:
-                self.current_state.vision_front_motor_left_cmd = left_val
-                self.current_state.vision_front_motor_right_cmd = right_val
-            logging.info(
-                f"[AsvHandler] Motor Depan AI Updated -> Kiri: {left_val}, Kanan: {right_val}"
-            )
-        except ValueError:
-            logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
 
     def _handle_set_inversion(self, payload):
         with self.state_lock:
@@ -949,6 +921,15 @@ class AsvHandler:
             self.current_state.mission_bola_angle_right = int(
                 bola.get("angle_right", self.current_state.mission_bola_angle_right)
             )
+            self.current_state.mission_bola_pwm_utama = int(
+                bola.get("pwm_utama", self.current_state.mission_bola_pwm_utama)
+            )
+            self.current_state.mission_bola_pwm_kiri = int(
+                bola.get("pwm_kiri", self.current_state.mission_bola_pwm_kiri)
+            )
+            self.current_state.mission_bola_pwm_kanan = int(
+                bola.get("pwm_kanan", self.current_state.mission_bola_pwm_kanan)
+            )
 
             # Profil Kotak
             self.current_state.mission_kotak_wp_start = int(
@@ -966,12 +947,54 @@ class AsvHandler:
             self.current_state.mission_kotak_angle_right = int(
                 kotak.get("angle_right", self.current_state.mission_kotak_angle_right)
             )
+            self.current_state.mission_kotak_pwm_utama = int(
+                kotak.get("pwm_utama", self.current_state.mission_kotak_pwm_utama)
+            )
+            self.current_state.mission_kotak_pwm_kiri = int(
+                kotak.get("pwm_kiri", self.current_state.mission_kotak_pwm_kiri)
+            )
+            self.current_state.mission_kotak_pwm_kanan = int(
+                kotak.get("pwm_kanan", self.current_state.mission_kotak_pwm_kanan)
+            )
 
         logging.info(
             f"[AsvHandler] Profil Misi Updated -> "
             f"Bola(WP {self.current_state.mission_bola_wp_start}-{self.current_state.mission_bola_wp_end}), "
             f"Kotak(WP {self.current_state.mission_kotak_wp_start}-{self.current_state.mission_kotak_wp_end})"
         )
+
+    def _get_active_vision_profile(self):
+        """Mengembalikan profil aktif (bola atau kotak) berdasarkan waypoint saat ini."""
+        wp = self.current_state.current_waypoint_index
+
+        # Cek apakah masuk profil kotak
+        if (
+            self.current_state.mission_kotak_wp_start
+            <= wp
+            <= self.current_state.mission_kotak_wp_end
+        ):
+            return {
+                "profile_name": "kotak",
+                "valid_classes": ["kotak-hijau", "kotak-biru"],
+                "trigger_dist": self.current_state.mission_kotak_trigger_dist,
+                "angle_left": self.current_state.mission_kotak_angle_left,
+                "angle_right": self.current_state.mission_kotak_angle_right,
+                "pwm_utama": self.current_state.mission_kotak_pwm_utama,
+                "pwm_kiri": self.current_state.mission_kotak_pwm_kiri,
+                "pwm_kanan": self.current_state.mission_kotak_pwm_kanan,
+            }
+
+        # Default fallback ke profil bola
+        return {
+            "profile_name": "bola",
+            "valid_classes": ["bola-merah", "bola-hijau"],
+            "trigger_dist": self.current_state.mission_bola_trigger_dist,
+            "angle_left": self.current_state.mission_bola_angle_left,
+            "angle_right": self.current_state.mission_bola_angle_right,
+            "pwm_utama": self.current_state.mission_bola_pwm_utama,
+            "pwm_kiri": self.current_state.mission_bola_pwm_kiri,
+            "pwm_kanan": self.current_state.mission_bola_pwm_kanan,
+        }
 
     def _handle_manual_control(self, payload):
         """Menerjemahkan input keyboard (WASD) ke perintah servo dan motor."""

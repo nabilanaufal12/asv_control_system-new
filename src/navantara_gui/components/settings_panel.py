@@ -5,8 +5,8 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QLabel,
     QSlider,
-    QHBoxLayout,
     QSpinBox,
+    QGridLayout,
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont
@@ -29,10 +29,7 @@ class SettingsPanel(QGroupBox):
     connect_requested = Signal(dict)
     debug_command_sent = Signal(str, object)
     manual_speed_changed = Signal(int)
-    vision_speed_updated = Signal(int)
-    vision_front_motor_updated = Signal(
-        dict
-    )  # [UBAH] Sekarang mengirim dict (Kiri & Kanan)
+    vision_mission_updated = Signal(dict)
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
     vision_mission_updated = Signal(dict)
@@ -46,155 +43,147 @@ class SettingsPanel(QGroupBox):
         ai_control_group = QGroupBox("AI Vision & Mission Control")
         ai_layout = QVBoxLayout()
 
-        # 1. Slider Kecepatan Motor Bawah (Utama)
-        speed_layout = QHBoxLayout()
-        self.lbl_ai_speed = QLabel("PWM Motor Utama:")
-        self.slider_ai_speed = QSlider(Qt.Horizontal)
-        self.slider_ai_speed.setRange(1100, 1800)
-        self.slider_ai_speed.setValue(1300)
-
-        self.spin_ai_speed = QSpinBox()
-        self.spin_ai_speed.setRange(1100, 1800)
-        self.spin_ai_speed.setValue(1300)
-        self.spin_ai_speed.setFixedWidth(70)
-
-        speed_layout.addWidget(self.lbl_ai_speed)
-        speed_layout.addWidget(self.slider_ai_speed)
-        speed_layout.addWidget(self.spin_ai_speed)
-
-        # 1.5 [UBAH] 2 Slider Kecepatan Motor Depan (Kemudi Kiri & Kanan)
-        front_speed_layout = QVBoxLayout()
-
-        # --- Motor Depan Kiri ---
-        left_front_layout = QHBoxLayout()
-        self.lbl_front_left = QLabel("PWM Depan Kiri:")
-        self.slider_front_left = QSlider(Qt.Horizontal)
-        self.slider_front_left.setRange(1000, 1900)
-        self.slider_front_left.setValue(1500)
-
-        self.spin_front_left = QSpinBox()
-        self.spin_front_left.setRange(1000, 1900)
-        self.spin_front_left.setValue(1500)
-        self.spin_front_left.setFixedWidth(70)
-
-        left_front_layout.addWidget(self.lbl_front_left)
-        left_front_layout.addWidget(self.slider_front_left)
-        left_front_layout.addWidget(self.spin_front_left)
-
-        # --- Motor Depan Kanan ---
-        right_front_layout = QHBoxLayout()
-        self.lbl_front_right = QLabel("PWM Depan Kanan:")
-        self.slider_front_right = QSlider(Qt.Horizontal)
-        self.slider_front_right.setRange(1000, 1900)
-        self.slider_front_right.setValue(1500)
-
-        self.spin_front_right = QSpinBox()
-        self.spin_front_right.setRange(1000, 1900)
-        self.spin_front_right.setValue(1500)
-        self.spin_front_right.setFixedWidth(70)
-
-        right_front_layout.addWidget(self.lbl_front_right)
-        right_front_layout.addWidget(self.slider_front_right)
-        right_front_layout.addWidget(self.spin_front_right)
-
-        front_speed_layout.addLayout(left_front_layout)
-        front_speed_layout.addLayout(right_front_layout)
-
-        # 2. --- Profil Misi Bola (Merah-Hijau) ---
+        # 1. --- Profil Misi Bola (Merah-Hijau) ---
         bola_group = QGroupBox("Misi Bola (Merah-Hijau)")
-        bola_layout = QVBoxLayout()
+        bola_layout = QGridLayout()
 
-        bola_wp_row = QHBoxLayout()
-        bola_wp_row.addWidget(QLabel("WP Range:"))
+        bola_layout.addWidget(QLabel("WP Range:"), 0, 0)
         self.spin_bola_wp_start = QSpinBox()
         self.spin_bola_wp_start.setRange(0, 30)
         self.spin_bola_wp_start.setValue(0)
         self.spin_bola_wp_start.setPrefix("Start: ")
-        bola_wp_row.addWidget(self.spin_bola_wp_start)
+        bola_layout.addWidget(self.spin_bola_wp_start, 0, 1)
         self.spin_bola_wp_end = QSpinBox()
         self.spin_bola_wp_end.setRange(0, 30)
         self.spin_bola_wp_end.setValue(11)
         self.spin_bola_wp_end.setPrefix("End: ")
-        bola_wp_row.addWidget(self.spin_bola_wp_end)
-        bola_layout.addLayout(bola_wp_row)
+        bola_layout.addWidget(self.spin_bola_wp_end, 0, 2)
 
-        bola_dist_row = QHBoxLayout()
-        bola_dist_row.addWidget(QLabel("Trigger Dist:"))
+        bola_layout.addWidget(QLabel("Trigger Dist:"), 1, 0)
         self.spin_bola_dist = QSpinBox()
         self.spin_bola_dist.setRange(0, 500)
         self.spin_bola_dist.setValue(165)
         self.spin_bola_dist.setSingleStep(10)
         self.spin_bola_dist.setSuffix(" cm")
-        bola_dist_row.addWidget(self.spin_bola_dist)
-        bola_layout.addLayout(bola_dist_row)
+        bola_layout.addWidget(self.spin_bola_dist, 1, 1, 1, 2)
 
-        bola_angle_row = QHBoxLayout()
-        bola_angle_row.addWidget(QLabel("Avoid Angle:"))
+        bola_layout.addWidget(QLabel("Avoid Angle:"), 2, 0)
         self.spin_bola_left = QSpinBox()
         self.spin_bola_left.setRange(0, 90)
         self.spin_bola_left.setValue(70)
         self.spin_bola_left.setPrefix("L: ")
         self.spin_bola_left.setSuffix("°")
-        bola_angle_row.addWidget(self.spin_bola_left)
+        bola_layout.addWidget(self.spin_bola_left, 2, 1)
         self.spin_bola_right = QSpinBox()
         self.spin_bola_right.setRange(90, 180)
         self.spin_bola_right.setValue(110)
         self.spin_bola_right.setPrefix("R: ")
         self.spin_bola_right.setSuffix("°")
-        bola_angle_row.addWidget(self.spin_bola_right)
-        bola_layout.addLayout(bola_angle_row)
+        bola_layout.addWidget(self.spin_bola_right, 2, 2)
+
+        bola_layout.addWidget(QLabel("PWM Utama:"), 3, 0)
+        self.slider_bola_pwm_utama = QSlider(Qt.Horizontal)
+        self.slider_bola_pwm_utama.setRange(1000, 2000)
+        self.slider_bola_pwm_utama.setValue(1500)
+        bola_layout.addWidget(self.slider_bola_pwm_utama, 3, 1)
+        self.spin_bola_pwm_utama = QSpinBox()
+        self.spin_bola_pwm_utama.setRange(1000, 2000)
+        self.spin_bola_pwm_utama.setValue(1500)
+        bola_layout.addWidget(self.spin_bola_pwm_utama, 3, 2)
+
+        bola_layout.addWidget(QLabel("PWM Depan Kiri:"), 4, 0)
+        self.slider_bola_pwm_kiri = QSlider(Qt.Horizontal)
+        self.slider_bola_pwm_kiri.setRange(1000, 2000)
+        self.slider_bola_pwm_kiri.setValue(1500)
+        bola_layout.addWidget(self.slider_bola_pwm_kiri, 4, 1)
+        self.spin_bola_pwm_kiri = QSpinBox()
+        self.spin_bola_pwm_kiri.setRange(1000, 2000)
+        self.spin_bola_pwm_kiri.setValue(1500)
+        bola_layout.addWidget(self.spin_bola_pwm_kiri, 4, 2)
+
+        bola_layout.addWidget(QLabel("PWM Depan Kanan:"), 5, 0)
+        self.slider_bola_pwm_kanan = QSlider(Qt.Horizontal)
+        self.slider_bola_pwm_kanan.setRange(1000, 2000)
+        self.slider_bola_pwm_kanan.setValue(1500)
+        bola_layout.addWidget(self.slider_bola_pwm_kanan, 5, 1)
+        self.spin_bola_pwm_kanan = QSpinBox()
+        self.spin_bola_pwm_kanan.setRange(1000, 2000)
+        self.spin_bola_pwm_kanan.setValue(1500)
+        bola_layout.addWidget(self.spin_bola_pwm_kanan, 5, 2)
 
         bola_group.setLayout(bola_layout)
 
-        # 3. --- Profil Misi Kotak (Biru-Hijau) ---
+        # 2. --- Profil Misi Kotak (Biru-Hijau) ---
         kotak_group = QGroupBox("Misi Kotak (Biru-Hijau)")
-        kotak_layout = QVBoxLayout()
+        kotak_layout = QGridLayout()
 
-        kotak_wp_row = QHBoxLayout()
-        kotak_wp_row.addWidget(QLabel("WP Range:"))
+        kotak_layout.addWidget(QLabel("WP Range:"), 0, 0)
         self.spin_kotak_wp_start = QSpinBox()
         self.spin_kotak_wp_start.setRange(0, 30)
         self.spin_kotak_wp_start.setValue(11)
         self.spin_kotak_wp_start.setPrefix("Start: ")
-        kotak_wp_row.addWidget(self.spin_kotak_wp_start)
+        kotak_layout.addWidget(self.spin_kotak_wp_start, 0, 1)
         self.spin_kotak_wp_end = QSpinBox()
         self.spin_kotak_wp_end.setRange(0, 30)
         self.spin_kotak_wp_end.setValue(15)
         self.spin_kotak_wp_end.setPrefix("End: ")
-        kotak_wp_row.addWidget(self.spin_kotak_wp_end)
-        kotak_layout.addLayout(kotak_wp_row)
+        kotak_layout.addWidget(self.spin_kotak_wp_end, 0, 2)
 
-        kotak_dist_row = QHBoxLayout()
-        kotak_dist_row.addWidget(QLabel("Trigger Dist:"))
+        kotak_layout.addWidget(QLabel("Trigger Dist:"), 1, 0)
         self.spin_kotak_dist = QSpinBox()
         self.spin_kotak_dist.setRange(0, 500)
         self.spin_kotak_dist.setValue(165)
         self.spin_kotak_dist.setSingleStep(10)
         self.spin_kotak_dist.setSuffix(" cm")
-        kotak_dist_row.addWidget(self.spin_kotak_dist)
-        kotak_layout.addLayout(kotak_dist_row)
+        kotak_layout.addWidget(self.spin_kotak_dist, 1, 1, 1, 2)
 
-        kotak_angle_row = QHBoxLayout()
-        kotak_angle_row.addWidget(QLabel("Avoid Angle:"))
+        kotak_layout.addWidget(QLabel("Avoid Angle:"), 2, 0)
         self.spin_kotak_left = QSpinBox()
         self.spin_kotak_left.setRange(0, 90)
         self.spin_kotak_left.setValue(70)
         self.spin_kotak_left.setPrefix("L: ")
         self.spin_kotak_left.setSuffix("°")
-        kotak_angle_row.addWidget(self.spin_kotak_left)
+        kotak_layout.addWidget(self.spin_kotak_left, 2, 1)
         self.spin_kotak_right = QSpinBox()
         self.spin_kotak_right.setRange(90, 180)
         self.spin_kotak_right.setValue(110)
         self.spin_kotak_right.setPrefix("R: ")
         self.spin_kotak_right.setSuffix("°")
-        kotak_angle_row.addWidget(self.spin_kotak_right)
-        kotak_layout.addLayout(kotak_angle_row)
+        kotak_layout.addWidget(self.spin_kotak_right, 2, 2)
+
+        kotak_layout.addWidget(QLabel("PWM Utama:"), 3, 0)
+        self.slider_kotak_pwm_utama = QSlider(Qt.Horizontal)
+        self.slider_kotak_pwm_utama.setRange(1000, 2000)
+        self.slider_kotak_pwm_utama.setValue(1500)
+        kotak_layout.addWidget(self.slider_kotak_pwm_utama, 3, 1)
+        self.spin_kotak_pwm_utama = QSpinBox()
+        self.spin_kotak_pwm_utama.setRange(1000, 2000)
+        self.spin_kotak_pwm_utama.setValue(1500)
+        kotak_layout.addWidget(self.spin_kotak_pwm_utama, 3, 2)
+
+        kotak_layout.addWidget(QLabel("PWM Depan Kiri:"), 4, 0)
+        self.slider_kotak_pwm_kiri = QSlider(Qt.Horizontal)
+        self.slider_kotak_pwm_kiri.setRange(1000, 2000)
+        self.slider_kotak_pwm_kiri.setValue(1500)
+        kotak_layout.addWidget(self.slider_kotak_pwm_kiri, 4, 1)
+        self.spin_kotak_pwm_kiri = QSpinBox()
+        self.spin_kotak_pwm_kiri.setRange(1000, 2000)
+        self.spin_kotak_pwm_kiri.setValue(1500)
+        kotak_layout.addWidget(self.spin_kotak_pwm_kiri, 4, 2)
+
+        kotak_layout.addWidget(QLabel("PWM Depan Kanan:"), 5, 0)
+        self.slider_kotak_pwm_kanan = QSlider(Qt.Horizontal)
+        self.slider_kotak_pwm_kanan.setRange(1000, 2000)
+        self.slider_kotak_pwm_kanan.setValue(1500)
+        kotak_layout.addWidget(self.slider_kotak_pwm_kanan, 5, 1)
+        self.spin_kotak_pwm_kanan = QSpinBox()
+        self.spin_kotak_pwm_kanan.setRange(1000, 2000)
+        self.spin_kotak_pwm_kanan.setValue(1500)
+        kotak_layout.addWidget(self.spin_kotak_pwm_kanan, 5, 2)
 
         kotak_group.setLayout(kotak_layout)
 
         # --- GABUNGKAN SEMUA KE AI LAYOUT ---
-        ai_layout.addLayout(speed_layout)
-        ai_layout.addLayout(front_speed_layout)
         ai_layout.addWidget(bola_group)
         ai_layout.addWidget(kotak_group)
 
@@ -238,49 +227,67 @@ class SettingsPanel(QGroupBox):
         self.debug_tab.debug_command_sent.connect(self.debug_command_sent.emit)
         self.thruster_tab.speed_changed.connect(self.manual_speed_changed.emit)
 
-        # Koneksi Kontrol AI
-        self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
-        self.slider_ai_speed.valueChanged.connect(self.spin_ai_speed.setValue)
-        self.spin_ai_speed.valueChanged.connect(self.slider_ai_speed.setValue)
-
-        # [UBAH] Sambungkan kedua slider depan
-        self.slider_front_left.valueChanged.connect(self._on_front_left_changed)
-        self.slider_front_left.valueChanged.connect(self.spin_front_left.setValue)
-        self.spin_front_left.valueChanged.connect(self.slider_front_left.setValue)
-
-        self.slider_front_right.valueChanged.connect(self._on_front_right_changed)
-        self.slider_front_right.valueChanged.connect(self.spin_front_right.setValue)
-        self.spin_front_right.valueChanged.connect(self.slider_front_right.setValue)
-
         # --- [BARU] Koneksi Profil Misi Bola & Kotak ---
+        self.slider_bola_pwm_utama.valueChanged.connect(
+            self.spin_bola_pwm_utama.setValue
+        )
+        self.spin_bola_pwm_utama.valueChanged.connect(
+            self.slider_bola_pwm_utama.setValue
+        )
+
+        self.slider_bola_pwm_kiri.valueChanged.connect(self.spin_bola_pwm_kiri.setValue)
+        self.spin_bola_pwm_kiri.valueChanged.connect(self.slider_bola_pwm_kiri.setValue)
+
+        self.slider_bola_pwm_kanan.valueChanged.connect(
+            self.spin_bola_pwm_kanan.setValue
+        )
+        self.spin_bola_pwm_kanan.valueChanged.connect(
+            self.slider_bola_pwm_kanan.setValue
+        )
+
+        self.slider_kotak_pwm_utama.valueChanged.connect(
+            self.spin_kotak_pwm_utama.setValue
+        )
+        self.spin_kotak_pwm_utama.valueChanged.connect(
+            self.slider_kotak_pwm_utama.setValue
+        )
+
+        self.slider_kotak_pwm_kiri.valueChanged.connect(
+            self.spin_kotak_pwm_kiri.setValue
+        )
+        self.spin_kotak_pwm_kiri.valueChanged.connect(
+            self.slider_kotak_pwm_kiri.setValue
+        )
+
+        self.slider_kotak_pwm_kanan.valueChanged.connect(
+            self.spin_kotak_pwm_kanan.setValue
+        )
+        self.spin_kotak_pwm_kanan.valueChanged.connect(
+            self.slider_kotak_pwm_kanan.setValue
+        )
+
         mission_spinboxes = [
             self.spin_bola_wp_start,
             self.spin_bola_wp_end,
             self.spin_bola_dist,
             self.spin_bola_left,
             self.spin_bola_right,
+            self.spin_bola_pwm_utama,
+            self.spin_bola_pwm_kiri,
+            self.spin_bola_pwm_kanan,
             self.spin_kotak_wp_start,
             self.spin_kotak_wp_end,
             self.spin_kotak_dist,
             self.spin_kotak_left,
             self.spin_kotak_right,
+            self.spin_kotak_pwm_utama,
+            self.spin_kotak_pwm_kiri,
+            self.spin_kotak_pwm_kanan,
         ]
         for sb in mission_spinboxes:
             sb.valueChanged.connect(self._on_mission_profile_changed)
 
     # --- SLOT HANDLERS ---
-    def _on_ai_speed_changed(self, value):
-        self.vision_speed_updated.emit(value)
-
-    def _on_front_left_changed(self, value):
-        # Kirim pasangan nilai saat ini ke backend
-        right_val = self.slider_front_right.value()
-        self.vision_front_motor_updated.emit({"left": value, "right": right_val})
-
-    def _on_front_right_changed(self, value):
-        left_val = self.slider_front_left.value()
-        self.vision_front_motor_updated.emit({"left": left_val, "right": value})
-
     def _on_mission_profile_changed(self):
         """Kumpulkan semua data profil misi dan kirim ke backend."""
         payload = {
@@ -290,6 +297,9 @@ class SettingsPanel(QGroupBox):
                 "trigger_dist": self.spin_bola_dist.value(),
                 "angle_left": self.spin_bola_left.value(),
                 "angle_right": self.spin_bola_right.value(),
+                "pwm_utama": self.spin_bola_pwm_utama.value(),
+                "pwm_kiri": self.spin_bola_pwm_kiri.value(),
+                "pwm_kanan": self.spin_bola_pwm_kanan.value(),
             },
             "kotak": {
                 "wp_start": self.spin_kotak_wp_start.value(),
@@ -297,6 +307,9 @@ class SettingsPanel(QGroupBox):
                 "trigger_dist": self.spin_kotak_dist.value(),
                 "angle_left": self.spin_kotak_left.value(),
                 "angle_right": self.spin_kotak_right.value(),
+                "pwm_utama": self.spin_kotak_pwm_utama.value(),
+                "pwm_kiri": self.spin_kotak_pwm_kiri.value(),
+                "pwm_kanan": self.spin_kotak_pwm_kanan.value(),
             },
         }
         self.vision_mission_updated.emit(payload)
