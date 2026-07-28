@@ -105,6 +105,19 @@ class AsvState:
     vision_servo_left_cmd: int = 70
     vision_servo_right_cmd: int = 110
 
+    # --- [BARU] Profil Misi Bola & Kotak ---
+    mission_bola_wp_start: int = 0
+    mission_bola_wp_end: int = 11
+    mission_bola_trigger_dist: int = 165
+    mission_bola_angle_left: int = 70
+    mission_bola_angle_right: int = 110
+
+    mission_kotak_wp_start: int = 11
+    mission_kotak_wp_end: int = 15
+    mission_kotak_trigger_dist: int = 165
+    mission_kotak_angle_left: int = 70
+    mission_kotak_angle_right: int = 110
+
 
 class AsvHandler:
     # [FIX YEL-02] Konstanta kelas untuk menggantikan magic numbers
@@ -744,6 +757,7 @@ class AsvHandler:
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
             "MANUAL_CAPTURE": self._handle_manual_capture,
             "SWAP_CAMERAS": self._handle_swap_cameras,
+            "UPDATE_VISION_MISSION": self._handle_update_vision_mission,
         }
         handler = command_handlers.get(command)
         if handler:
@@ -912,6 +926,52 @@ class AsvHandler:
             return
         logging.info("[AsvHandler] Menerima perintah SWAP_CAMERAS.")
         self.vision_service.swap_cameras()
+
+    def _handle_update_vision_mission(self, payload):
+        """Memperbarui profil misi Bola dan Kotak dari GUI."""
+        bola = payload.get("bola", {})
+        kotak = payload.get("kotak", {})
+
+        with self.state_lock:
+            # Profil Bola
+            self.current_state.mission_bola_wp_start = int(
+                bola.get("wp_start", self.current_state.mission_bola_wp_start)
+            )
+            self.current_state.mission_bola_wp_end = int(
+                bola.get("wp_end", self.current_state.mission_bola_wp_end)
+            )
+            self.current_state.mission_bola_trigger_dist = int(
+                bola.get("trigger_dist", self.current_state.mission_bola_trigger_dist)
+            )
+            self.current_state.mission_bola_angle_left = int(
+                bola.get("angle_left", self.current_state.mission_bola_angle_left)
+            )
+            self.current_state.mission_bola_angle_right = int(
+                bola.get("angle_right", self.current_state.mission_bola_angle_right)
+            )
+
+            # Profil Kotak
+            self.current_state.mission_kotak_wp_start = int(
+                kotak.get("wp_start", self.current_state.mission_kotak_wp_start)
+            )
+            self.current_state.mission_kotak_wp_end = int(
+                kotak.get("wp_end", self.current_state.mission_kotak_wp_end)
+            )
+            self.current_state.mission_kotak_trigger_dist = int(
+                kotak.get("trigger_dist", self.current_state.mission_kotak_trigger_dist)
+            )
+            self.current_state.mission_kotak_angle_left = int(
+                kotak.get("angle_left", self.current_state.mission_kotak_angle_left)
+            )
+            self.current_state.mission_kotak_angle_right = int(
+                kotak.get("angle_right", self.current_state.mission_kotak_angle_right)
+            )
+
+        logging.info(
+            f"[AsvHandler] Profil Misi Updated -> "
+            f"Bola(WP {self.current_state.mission_bola_wp_start}-{self.current_state.mission_bola_wp_end}), "
+            f"Kotak(WP {self.current_state.mission_kotak_wp_start}-{self.current_state.mission_kotak_wp_end})"
+        )
 
     def _handle_manual_control(self, payload):
         """Menerjemahkan input keyboard (WASD) ke perintah servo dan motor."""

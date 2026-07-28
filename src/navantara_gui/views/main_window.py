@@ -208,18 +208,13 @@ class MainWindow(QMainWindow):
         ai_group = QGroupBox("AI Vision Mission Control")
         ai_layout = QVBoxLayout()
 
-        # Avoidance Angle
-        servo_row = QHBoxLayout()
-        servo_row.addWidget(QLabel("Avoidance Angle:"))
-        servo_row.addWidget(self.settings_panel.spin_left)
-        servo_row.addWidget(self.settings_panel.spin_right)
-        ai_layout.addLayout(servo_row)
-
-        # AI Activation Distance
-        dist_row = QHBoxLayout()
-        dist_row.addWidget(QLabel("AI Activation:"))
-        dist_row.addWidget(self.settings_panel.spin_obs_dist)
-        ai_layout.addLayout(dist_row)
+        # Reparent profil misi dari settings_panel
+        for child in self.settings_panel.findChildren(QGroupBox):
+            if child.title() in [
+                "Misi Bola (Merah-Hijau)",
+                "Misi Kotak (Biru-Hijau)",
+            ]:
+                ai_layout.addWidget(child)
 
         ai_group.setLayout(ai_layout)
         tab_auto_layout.addWidget(ai_group)
@@ -454,14 +449,8 @@ class MainWindow(QMainWindow):
         )
         # ----------------------------------------------------------
 
-        self.settings_panel.vision_servo_updated.connect(
-            lambda p: self.api_client.send_command("UPDATE_VISION_SERVO", p)
-        )
-
-        self.settings_panel.vision_distance_updated.connect(
-            lambda d: self.api_client.send_command(
-                "UPDATE_VISION_DISTANCE", {"distance": d}
-            )
+        self.settings_panel.vision_mission_updated.connect(
+            lambda p: self.api_client.send_command("UPDATE_VISION_MISSION", p)
         )
 
         self.control_panel.manual_button_clicked.connect(
