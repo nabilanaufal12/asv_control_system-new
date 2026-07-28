@@ -99,30 +99,32 @@ class AsvState:
     photo_mission_qty_requested: int = 0
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
-    vision_auto_motor_cmd: int = 1300
-    vision_front_motor_left_cmd: int = 1500
-    vision_front_motor_right_cmd: int = 1500
-    vision_servo_left_cmd: int = 70
-    vision_servo_right_cmd: int = 110
 
     # --- [BARU] Profil Misi Bola & Kotak ---
-    mission_bola_wp_start: int = 0
-    mission_bola_wp_end: int = 11
-    mission_bola_trigger_dist: int = 165
-    mission_bola_angle_left: int = 70
-    mission_bola_angle_right: int = 110
-    mission_bola_pwm_utama: int = 1500
-    mission_bola_pwm_kiri: int = 1500
-    mission_bola_pwm_kanan: int = 1500
-
-    mission_kotak_wp_start: int = 11
-    mission_kotak_wp_end: int = 15
-    mission_kotak_trigger_dist: int = 165
-    mission_kotak_angle_left: int = 70
-    mission_kotak_angle_right: int = 110
-    mission_kotak_pwm_utama: int = 1500
-    mission_kotak_pwm_kiri: int = 1500
-    mission_kotak_pwm_kanan: int = 1500
+    vision_mission_bola: dict = field(
+        default_factory=lambda: {
+            "wp_start": 0,
+            "wp_end": 11,
+            "trigger_dist": 165,
+            "angle_left": 70,
+            "angle_right": 110,
+            "pwm_utama": 1500,
+            "pwm_kiri": 1500,
+            "pwm_kanan": 1500,
+        }
+    )
+    vision_mission_kotak: dict = field(
+        default_factory=lambda: {
+            "wp_start": 11,
+            "wp_end": 15,
+            "trigger_dist": 165,
+            "angle_left": 70,
+            "angle_right": 110,
+            "pwm_utama": 1500,
+            "pwm_kiri": 1500,
+            "pwm_kanan": 1500,
+        }
+    )
 
 
 class AsvHandler:
@@ -162,19 +164,8 @@ class AsvHandler:
         self.last_reconnect_attempt = 0
         self.reconnect_interval = 5.0
 
-        # Baca nilai default AI dari konfigurasi (BARU)
-        ai_cfg = self.config.get("ai_control_defaults", {})
-        vision_motor_cmd = ai_cfg.get("vision_auto_motor_cmd", 1300)
-        vision_servo_left = ai_cfg.get("vision_servo_left_cmd", 70)
-        vision_servo_right = ai_cfg.get("vision_servo_right_cmd", 110)
-
-        # Inisialisasi state dengan nilai dari konfigurasi AI.
-        # Nilai lain (termasuk active_arena="B") akan menggunakan default dataclass.
-        self.current_state = AsvState(
-            vision_auto_motor_cmd=vision_motor_cmd,
-            vision_servo_left_cmd=vision_servo_left,
-            vision_servo_right_cmd=vision_servo_right,
-        )
+        # Inisialisasi state default
+        self.current_state = AsvState()
 
         # Dictionary ini menyimpan value terakhir berdasarkan NAMA ASLI (long key)
         # agar logika deteksi perubahan (delta) tetap konsisten.
@@ -417,12 +408,13 @@ class AsvHandler:
                 status = data.get("status")
                 if status == "WAYPOINT":
                     # [FIX RED-04] Fallback ke state saat ini agar tidak None
-                    self.current_state.nav_target_wp_index = data.get(
-                        "wp_target_idx", self.current_state.nav_target_wp_index
-                    )
-                    self.current_state.nav_dist_to_wp = data.get(
-                        "wp_dist_m", self.current_state.nav_dist_to_wp
-                    )
+                    if not self.current_state.use_dummy_counter:
+                        self.current_state.nav_target_wp_index = data.get(
+                            "wp_target_idx", self.current_state.nav_target_wp_index
+                        )
+                        self.current_state.nav_dist_to_wp = data.get(
+                            "wp_dist_m", self.current_state.nav_dist_to_wp
+                        )
                     self.current_state.nav_target_bearing = data.get(
                         "wp_target_brg", self.current_state.nav_target_bearing
                     )
@@ -748,6 +740,7 @@ class AsvHandler:
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
             "UPDATE_VISION_SERVO": self._handle_update_vision_servo,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
+            "DEBUG_COMMAND": self._handle_debug_command,
             "INVERSE_SERVO": self._handle_inverse_servo,
             "SET_INVERSION": self._handle_set_inversion,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
@@ -837,6 +830,23 @@ class AsvHandler:
                 f"[AsvHandler] Debug counter diatur ke: {self.current_state.debug_waypoint_counter}"
             )
 
+    def _handle_debug_command(self, payload):
+        with self.state_lock:
+            # Mengaktifkan mode dummy agar jarak/WP asli dari GPS tidak menimpa nilai simulasi
+            self.current_state.use_dummy_counter = True
+
+            if "set_wp_index" in payload:
+                self.current_state.current_waypoint_index = payload["set_wp_index"]
+                logging.info(
+                    f"[AsvHandler] [SIM] WP Index disetel ke: {self.current_state.current_waypoint_index}"
+                )
+
+            if "set_dist_to_wp" in payload:
+                self.current_state.nav_dist_to_wp = payload["set_dist_to_wp"]
+                logging.info(
+                    f"[AsvHandler] [SIM] Jarak WP disetel ke: {self.current_state.nav_dist_to_wp} meter"
+                )
+
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
             was_active = self.current_state.vision_target.get("active")
@@ -906,61 +916,23 @@ class AsvHandler:
 
         with self.state_lock:
             # Profil Bola
-            self.current_state.mission_bola_wp_start = int(
-                bola.get("wp_start", self.current_state.mission_bola_wp_start)
-            )
-            self.current_state.mission_bola_wp_end = int(
-                bola.get("wp_end", self.current_state.mission_bola_wp_end)
-            )
-            self.current_state.mission_bola_trigger_dist = int(
-                bola.get("trigger_dist", self.current_state.mission_bola_trigger_dist)
-            )
-            self.current_state.mission_bola_angle_left = int(
-                bola.get("angle_left", self.current_state.mission_bola_angle_left)
-            )
-            self.current_state.mission_bola_angle_right = int(
-                bola.get("angle_right", self.current_state.mission_bola_angle_right)
-            )
-            self.current_state.mission_bola_pwm_utama = int(
-                bola.get("pwm_utama", self.current_state.mission_bola_pwm_utama)
-            )
-            self.current_state.mission_bola_pwm_kiri = int(
-                bola.get("pwm_kiri", self.current_state.mission_bola_pwm_kiri)
-            )
-            self.current_state.mission_bola_pwm_kanan = int(
-                bola.get("pwm_kanan", self.current_state.mission_bola_pwm_kanan)
+            self.current_state.vision_mission_bola.update(
+                {k: int(v) for k, v in bola.items() if isinstance(v, (int, float, str))}
             )
 
             # Profil Kotak
-            self.current_state.mission_kotak_wp_start = int(
-                kotak.get("wp_start", self.current_state.mission_kotak_wp_start)
-            )
-            self.current_state.mission_kotak_wp_end = int(
-                kotak.get("wp_end", self.current_state.mission_kotak_wp_end)
-            )
-            self.current_state.mission_kotak_trigger_dist = int(
-                kotak.get("trigger_dist", self.current_state.mission_kotak_trigger_dist)
-            )
-            self.current_state.mission_kotak_angle_left = int(
-                kotak.get("angle_left", self.current_state.mission_kotak_angle_left)
-            )
-            self.current_state.mission_kotak_angle_right = int(
-                kotak.get("angle_right", self.current_state.mission_kotak_angle_right)
-            )
-            self.current_state.mission_kotak_pwm_utama = int(
-                kotak.get("pwm_utama", self.current_state.mission_kotak_pwm_utama)
-            )
-            self.current_state.mission_kotak_pwm_kiri = int(
-                kotak.get("pwm_kiri", self.current_state.mission_kotak_pwm_kiri)
-            )
-            self.current_state.mission_kotak_pwm_kanan = int(
-                kotak.get("pwm_kanan", self.current_state.mission_kotak_pwm_kanan)
+            self.current_state.vision_mission_kotak.update(
+                {
+                    k: int(v)
+                    for k, v in kotak.items()
+                    if isinstance(v, (int, float, str))
+                }
             )
 
         logging.info(
             f"[AsvHandler] Profil Misi Updated -> "
-            f"Bola(WP {self.current_state.mission_bola_wp_start}-{self.current_state.mission_bola_wp_end}), "
-            f"Kotak(WP {self.current_state.mission_kotak_wp_start}-{self.current_state.mission_kotak_wp_end})"
+            f"Bola(WP {self.current_state.vision_mission_bola['wp_start']}-{self.current_state.vision_mission_bola['wp_end']}), "
+            f"Kotak(WP {self.current_state.vision_mission_kotak['wp_start']}-{self.current_state.vision_mission_kotak['wp_end']})"
         )
 
     def _get_active_vision_profile(self):
@@ -969,32 +941,20 @@ class AsvHandler:
 
         # Cek apakah masuk profil kotak
         if (
-            self.current_state.mission_kotak_wp_start
+            self.current_state.vision_mission_kotak["wp_start"]
             <= wp
-            <= self.current_state.mission_kotak_wp_end
+            <= self.current_state.vision_mission_kotak["wp_end"]
         ):
-            return {
-                "profile_name": "kotak",
-                "valid_classes": ["kotak-hijau", "kotak-biru"],
-                "trigger_dist": self.current_state.mission_kotak_trigger_dist,
-                "angle_left": self.current_state.mission_kotak_angle_left,
-                "angle_right": self.current_state.mission_kotak_angle_right,
-                "pwm_utama": self.current_state.mission_kotak_pwm_utama,
-                "pwm_kiri": self.current_state.mission_kotak_pwm_kiri,
-                "pwm_kanan": self.current_state.mission_kotak_pwm_kanan,
-            }
+            kotak_profile = self.current_state.vision_mission_kotak.copy()
+            kotak_profile["profile_name"] = "kotak"
+            kotak_profile["valid_classes"] = ["kotak-hijau", "kotak-biru"]
+            return kotak_profile
 
         # Default fallback ke profil bola
-        return {
-            "profile_name": "bola",
-            "valid_classes": ["bola-merah", "bola-hijau"],
-            "trigger_dist": self.current_state.mission_bola_trigger_dist,
-            "angle_left": self.current_state.mission_bola_angle_left,
-            "angle_right": self.current_state.mission_bola_angle_right,
-            "pwm_utama": self.current_state.mission_bola_pwm_utama,
-            "pwm_kiri": self.current_state.mission_bola_pwm_kiri,
-            "pwm_kanan": self.current_state.mission_bola_pwm_kanan,
-        }
+        bola_profile = self.current_state.vision_mission_bola.copy()
+        bola_profile["profile_name"] = "bola"
+        bola_profile["valid_classes"] = ["bola-merah", "bola-hijau"]
+        return bola_profile
 
     def _handle_manual_control(self, payload):
         """Menerjemahkan input keyboard (WASD) ke perintah servo dan motor."""

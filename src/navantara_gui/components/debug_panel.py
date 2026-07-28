@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QFormLayout,
     QLineEdit,
+    QDoubleSpinBox,
+    QLabel,
 )
 from PySide6.QtCore import Signal
 
@@ -70,10 +72,54 @@ class DebugPanel(QWidget):
 
         specific_data_group.setLayout(form_layout)
 
+        # === [BARU] Panel Waypoint Simulator & Debugger ===
+        wp_sim_group = QGroupBox("Waypoint Simulator & Debugger")
+        wp_sim_layout = QVBoxLayout()
+
+        # Total WP (Override nav_dist_to_wp)
+        dist_layout = QHBoxLayout()
+        dist_layout.addWidget(QLabel("Total Waypoints (Max):"))
+        self.spin_sim_dist = QDoubleSpinBox()
+        self.spin_sim_dist.setRange(1.0, 9999.0)
+        self.spin_sim_dist.setDecimals(1)
+        self.spin_sim_dist.setValue(18.0)  # Default 18 titik (0-17)
+        dist_layout.addWidget(self.spin_sim_dist)
+
+        self.btn_send_dist = QPushButton("Set Total WP")
+        dist_layout.addWidget(self.btn_send_dist)
+        wp_sim_layout.addLayout(dist_layout)
+
+        # WP Index Override
+        self.current_debug_wp = 0
+        self.lbl_debug_wp = QLabel(self._get_wp_label_text())
+        self.lbl_debug_wp.setStyleSheet("font-weight: bold;")
+        wp_sim_layout.addWidget(self.lbl_debug_wp)
+
+        wp_btn_layout = QHBoxLayout()
+        self.btn_prev_wp = QPushButton("[-] Prev WP")
+        self.btn_reset_wp = QPushButton("[Reset] WP 0")
+        self.btn_next_wp = QPushButton("[+] Next WP")
+        wp_btn_layout.addWidget(self.btn_prev_wp)
+        wp_btn_layout.addWidget(self.btn_reset_wp)
+        wp_btn_layout.addWidget(self.btn_next_wp)
+        wp_sim_layout.addLayout(wp_btn_layout)
+
+        wp_sim_group.setLayout(wp_sim_layout)
+
         # Tambahkan semua ke layout utama
+        main_layout.addWidget(wp_sim_group)
         main_layout.addWidget(ai_control_group)
         main_layout.addWidget(specific_data_group)
         main_layout.addStretch()
+
+        # Hubungkan tombol WP Simulator
+        self.spin_sim_dist.valueChanged.connect(
+            lambda: self.lbl_debug_wp.setText(self._get_wp_label_text())
+        )
+        self.btn_send_dist.clicked.connect(self._send_sim_dist)
+        self.btn_prev_wp.clicked.connect(lambda: self._update_debug_wp(-1))
+        self.btn_next_wp.clicked.connect(lambda: self._update_debug_wp(1))
+        self.btn_reset_wp.clicked.connect(lambda: self._update_debug_wp(0, reset=True))
 
         # Hubungkan tombol ke fungsi yang memancarkan sinyal
         self.counter_plus_btn.clicked.connect(
@@ -108,3 +154,28 @@ class DebugPanel(QWidget):
             "long_direction": self.long_direction_input.text(),
         }
         self.debug_command_sent.emit("SPECIFIC_DATA", data)
+
+    # --- SLOT HANDLERS WP SIMULATOR ---
+    def _get_wp_label_text(self):
+        max_wp = max(0, int(self.spin_sim_dist.value()) - 1)
+        return f"Target WP: {self.current_debug_wp} / {max_wp}"
+
+    def _send_sim_dist(self):
+        dist = self.spin_sim_dist.value()
+        self.debug_command_sent.emit("DEBUG_COMMAND", {"set_dist_to_wp": dist})
+
+    def _update_debug_wp(self, delta, reset=False):
+        max_wp = max(0, int(self.spin_sim_dist.value()) - 1)
+        if reset:
+            self.current_debug_wp = 0
+        else:
+            self.current_debug_wp += delta
+            if self.current_debug_wp < 0:
+                self.current_debug_wp = 0
+            elif self.current_debug_wp > max_wp:
+                self.current_debug_wp = max_wp
+
+        self.lbl_debug_wp.setText(self._get_wp_label_text())
+        self.debug_command_sent.emit(
+            "DEBUG_COMMAND", {"set_wp_index": self.current_debug_wp}
+        )
