@@ -130,12 +130,16 @@ class SettingsPanel(QGroupBox):
         self.debug_tab = DebugPanel(config=self.config)
 
         self.tab_widget.addTab(self.pid_tab, "PID")
-        
+
         idx_servo = self.tab_widget.addTab(self.servo_tab, "Servo Trim / Range")
-        self.tab_widget.setTabToolTip(idx_servo, "(Set hardware center and physical limits)")
-        
+        self.tab_widget.setTabToolTip(
+            idx_servo, "(Set hardware center and physical limits)"
+        )
+
         idx_thruster = self.tab_widget.addTab(self.thruster_tab, "Thruster Calibration")
-        self.tab_widget.setTabToolTip(idx_thruster, "(Set absolute ESC hardware limits)")
+        self.tab_widget.setTabToolTip(
+            idx_thruster, "(Set absolute ESC hardware limits)"
+        )
         self.tab_widget.addTab(self.connection_tab, "Connection")
         self.tab_widget.addTab(self.debug_tab, "Debug")
 

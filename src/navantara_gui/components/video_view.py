@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QVBoxLayout,
     QPushButton,
-    QHBoxLayout,
     QSizePolicy,
     QSplitter,
 )
@@ -66,7 +65,8 @@ class VideoView(QWidget):
         top_widget.setMaximumHeight(400)
 
         # --- Bottom Section: Placeholder for future Data Log ---
-        from PySide6.QtWidgets import QFrame, QTextEdit
+        from PySide6.QtWidgets import QTextEdit
+
         self.log_placeholder = QTextEdit()
         self.log_placeholder.setReadOnly(True)
         self.log_placeholder.setPlaceholderText(
@@ -96,6 +96,7 @@ class VideoView(QWidget):
     @Slot(str)
     def append_log(self, text):
         from PySide6.QtGui import QTextCursor
+
         self.log_placeholder.moveCursor(QTextCursor.End)
         self.log_placeholder.insertPlainText(text + "\n")
         self.log_placeholder.moveCursor(QTextCursor.End)

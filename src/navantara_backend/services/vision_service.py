@@ -384,6 +384,27 @@ class VisionService:
         if self.show_local_feed:
             cv2.destroyAllWindows()
 
+    def swap_cameras(self):
+        """
+        Menukar sumber kamera Surface dan Underwater.
+        Menghentikan loop capture, menukar source, lalu memulai ulang.
+        """
+        print("[Vision] Memulai proses swap kamera...")
+
+        # 1. Hentikan loop capture yang sedang berjalan
+        self.stop()
+        # Beri waktu greenlet untuk berhenti dan melepas resource kamera
+        eventlet.sleep(1.0)
+
+        # 2. Swap source kamera
+        self.camera_src_1, self.camera_src_2 = self.camera_src_2, self.camera_src_1
+        print(
+            f"[Vision] Cameras swapped successfully. CAM1={self.camera_src_1}, CAM2={self.camera_src_2}"
+        )
+
+        # 3. Mulai ulang loop capture dengan source yang sudah ditukar
+        self.run_capture_loops()
+
     def _capture_loop(
         self, cam_src, frame_lock, cam_id_log, event_name, apply_detection
     ):

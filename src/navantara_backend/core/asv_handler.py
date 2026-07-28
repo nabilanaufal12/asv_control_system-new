@@ -117,7 +117,7 @@ class AsvHandler:
     def __init__(self, config, socketio):
         self.config = config
         self.socketio = socketio
-        
+
         # --- [NEW] Route Python Logs to GUI ---
         class SocketIOLogHandler(logging.Handler):
             def __init__(self, sio):
@@ -132,7 +132,7 @@ class AsvHandler:
                     pass
 
         self.gui_log_handler = SocketIOLogHandler(self.socketio)
-        formatter = logging.Formatter('%(levelname)s: %(message)s')
+        formatter = logging.Formatter("%(levelname)s: %(message)s")
         self.gui_log_handler.setFormatter(formatter)
         logging.getLogger().addHandler(self.gui_log_handler)
         # --------------------------------------
@@ -187,7 +187,9 @@ class AsvHandler:
         self._previous_esp_mode = None
 
         self.logger.log_event("AsvHandler diinisialisasi.")
-        logging.info(f"[AsvHandler] Handler diinisialisasi. Initial Race ID: {initial_race_id}")
+        logging.info(
+            f"[AsvHandler] Handler diinisialisasi. Initial Race ID: {initial_race_id}"
+        )
         self.initiate_auto_connection()
 
     def initiate_auto_connection(self):
@@ -320,7 +322,11 @@ class AsvHandler:
                     # Jika data adalah integer/string tunggal (seperti '1'), ia akan diabaikan dengan aman
                 except json.JSONDecodeError:
                     line_str = line.strip()
-                    if line_str and (line_str.startswith("ACK:") or line_str.startswith("[") or " " in line_str):
+                    if line_str and (
+                        line_str.startswith("ACK:")
+                        or line_str.startswith("[")
+                        or " " in line_str
+                    ):
                         # Asumsikan ini adalah pesan log/debug dari ESP32
                         self.socketio.emit("log_message", {"text": line_str})
                     pass
@@ -737,6 +743,7 @@ class AsvHandler:
             "UPDATE_INVERSION_TRIGGER": self._handle_update_inversion_trigger,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
             "MANUAL_CAPTURE": self._handle_manual_capture,
+            "SWAP_CAMERAS": self._handle_swap_cameras,
         }
         handler = command_handlers.get(command)
         if handler:
@@ -806,22 +813,6 @@ class AsvHandler:
             )
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
-
-    def _handle_mode_change(self, payload):
-        """Memproses permintaan perubahan mode (MANUAL/AUTO)."""
-        mode = payload.get("mode")
-        if mode in ["MANUAL", "AUTO"]:
-            cmd = f"M,{mode}\n"
-            self.serial_handler.send_command(cmd)
-            logging.info(f"[AsvHandler] Command '{mode}' diteruskan ke serial.")
-            self.socketio.emit("log_message", {"text": f"[System] Mode changed to {mode}"})
-
-    def _handle_manual_control(self, payload):
-        with self.state_lock:
-            if payload.get("toggle"):
-                self.current_state.inverse_servo = not self.current_state.inverse_servo
-            elif "value" in payload:
-                self.current_state.inverse_servo = bool(payload["value"])
 
     def _handle_set_inversion(self, payload):
         with self.state_lock:
@@ -907,12 +898,20 @@ class AsvHandler:
                 "data": {
                     "camera": capture_type,
                     "mode": "raw" if is_raw else "overlay",
-                    "url": f"/captures/race_{self.current_state.current_race_id}/{result.get('file')}"
-                }
+                    "url": f"/captures/race_{self.current_state.current_race_id}/{result.get('file')}",
+                },
             }
             self.socketio.emit("NEW_CAPTURE", broadcast_payload)
         else:
             logging.error(f"[AsvHandler] Capture Gagal: {result.get('message')}")
+
+    def _handle_swap_cameras(self, payload):
+        """Menukar sumber kamera Surface dan Underwater di VisionService."""
+        if not hasattr(self, "vision_service"):
+            logging.error("[AsvHandler] Gagal Swap: Vision Service belum terhubung.")
+            return
+        logging.info("[AsvHandler] Menerima perintah SWAP_CAMERAS.")
+        self.vision_service.swap_cameras()
 
     def _handle_manual_control(self, payload):
         """Menerjemahkan input keyboard (WASD) ke perintah servo dan motor."""
@@ -965,30 +964,36 @@ class AsvHandler:
             )
             self.pid_controller.reset()
             logging.info(f"[AsvHandler] Local PID updated: P={kp}, I={ki}, D={kd}")
-            
+
             # --- [TAMBAHAN BARU] Kirim ke Firmware ---
             # Format protokol: T,PID,<P>,<I>,<D>\n
             tuning_cmd = f"T,PID,{kp},{ki},{kd}\n"
-            if hasattr(self, 'serial_handler') and self.serial_handler:
+            if hasattr(self, "serial_handler") and self.serial_handler:
                 self.serial_handler.send_command(tuning_cmd)
-                logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
+                logging.info(
+                    f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}"
+                )
 
     def _handle_update_servo(self, payload):
         left = payload.get("left_angle")
         right = payload.get("right_angle")
         if left is not None and right is not None:
             tuning_cmd = f"T,SRV,{left},{right}\n"
-            if hasattr(self, 'serial_handler') and self.serial_handler:
+            if hasattr(self, "serial_handler") and self.serial_handler:
                 self.serial_handler.send_command(tuning_cmd)
-                logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
+                logging.info(
+                    f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}"
+                )
 
     def _handle_update_thruster(self, payload):
         speed = payload.get("speed")
         if speed is not None:
             tuning_cmd = f"T,THR,{speed}\n"
-            if hasattr(self, 'serial_handler') and self.serial_handler:
+            if hasattr(self, "serial_handler") and self.serial_handler:
                 self.serial_handler.send_command(tuning_cmd)
-                logging.info(f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}")
+                logging.info(
+                    f"[AsvHandler] Dikirim ke Serial ESP32: {tuning_cmd.strip()}"
+                )
 
     def _handle_serial_configuration(self, payload):
         port, baud = payload.get("serial_port"), payload.get("baud_rate")
@@ -996,7 +1001,7 @@ class AsvHandler:
             success = self.serial_handler.find_and_connect_esp32(baud)
         else:
             success = self.serial_handler.connect(port, baud)
-            
+
         status_msg = "CONNECTED" if success else "DISCONNECTED"
         self.socketio.emit("CONNECTION_STATUS", {"status": status_msg})
 
@@ -1005,6 +1010,7 @@ class AsvHandler:
         """Scan filesystem untuk menentukan race_id berikutnya.
         Jika race_1, race_2, race_3 ada, return 4."""
         import os
+
         captures_dir = os.path.join(os.getcwd(), "logs", "captures")
         if not os.path.exists(captures_dir):
             return 1
@@ -1141,8 +1147,12 @@ class AsvHandler:
             count = int(payload.get("count", 0))
 
             with self.state_lock:
-                self.current_state.photo_mission_target_wp1 = wp1  # Start Index (0-based)
-                self.current_state.photo_mission_target_wp2 = wp2  # Stop Index (0-based)
+                self.current_state.photo_mission_target_wp1 = (
+                    wp1  # Start Index (0-based)
+                )
+                self.current_state.photo_mission_target_wp2 = (
+                    wp2  # Stop Index (0-based)
+                )
                 self.current_state.photo_mission_qty_requested = count
                 # Reset counter
                 self.current_state.photo_mission_qty_taken_1 = (

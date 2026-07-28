@@ -274,7 +274,12 @@ def create_app():
 
             if new_mode not in ["MANUAL", "AUTO"]:
                 return (
-                    jsonify({"status": "error", "message": "Mode harus 'MANUAL' atau 'AUTO'"}),
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "Mode harus 'MANUAL' atau 'AUTO'",
+                        }
+                    ),
                     400,
                 )
 

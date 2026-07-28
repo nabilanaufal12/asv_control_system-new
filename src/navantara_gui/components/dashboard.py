@@ -166,7 +166,7 @@ class SensorDisplay(QGroupBox):
         # Baris Koordinat
         self.val_lat = QLabel("0.0")
         self.val_lon = QLabel("0.0")
-        
+
         row_lat = QHBoxLayout()
         row_lat.addWidget(QLabel("Latitude:"))
         row_lat.addWidget(self.val_lat)

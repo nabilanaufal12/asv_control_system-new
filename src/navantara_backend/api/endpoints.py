@@ -209,18 +209,19 @@ def handle_socket_command(json_data):
                 result = current_app.vision_service.trigger_manual_capture(
                     capture_type, raw_mode=is_raw, race_id=race_id
                 )
-                
+
                 # Broadcast the image if successful
                 if result.get("status") == "success":
                     from navantara_backend.extensions import socketio
+
                     # Format payload as requested: {"type": "NEW_CAPTURE", "data": {"camera": "...", "mode": "...", "url": "..."}}
                     broadcast_payload = {
                         "type": "NEW_CAPTURE",
                         "data": {
                             "camera": capture_type,
                             "mode": "raw" if is_raw else "overlay",
-                            "url": f"/captures/race_{race_id}/{result.get('file')}"
-                        }
+                            "url": f"/captures/race_{race_id}/{result.get('file')}",
+                        },
                     }
                     socketio.emit("NEW_CAPTURE", broadcast_payload)
             else:

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QSplitter,
 )
 from PySide6.QtCore import Slot, Qt
+from PySide6.QtGui import QPixmap
 
 # --- [MODIFIKASI] Menghapus import MapView dan LogPanel ---
 from navantara_gui.components.control_panel import ControlPanel
@@ -157,6 +158,7 @@ class MainWindow(QMainWindow):
 
         # WASD Controls - reparent from control_panel
         from PySide6.QtWidgets import QGridLayout
+
         wasd_group = QGroupBox("WASD Controls")
         wasd_layout = QVBoxLayout()
         row_w = QHBoxLayout()
@@ -174,6 +176,7 @@ class MainWindow(QMainWindow):
 
         # Camera Capture - reparent from control_panel
         from PySide6.QtWidgets import QLabel
+
         capture_group = QGroupBox("Camera Capture")
         capture_layout = QGridLayout()
         capture_layout.addWidget(QLabel("<b>Surface (CAM1):</b>"), 0, 0, 1, 2)
@@ -202,8 +205,6 @@ class MainWindow(QMainWindow):
         mission_group.setLayout(mission_layout)
         tab_auto_layout.addWidget(mission_group)
 
-        # AI Vision Controls - reparent from settings_panel
-        from PySide6.QtWidgets import QSpinBox
         ai_group = QGroupBox("AI Vision Mission Control")
         ai_layout = QVBoxLayout()
 
@@ -299,6 +300,7 @@ class MainWindow(QMainWindow):
 
         # Predefined Missions - reparent from waypoints_panel
         from PySide6.QtWidgets import QGroupBox, QFormLayout
+
         mission_box = QGroupBox("Predefined Missions")
         mission_layout_h = QHBoxLayout()
         mission_layout_h.addWidget(self.waypoints_panel.load_a_button)
@@ -410,7 +412,14 @@ class MainWindow(QMainWindow):
         )
 
         self.api_client.log_received.connect(self.video_view.append_log)
-        self.api_client.serial_connection_status.connect(self.header.update_connection_status)
+        self.api_client.serial_connection_status.connect(
+            self.header.update_connection_status
+        )
+
+        # --- [BARU] Hubungkan tombol "Invert Logic" ke perintah SWAP_CAMERAS ---
+        self.video_view.inversion_changed.connect(
+            lambda _: self.api_client.send_command("SWAP_CAMERAS", {})
+        )
 
         self.settings_panel.debug_command_sent.connect(self.api_client.send_command)
 
@@ -422,7 +431,9 @@ class MainWindow(QMainWindow):
             lambda payload: self.api_client.send_command("UPDATE_SERVO", payload)
         )
         self.settings_panel.manual_speed_changed.connect(
-            lambda speed: self.api_client.send_command("UPDATE_THRUSTER", {"speed": speed})
+            lambda speed: self.api_client.send_command(
+                "UPDATE_THRUSTER", {"speed": speed}
+            )
         )
         # -----------------------------------
 
@@ -579,6 +590,20 @@ class MainWindow(QMainWindow):
         self.header.connection_status_label.setText(status_text)
         self.header.connection_status_label.setProperty("status", status_prop)
         self.style().polish(self.header.connection_status_label)
+
+        # --- [FIX] Sinkronkan tombol Start/Stop Stream dengan status koneksi ---
+        # Saat terhubung, backend otomatis mengirim stream (initial_stream_request),
+        # jadi tombol harus langsung menunjukkan "Stop Stream".
+        if is_connected:
+            self.video_view.is_camera_running = True
+            self.video_view.update_ui_controls(True)
+        else:
+            self.video_view.is_camera_running = False
+            self.video_view.update_ui_controls(False)
+            self.video_view.label_video_1.setText("Backend terputus.")
+            self.video_view.label_video_1.setPixmap(QPixmap())
+            self.video_view.label_video_2.setText("Backend terputus.")
+            self.video_view.label_video_2.setPixmap(QPixmap())
 
     @Slot()
     def on_request_manual_capture_surface(self):
