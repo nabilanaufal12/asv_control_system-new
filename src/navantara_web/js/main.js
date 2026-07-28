@@ -23,16 +23,15 @@ let hasGpsLock = false; // [FIX] Track GPS lock status for Canvas rendering
 // --- [FIX Task 2] ESP to Visual Trajectory Waypoint Mapping ---
 // ESP firmware sends 18 waypoints (0-17), Canvas hanya butuh 9 visual waypoints (1-9)
 function mapEspToVisualWp(espIndex) {
-  if (espIndex <= 0) return 1;        // ESP WP 0 -> Visual WP 1
-  if (espIndex <= 2) return 2;        // ESP WP 1-2 -> Visual WP 2
-  if (espIndex <= 4) return 3;        // ESP WP 3-4 -> Visual WP 3
-  if (espIndex <= 6) return 4;        // ESP WP 5-6 -> Visual WP 4
-  if (espIndex === 7) return 5;       // ESP WP 7 -> Visual WP 5
-  if (espIndex <= 9) return 6;        // ESP WP 8-9 -> Visual WP 6
-  if (espIndex <= 11) return 7;       // ESP WP 10-11 -> Visual WP 7
-  if (espIndex <= 15) return 8;       // ESP WP 12-15 -> Visual WP 8
-  if (espIndex <= 17) return 9;       // ESP WP 16-17 -> Visual WP 9
-  return 9; // Fallback: clamp to max visual WP
+  if (espIndex < 2) return 1;         // ESP WP 0-1 -> Visual WP 1
+  if (espIndex < 4) return 2;         // ESP WP 2-3 -> Visual WP 2
+  if (espIndex < 6) return 3;         // ESP WP 4-5 -> Visual WP 3
+  if (espIndex < 7) return 4;         // ESP WP 6   -> Visual WP 4
+  if (espIndex < 9) return 5;         // ESP WP 7-8 -> Visual WP 5
+  if (espIndex < 11) return 6;        // ESP WP 9-10 -> Visual WP 6
+  if (espIndex < 15) return 7;        // ESP WP 11-14 -> Visual WP 7
+  if (espIndex < 17 || espIndex == 18) return 8;        // ESP WP 15-16 -> Visual WP 8
+  return 9;                           // ESP WP 17+ -> Visual WP 9
 }
 // --- [AKHIR MAPPING FUNCTION] ---
 
@@ -481,8 +480,11 @@ function setupLocalSocketIO(elements, icons) {
     // 🚩 KONTROL TITIK PADA CANVAS (LOGIKA MAPPING TERBARU)
     let point = 0;
 
-    if (data.use_dummy_counter === true) {
-      point = data.debug_waypoint_counter || 0;
+    if (data.use_dummy_counter === true || data.debug_mode_enabled === true) {
+      // Di versi terbaru, counter debug dipetakan langsung ke current_waypoint_index
+      let espIndex = data.current_waypoint_index !== undefined ? data.current_waypoint_index : 0;
+      point = mapEspToVisualWp(espIndex) - 1;
+      hasGpsLock = true; // Paksa GPS Lock aktif selama simulasi agar canvas bisa digambar
 
     } else {
       const targetWpIndex = data.nav_target_wp_index;
@@ -494,14 +496,14 @@ function setupLocalSocketIO(elements, icons) {
         point = mapEspToVisualWp(targetWpIndex) - 1;
         // --- [AKHIR MAPPING] ---
 
-        // Batasi point agar tidak melebihi jumlah titik di canvas (max 8, yaitu index 0-8)
-        point = Math.min(point, 8);
-
       } else {
         // Jika Waypoint dimuat, tapi targetIndex belum diset, anggap di titik awal (0)
         point = 0;
       }
     }
+
+    // Batasi point agar tidak melebihi jumlah titik di canvas (max 8, yaitu index 0-8)
+    point = Math.min(point, 8);
 
     // 💡 Optimasi 3: Hanya kirim event jika nilai point berubah DAN GPS sudah lock
     // [FIX Task 1] Jangan dispatch event ke Canvas jika belum ada GPS lock
@@ -634,7 +636,7 @@ function setupLocalSocketIO(elements, icons) {
     if (data.control_mode) {
       const btnManual = document.getElementById("btn-mode-manual");
       const btnAuto = document.getElementById("btn-mode-auto");
-      
+
       if (btnManual && btnAuto) {
         if (data.control_mode === "MANUAL") {
           btnManual.style.background = "#e67e22";

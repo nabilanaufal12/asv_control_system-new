@@ -84,6 +84,7 @@ class AsvState:
     active_arena: str = "B"
     debug_waypoint_counter: int = 0
     use_dummy_counter: bool = False
+    debug_mode_enabled: bool = False
     esp_status: str = None
     vision_target: dict = field(default_factory=lambda: {"active": False})
     gate_target: dict = field(default_factory=lambda: {"active": False})
@@ -364,8 +365,13 @@ class AsvHandler:
             self.current_state.nav_gps_sats = data.get(
                 "sats", self.current_state.nav_gps_sats
             )
-            self.current_state.latitude = data.get("lat", self.current_state.latitude)
-            self.current_state.longitude = data.get("lon", self.current_state.longitude)
+            if not self.current_state.debug_mode_enabled:
+                self.current_state.latitude = data.get(
+                    "lat", self.current_state.latitude
+                )
+                self.current_state.longitude = data.get(
+                    "lon", self.current_state.longitude
+                )
             status_val = data.get("status", None)
             self.current_state.esp_status = status_val
 
@@ -408,7 +414,10 @@ class AsvHandler:
                 status = data.get("status")
                 if status == "WAYPOINT":
                     # [FIX RED-04] Fallback ke state saat ini agar tidak None
-                    if not self.current_state.use_dummy_counter:
+                    if (
+                        not self.current_state.use_dummy_counter
+                        and not self.current_state.debug_mode_enabled
+                    ):
                         self.current_state.nav_target_wp_index = data.get(
                             "wp_target_idx", self.current_state.nav_target_wp_index
                         )
@@ -832,19 +841,65 @@ class AsvHandler:
 
     def _handle_debug_command(self, payload):
         with self.state_lock:
-            # Mengaktifkan mode dummy agar jarak/WP asli dari GPS tidak menimpa nilai simulasi
-            self.current_state.use_dummy_counter = True
+            # Cek apakah toggle mode debug dikirim
+            if "debug_mode_enabled" in payload:
+                self.current_state.debug_mode_enabled = bool(
+                    payload["debug_mode_enabled"]
+                )
+                # Jika mode debug dimatikan, kembalikan ke mode normal
+                if not self.current_state.debug_mode_enabled:
+                    self.current_state.use_dummy_counter = False
+                    logging.info("[AsvHandler] [SIM] Debug Mode DIMATIKAN")
+                    return
+                else:
+                    self.current_state.use_dummy_counter = True
+                    logging.info("[AsvHandler] [SIM] Debug Mode DIAKTIFKAN")
+
+            # Set mode dummy HANYA JIKA debug mode aktif
+            if self.current_state.debug_mode_enabled:
+                self.current_state.use_dummy_counter = True
 
             if "set_wp_index" in payload:
-                self.current_state.current_waypoint_index = payload["set_wp_index"]
-                logging.info(
-                    f"[AsvHandler] [SIM] WP Index disetel ke: {self.current_state.current_waypoint_index}"
-                )
+                wp_idx = int(payload["set_wp_index"])
+                self.current_state.current_waypoint_index = wp_idx
+                # Sinkronkan juga nav_target_wp_index agar web monitoring ter-update
+                self.current_state.nav_target_wp_index = wp_idx
+                logging.info(f"[AsvHandler] [SIM] WP Index disetel ke: {wp_idx}")
+
+                # Sinkronisasi koordinat dengan waypoint yang dimuat
+                wps = self.current_state.waypoints
+                if wps and len(wps) > 0:
+                    # Pastikan index tidak melampaui list
+                    safe_idx = min(wp_idx, len(wps) - 1)
+                    target_wp = wps[safe_idx]
+                    if isinstance(target_wp, dict):
+                        self.current_state.latitude = float(
+                            target_wp.get(
+                                "lat",
+                                target_wp.get("latitude", self.current_state.latitude),
+                            )
+                        )
+                        self.current_state.longitude = float(
+                            target_wp.get(
+                                "lon",
+                                target_wp.get(
+                                    "longitude", self.current_state.longitude
+                                ),
+                            )
+                        )
+                    elif isinstance(target_wp, (list, tuple)) and len(target_wp) >= 2:
+                        self.current_state.latitude = float(target_wp[0])
+                        self.current_state.longitude = float(target_wp[1])
+                    logging.info(
+                        f"[AsvHandler] [SIM] Posisi disinkronkan ke WP {safe_idx}: "
+                        f"({self.current_state.latitude}, {self.current_state.longitude})"
+                    )
 
             if "set_dist_to_wp" in payload:
-                self.current_state.nav_dist_to_wp = payload["set_dist_to_wp"]
+                self.current_state.nav_dist_to_wp = float(payload["set_dist_to_wp"])
                 logging.info(
-                    f"[AsvHandler] [SIM] Jarak WP disetel ke: {self.current_state.nav_dist_to_wp} meter"
+                    f"[AsvHandler] [SIM] nav_dist_to_wp disetel ke: "
+                    f"{self.current_state.nav_dist_to_wp}"
                 )
 
     def _handle_vision_target_update(self, payload):

@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLineEdit,
     QDoubleSpinBox,
+    QSpinBox,
     QLabel,
+    QCheckBox,
 )
 from PySide6.QtCore import Signal
 
@@ -76,22 +78,39 @@ class DebugPanel(QWidget):
         wp_sim_group = QGroupBox("Waypoint Simulator & Debugger")
         wp_sim_layout = QVBoxLayout()
 
-        # Total WP (Override nav_dist_to_wp)
+        # Safety Toggle
+        self.chk_debug_mode = QCheckBox("Enable WP Debug Mode")
+        self.chk_debug_mode.setChecked(False)
+        self.chk_debug_mode.setStyleSheet(
+            "QCheckBox { font-weight: bold; color: #e74c3c; }"
+        )
+        wp_sim_layout.addWidget(self.chk_debug_mode)
+
+        # Distance Override (nav_dist_to_wp)
         dist_layout = QHBoxLayout()
-        dist_layout.addWidget(QLabel("Total Waypoints (Max):"))
+        dist_layout.addWidget(QLabel("Simulate Dist to WP (m):"))
         self.spin_sim_dist = QDoubleSpinBox()
-        self.spin_sim_dist.setRange(1.0, 9999.0)
+        self.spin_sim_dist.setRange(0.0, 9999.0)
         self.spin_sim_dist.setDecimals(1)
-        self.spin_sim_dist.setValue(18.0)  # Default 18 titik (0-17)
+        self.spin_sim_dist.setValue(17.0)
         dist_layout.addWidget(self.spin_sim_dist)
 
-        self.btn_send_dist = QPushButton("Set Total WP")
+        self.btn_send_dist = QPushButton("Send Dist")
         dist_layout.addWidget(self.btn_send_dist)
         wp_sim_layout.addLayout(dist_layout)
 
+        # Max WP Limit (Local to GUI)
+        max_wp_layout = QHBoxLayout()
+        max_wp_layout.addWidget(QLabel("Max WP Limit:"))
+        self.spin_max_wp = QSpinBox()
+        self.spin_max_wp.setRange(1, 999)
+        self.spin_max_wp.setValue(17)
+        max_wp_layout.addWidget(self.spin_max_wp)
+        wp_sim_layout.addLayout(max_wp_layout)
+
         # WP Index Override
         self.current_debug_wp = 0
-        self.lbl_debug_wp = QLabel(self._get_wp_label_text())
+        self.lbl_debug_wp = QLabel("Current Target WP: 0 / 17")
         self.lbl_debug_wp.setStyleSheet("font-weight: bold;")
         wp_sim_layout.addWidget(self.lbl_debug_wp)
 
@@ -106,6 +125,19 @@ class DebugPanel(QWidget):
 
         wp_sim_group.setLayout(wp_sim_layout)
 
+        # --- Kumpulkan semua widget debug WP yang perlu di-disable ---
+        self._debug_wp_controls = [
+            self.spin_sim_dist,
+            self.btn_send_dist,
+            self.btn_prev_wp,
+            self.btn_reset_wp,
+            self.btn_next_wp,
+        ]
+        # Default: biarkan tombol prev/next/max WP tetap aktif untuk mode data aktual,
+        # tapi disable khusus bagian simulasi Jarak (Dist) agar tidak menimpa data sensor nyata.
+        self.spin_sim_dist.setEnabled(False)
+        self.btn_send_dist.setEnabled(False)
+
         # Tambahkan semua ke layout utama
         main_layout.addWidget(wp_sim_group)
         main_layout.addWidget(ai_control_group)
@@ -113,9 +145,10 @@ class DebugPanel(QWidget):
         main_layout.addStretch()
 
         # Hubungkan tombol WP Simulator
-        self.spin_sim_dist.valueChanged.connect(
+        self.spin_max_wp.valueChanged.connect(
             lambda: self.lbl_debug_wp.setText(self._get_wp_label_text())
         )
+        self.chk_debug_mode.toggled.connect(self._on_debug_mode_toggled)
         self.btn_send_dist.clicked.connect(self._send_sim_dist)
         self.btn_prev_wp.clicked.connect(lambda: self._update_debug_wp(-1))
         self.btn_next_wp.clicked.connect(lambda: self._update_debug_wp(1))
@@ -156,16 +189,28 @@ class DebugPanel(QWidget):
         self.debug_command_sent.emit("SPECIFIC_DATA", data)
 
     # --- SLOT HANDLERS WP SIMULATOR ---
-    def _get_wp_label_text(self):
-        max_wp = max(0, int(self.spin_sim_dist.value()) - 1)
-        return f"Target WP: {self.current_debug_wp} / {max_wp}"
+    def _on_debug_mode_toggled(self, enabled):
+        """Kirim toggle ke backend dan matikan input jarak saat mode aktual."""
+        self.spin_sim_dist.setEnabled(enabled)
+        self.btn_send_dist.setEnabled(enabled)
+
+        self.debug_command_sent.emit("DEBUG_COMMAND", {"debug_mode_enabled": enabled})
 
     def _send_sim_dist(self):
         dist = self.spin_sim_dist.value()
-        self.debug_command_sent.emit("DEBUG_COMMAND", {"set_dist_to_wp": dist})
+        self.debug_command_sent.emit(
+            "DEBUG_COMMAND",
+            {
+                "set_dist_to_wp": dist,
+            },
+        )
+
+    def _get_wp_label_text(self):
+        max_wp = max(0, self.spin_max_wp.value())
+        return f"Current Target WP: {self.current_debug_wp} / {max_wp}"
 
     def _update_debug_wp(self, delta, reset=False):
-        max_wp = max(0, int(self.spin_sim_dist.value()) - 1)
+        max_wp = max(0, self.spin_max_wp.value())
         if reset:
             self.current_debug_wp = 0
         else:
@@ -177,5 +222,8 @@ class DebugPanel(QWidget):
 
         self.lbl_debug_wp.setText(self._get_wp_label_text())
         self.debug_command_sent.emit(
-            "DEBUG_COMMAND", {"set_wp_index": self.current_debug_wp}
+            "DEBUG_COMMAND",
+            {
+                "set_wp_index": self.current_debug_wp,
+            },
         )
