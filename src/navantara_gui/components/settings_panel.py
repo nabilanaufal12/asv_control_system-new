@@ -47,33 +47,54 @@ class SettingsPanel(QGroupBox):
 
         # 1. Slider Kecepatan Motor Bawah (Utama)
         speed_layout = QHBoxLayout()
-        self.lbl_ai_speed = QLabel("PWM Motor Utama: 1300")
+        self.lbl_ai_speed = QLabel("PWM Motor Utama:")
         self.slider_ai_speed = QSlider(Qt.Horizontal)
         self.slider_ai_speed.setRange(1100, 1800)
         self.slider_ai_speed.setValue(1300)
+
+        self.spin_ai_speed = QSpinBox()
+        self.spin_ai_speed.setRange(1100, 1800)
+        self.spin_ai_speed.setValue(1300)
+        self.spin_ai_speed.setFixedWidth(70)
+
         speed_layout.addWidget(self.lbl_ai_speed)
         speed_layout.addWidget(self.slider_ai_speed)
+        speed_layout.addWidget(self.spin_ai_speed)
 
         # 1.5 [UBAH] 2 Slider Kecepatan Motor Depan (Kemudi Kiri & Kanan)
         front_speed_layout = QVBoxLayout()
 
         # --- Motor Depan Kiri ---
         left_front_layout = QHBoxLayout()
-        self.lbl_front_left = QLabel("PWM Depan Kiri: 1500")
+        self.lbl_front_left = QLabel("PWM Depan Kiri:")
         self.slider_front_left = QSlider(Qt.Horizontal)
         self.slider_front_left.setRange(1000, 1900)
         self.slider_front_left.setValue(1500)
+
+        self.spin_front_left = QSpinBox()
+        self.spin_front_left.setRange(1000, 1900)
+        self.spin_front_left.setValue(1500)
+        self.spin_front_left.setFixedWidth(70)
+
         left_front_layout.addWidget(self.lbl_front_left)
         left_front_layout.addWidget(self.slider_front_left)
+        left_front_layout.addWidget(self.spin_front_left)
 
         # --- Motor Depan Kanan ---
         right_front_layout = QHBoxLayout()
-        self.lbl_front_right = QLabel("PWM Depan Kanan: 1500")
+        self.lbl_front_right = QLabel("PWM Depan Kanan:")
         self.slider_front_right = QSlider(Qt.Horizontal)
         self.slider_front_right.setRange(1000, 1900)
         self.slider_front_right.setValue(1500)
+
+        self.spin_front_right = QSpinBox()
+        self.spin_front_right.setRange(1000, 1900)
+        self.spin_front_right.setValue(1500)
+        self.spin_front_right.setFixedWidth(70)
+
         right_front_layout.addWidget(self.lbl_front_right)
         right_front_layout.addWidget(self.slider_front_right)
+        right_front_layout.addWidget(self.spin_front_right)
 
         front_speed_layout.addLayout(left_front_layout)
         front_speed_layout.addLayout(right_front_layout)
@@ -155,10 +176,17 @@ class SettingsPanel(QGroupBox):
 
         # Koneksi Kontrol AI
         self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
+        self.slider_ai_speed.valueChanged.connect(self.spin_ai_speed.setValue)
+        self.spin_ai_speed.valueChanged.connect(self.slider_ai_speed.setValue)
 
         # [UBAH] Sambungkan kedua slider depan
         self.slider_front_left.valueChanged.connect(self._on_front_left_changed)
+        self.slider_front_left.valueChanged.connect(self.spin_front_left.setValue)
+        self.spin_front_left.valueChanged.connect(self.slider_front_left.setValue)
+
         self.slider_front_right.valueChanged.connect(self._on_front_right_changed)
+        self.slider_front_right.valueChanged.connect(self.spin_front_right.setValue)
+        self.spin_front_right.valueChanged.connect(self.slider_front_right.setValue)
 
         self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
@@ -166,17 +194,14 @@ class SettingsPanel(QGroupBox):
 
     # --- SLOT HANDLERS ---
     def _on_ai_speed_changed(self, value):
-        self.lbl_ai_speed.setText(f"Max Forward Cruise: {value}")
         self.vision_speed_updated.emit(value)
 
     def _on_front_left_changed(self, value):
-        self.lbl_front_left.setText(f"Max Left Steering: {value}")
         # Kirim pasangan nilai saat ini ke backend
         right_val = self.slider_front_right.value()
         self.vision_front_motor_updated.emit({"left": value, "right": right_val})
 
     def _on_front_right_changed(self, value):
-        self.lbl_front_right.setText(f"Max Right Steering: {value}")
         left_val = self.slider_front_left.value()
         self.vision_front_motor_updated.emit({"left": left_val, "right": value})
 

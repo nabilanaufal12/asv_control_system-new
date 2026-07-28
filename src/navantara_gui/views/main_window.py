@@ -231,16 +231,19 @@ class MainWindow(QMainWindow):
         speed_row = QHBoxLayout()
         speed_row.addWidget(self.settings_panel.lbl_ai_speed)
         speed_row.addWidget(self.settings_panel.slider_ai_speed)
+        speed_row.addWidget(self.settings_panel.spin_ai_speed)
         pwm_layout.addLayout(speed_row)
 
         left_front_row = QHBoxLayout()
         left_front_row.addWidget(self.settings_panel.lbl_front_left)
         left_front_row.addWidget(self.settings_panel.slider_front_left)
+        left_front_row.addWidget(self.settings_panel.spin_front_left)
         pwm_layout.addLayout(left_front_row)
 
         right_front_row = QHBoxLayout()
         right_front_row.addWidget(self.settings_panel.lbl_front_right)
         right_front_row.addWidget(self.settings_panel.slider_front_right)
+        right_front_row.addWidget(self.settings_panel.spin_front_right)
         pwm_layout.addLayout(right_front_row)
 
         pwm_group.setLayout(pwm_layout)
