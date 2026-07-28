@@ -410,6 +410,7 @@ class MainWindow(QMainWindow):
         )
 
         self.api_client.log_received.connect(self.video_view.append_log)
+        self.api_client.serial_connection_status.connect(self.header.update_connection_status)
 
         self.settings_panel.debug_command_sent.connect(self.api_client.send_command)
 
@@ -562,7 +563,6 @@ class MainWindow(QMainWindow):
         # Perbarui semua panel
         self.system_status_panel.update_data(data)
 
-        self.header.update_status(data)
         self.update_button_states()
 
     @Slot()

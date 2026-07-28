@@ -173,8 +173,8 @@ class AsvHandler:
             "use_dummy_serial", False
         )
 
-        # [FIX] Scan filesystem untuk menentukan race_id awal
-        initial_race_id = self._scan_next_race_id() - 1  # -1 karena belum mulai race baru
+        # [FIX] Scan filesystem untuk menentukan race_id awal, buat sesi race baru
+        initial_race_id = self._scan_next_race_id()
         if initial_race_id < 1:
             initial_race_id = 1
         self.current_state.current_race_id = initial_race_id
@@ -901,6 +901,16 @@ class AsvHandler:
             logging.info(
                 f"[AsvHandler] Capture Berhasil: {result.get('file')} (Mode: {result.get('mode', 'Overlaid')})"
             )
+            # Broadcast NEW_CAPTURE
+            broadcast_payload = {
+                "type": "NEW_CAPTURE",
+                "data": {
+                    "camera": capture_type,
+                    "mode": "raw" if is_raw else "overlay",
+                    "url": f"/captures/race_{self.current_state.current_race_id}/{result.get('file')}"
+                }
+            }
+            self.socketio.emit("NEW_CAPTURE", broadcast_payload)
         else:
             logging.error(f"[AsvHandler] Capture Gagal: {result.get('message')}")
 
@@ -983,9 +993,12 @@ class AsvHandler:
     def _handle_serial_configuration(self, payload):
         port, baud = payload.get("serial_port"), payload.get("baud_rate")
         if port == "AUTO":
-            self.serial_handler.find_and_connect_esp32(baud)
+            success = self.serial_handler.find_and_connect_esp32(baud)
         else:
-            self.serial_handler.connect(port, baud)
+            success = self.serial_handler.connect(port, baud)
+            
+        status_msg = "CONNECTED" if success else "DISCONNECTED"
+        self.socketio.emit("CONNECTION_STATUS", {"status": status_msg})
 
     @staticmethod
     def _scan_next_race_id():

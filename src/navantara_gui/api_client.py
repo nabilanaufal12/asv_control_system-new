@@ -17,6 +17,8 @@ class ApiClient(QObject):
     connection_status_changed = Signal(bool, str)
     # Sinyal untuk terminal log
     log_received = Signal(str)
+    # Sinyal untuk status serial
+    serial_connection_status = Signal(str)
     # Sinyal untuk frame video (tetap menggunakan np.ndarray agar kompatibel dengan VideoView lama)
     frame_cam1_updated = Signal(np.ndarray)
     frame_cam2_updated = Signal(np.ndarray)
@@ -77,6 +79,14 @@ class ApiClient(QObject):
                     self.log_received.emit(data["text"])
             except Exception as e:
                 print(f"[ApiClient] Gagal memproses log_message: {e}")
+
+        @self.sio.on("CONNECTION_STATUS")
+        def on_connection_status(data):
+            try:
+                if "status" in data:
+                    self.serial_connection_status.emit(data["status"])
+            except Exception as e:
+                print(f"[ApiClient] Gagal memproses CONNECTION_STATUS: {e}")
 
         # --- [PERBAIKAN HANDLER VIDEO] ---
         @self.sio.on("frame_cam1")

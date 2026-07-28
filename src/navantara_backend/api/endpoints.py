@@ -202,9 +202,27 @@ def handle_socket_command(json_data):
         # 1. Perintah Khusus untuk Fitur Baru (Manual Capture)
         if command == "MANUAL_CAPTURE":
             capture_type = payload.get("type")
+            is_raw = payload.get("raw", False)
             if capture_type:
                 print(f"[API] Memanggil trigger_manual_capture untuk: {capture_type}")
-                current_app.vision_service.trigger_manual_capture(capture_type)
+                race_id = current_app.asv_handler.current_state.current_race_id
+                result = current_app.vision_service.trigger_manual_capture(
+                    capture_type, raw_mode=is_raw, race_id=race_id
+                )
+                
+                # Broadcast the image if successful
+                if result.get("status") == "success":
+                    from navantara_backend.extensions import socketio
+                    # Format payload as requested: {"type": "NEW_CAPTURE", "data": {"camera": "...", "mode": "...", "url": "..."}}
+                    broadcast_payload = {
+                        "type": "NEW_CAPTURE",
+                        "data": {
+                            "camera": capture_type,
+                            "mode": "raw" if is_raw else "overlay",
+                            "url": f"/captures/race_{race_id}/{result.get('file')}"
+                        }
+                    }
+                    socketio.emit("NEW_CAPTURE", broadcast_payload)
             else:
                 print("[API] Perintah MANUAL_CAPTURE diterima, tapi 'type' tidak ada.")
 
