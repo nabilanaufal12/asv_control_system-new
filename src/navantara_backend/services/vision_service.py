@@ -30,7 +30,17 @@ class ThreadedCamera:
         # [MODIFIKASI] Log source untuk debugging
         print(f"[ThreadedCamera] Membuka source: {self.src}")
 
-        self.capture = cv2.VideoCapture(src)
+        device_path = f"/dev/video{self.src}" if isinstance(self.src, int) or str(self.src).isdigit() else self.src
+        gstreamer_pipeline = (
+            f"v4l2src device={device_path} ! "
+            "video/x-raw, width=640, height=480, framerate=30/1 ! "
+            "videoconvert ! video/x-raw, format=BGR ! appsink drop=1"
+        )
+        self.capture = cv2.VideoCapture(gstreamer_pipeline, cv2.CAP_GSTREAMER)
+        
+        # Add a fallback just in case GStreamer fails
+        if not self.capture.isOpened():
+            self.capture = cv2.VideoCapture(self.src)
         # Set buffer size (opsional, tergantung driver)
         self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
@@ -423,7 +433,17 @@ class VisionService:
         def init_camera(source):
             try:
                 # Coba buka sebentar untuk tes
-                temp = cv2.VideoCapture(source)
+                device_path = f"/dev/video{source}" if isinstance(source, int) or str(source).isdigit() else source
+                gstreamer_pipeline = (
+                    f"v4l2src device={device_path} ! "
+                    "video/x-raw, width=640, height=480, framerate=30/1 ! "
+                    "videoconvert ! video/x-raw, format=BGR ! appsink drop=1"
+                )
+                temp = cv2.VideoCapture(gstreamer_pipeline, cv2.CAP_GSTREAMER)
+                
+                if not temp.isOpened():
+                    temp = cv2.VideoCapture(source)
+                    
                 if not temp.isOpened():
                     print(f"[{cam_id_log}] Gagal membuka device {source} (Not Opened).")
                     return None
