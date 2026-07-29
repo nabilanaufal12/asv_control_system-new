@@ -776,6 +776,22 @@ class VisionService:
                     raw_cls_name = result.names[cls_id]
                     final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
 
+                    # --- FILTER VISI SESUAI MISI WP ---
+                    active_profile = {}
+                    if hasattr(self, "asv_handler") and hasattr(self.asv_handler, "_get_active_vision_profile"):
+                        active_profile = self.asv_handler._get_active_vision_profile()
+                        
+                    valid_classes = active_profile.get("valid_classes", ["bola-merah", "bola-hijau", "kotak-hijau", "kotak-biru"])
+                    
+                    # 1. Matikan fungsi bola biru secara permanen untuk misi ini
+                    if final_cls_name == "bola-biru":
+                        continue
+                        
+                    # 2. Saring kelas agar hanya mendeteksi sesuai misi WP saat ini
+                    if final_cls_name not in valid_classes:
+                        continue
+                    # ----------------------------------
+
                     center_x = int((x1 + x2) / 2)
                     center_y = int((y1 + y2) / 2)
 

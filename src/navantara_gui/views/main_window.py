@@ -222,6 +222,9 @@ class MainWindow(QMainWindow):
         ai_group.setLayout(ai_layout)
         tab_auto_layout.addWidget(ai_group)
 
+        # Reparent Docking Config dari settings_panel
+        tab_auto_layout.addWidget(self.settings_panel.docking_view)
+
         tab_auto_layout.addStretch()
         self.left_tabs.addTab(tab_auto, "🤖 Auto Mission")
 
@@ -406,6 +409,9 @@ class MainWindow(QMainWindow):
 
         self.settings_panel.vision_mission_updated.connect(
             lambda p: self.api_client.send_command("UPDATE_VISION_MISSION", p)
+        )
+        self.settings_panel.docking_config_updated.connect(
+            lambda p: self.api_client.send_command("UPDATE_DOCKING_CONFIG", p)
         )
 
         self.control_panel.manual_button_clicked.connect(

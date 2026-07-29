@@ -85,6 +85,8 @@ volatile int ai_dir_val = 1500; // Untuk direction (relays)
 volatile int ai_motor_val = 1500; // Untuk motor bawah
 volatile int ai_motor_depan_kiri_val = 1000;  // Nilai dari serial Jetson untuk motor depan kiri
 volatile int ai_motor_depan_kanan_val = 1000; // Nilai dari serial Jetson untuk motor depan kanan
+volatile int ai_dir_depan_kiri_val = 1500;
+volatile int ai_dir_depan_kanan_val = 1500;
 
 // --- Buffer JSON & Serial ---
 StaticJsonDocument<400> jsonDoc;
@@ -282,18 +284,24 @@ void checkSerialInput() {
           int comma3 = serialInputBuffer.indexOf(',', comma2 + 1);
           int comma4 = serialInputBuffer.indexOf(',', comma3 + 1);
           int comma5 = serialInputBuffer.indexOf(',', comma4 + 1);
+          int comma6 = serialInputBuffer.indexOf(',', comma5 + 1);
+          int comma7 = serialInputBuffer.indexOf(',', comma6 + 1);
 
-          if (comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0 && comma5 > 0) {
+          if (comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0 && comma5 > 0 && comma6 > 0 && comma7 > 0) {
             String servoStr          = serialInputBuffer.substring(comma1 + 1, comma2);
             String dirStr            = serialInputBuffer.substring(comma2 + 1, comma3);
             String motorBwhStr       = serialInputBuffer.substring(comma3 + 1, comma4);
-            String motorDepanKiriStr = serialInputBuffer.substring(comma4 + 1, comma5);
-            String motorDepanKananStr= serialInputBuffer.substring(comma5 + 1);
+            String dirDepanKiriStr   = serialInputBuffer.substring(comma4 + 1, comma5);
+            String motorDepanKiriStr = serialInputBuffer.substring(comma5 + 1, comma6);
+            String dirDepanKananStr  = serialInputBuffer.substring(comma6 + 1, comma7);
+            String motorDepanKananStr= serialInputBuffer.substring(comma7 + 1);
 
             ai_servo_val             = servoStr.toInt();
             ai_dir_val               = dirStr.toInt();
             ai_motor_val             = motorBwhStr.toInt();
+            ai_dir_depan_kiri_val    = dirDepanKiriStr.toInt();
             ai_motor_depan_kiri_val  = motorDepanKiriStr.toInt();
+            ai_dir_depan_kanan_val   = dirDepanKananStr.toInt();
             ai_motor_depan_kanan_val = motorDepanKananStr.toInt();
           }
         }
@@ -454,6 +462,8 @@ void TaskMotor(void *pvParameters) {
     int finalMotorDepanKiri = 1000;  
     int finalMotorDepanKanan = 1000; 
     int finalDir = 1500;             
+    int finalDirDepanKiri = 1500;
+    int finalDirDepanKanan = 1500;
     
     int wp_target_idx = 0;
     double wp_dist_m = 0.0;
@@ -492,6 +502,8 @@ void TaskMotor(void *pvParameters) {
 
       int ch8 = readChannel(7);
       finalDir = ch8;
+      finalDirDepanKiri = ch8;
+      finalDirDepanKanan = ch8;
 
       if (ch6 >= 1400 && ch6 <= 1600) { 
         if (!wasInCaptureMode) {
@@ -535,6 +547,8 @@ void TaskMotor(void *pvParameters) {
     else {
       local_mode = "AUTO";
       finalDir = ai_dir_val; 
+      finalDirDepanKiri = ai_dir_depan_kiri_val;
+      finalDirDepanKanan = ai_dir_depan_kanan_val;
 
       if (serialCommand == 'A') {
         int calculatedServoVal = ai_servo_val;
@@ -554,11 +568,16 @@ void TaskMotor(void *pvParameters) {
         finalMotor           = ai_motor_val; 
         finalMotorDepanKiri  = ai_motor_depan_kiri_val;
         finalMotorDepanKanan = ai_motor_depan_kanan_val;
+        finalDir             = ai_dir_val;
+        finalDirDepanKiri    = ai_dir_depan_kiri_val;
+        finalDirDepanKanan   = ai_dir_depan_kanan_val;
         
       } 
       else if (serialCommand == 'W') {
         local_status = "WAYPOINT";
         finalDir = 2000; // Maju
+        finalDirDepanKiri = 2000;
+        finalDirDepanKanan = 2000;
         
         if (dataIndex > 0 && lat != 0.0 && lon != 0.0) { 
           
@@ -616,8 +635,8 @@ void TaskMotor(void *pvParameters) {
     servoKiri.write(finalServo); 
     servoKanan.write(finalServo); 
 
-    dirDepanKiri.writeMicroseconds(finalDir);
-    dirDepanKanan.writeMicroseconds(finalDir);
+    dirDepanKiri.writeMicroseconds(finalDirDepanKiri);
+    dirDepanKanan.writeMicroseconds(finalDirDepanKanan);
     dirBawahKiri.writeMicroseconds(finalDir);
     dirBawahKanan.writeMicroseconds(finalDir);
 

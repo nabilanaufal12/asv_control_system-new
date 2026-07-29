@@ -51,7 +51,7 @@
   },
   "vision": {
     "device": "cpu",
-    "conf_threshold": 0.2,
+    "conf_threshold": 0.55,
     "iou_threshold": 0.5,
     "debug": true,
     "camera_index_1": 0,
@@ -59,7 +59,6 @@
     "known_classes": [
       "bola-merah",
       "bola-hijau",
-      "bola-biru",
       "kotak-hijau",
       "kotak-biru"
     ],
@@ -77,6 +76,30 @@
     "placeholders": {
       "latitude": "e.g., -6.9175",
       "longitude": "e.g., 107.6191"
+    }
+  },
+  "docking_mission": {
+    "enabled": true,
+    "trigger_wp_index": 17,
+    "Arena_A": {
+      "servo_angle": 45,
+      "duration_sec": 10.0,
+      "rear_pwm": 1100,
+      "rear_dir": 2000,
+      "front_left_pwm": 1200,
+      "front_left_dir": 2000,
+      "front_right_pwm": 1200,
+      "front_right_dir": 1000
+    },
+    "Arena_B": {
+      "servo_angle": 135,
+      "duration_sec": 10.0,
+      "rear_pwm": 1100,
+      "rear_dir": 2000,
+      "front_left_pwm": 1200,
+      "front_left_dir": 1000,
+      "front_right_pwm": 1200,
+      "front_right_dir": 2000
     }
   }
 }

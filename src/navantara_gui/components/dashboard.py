@@ -94,20 +94,27 @@ class NavigationStatusMonitor(QGroupBox):
         """
         # 1. MODE KENDALI
         mode = data.get("control_mode", data.get("mode", "MANUAL"))
-        self.val_mode.setText(str(mode).upper())
-
-        if mode == "AUTO":
+        is_docking = data.get("is_docking", data.get("dock", False))
+        
+        if is_docking:
+            self.val_mode.setText("DOCKING")
             self.val_mode.setStyleSheet(
-                "font-weight: bold; color: #2ecc71; font-size: 14px;"
-            )
-        elif mode == "MANUAL":
-            self.val_mode.setStyleSheet(
-                "font-weight: bold; color: #e67e22; font-size: 14px;"
+                "color: #9c27b0; font-weight: bold; font-size: 14px;" # Purple
             )
         else:
-            self.val_mode.setStyleSheet(
-                "font-weight: bold; color: red; font-size: 14px;"
-            )
+            self.val_mode.setText(str(mode).upper())
+            if mode == "AUTO":
+                self.val_mode.setStyleSheet(
+                    "font-weight: bold; color: #2ecc71; font-size: 14px;"
+                )
+            elif mode == "MANUAL":
+                self.val_mode.setStyleSheet(
+                    "font-weight: bold; color: #e67e22; font-size: 14px;"
+                )
+            else:
+                self.val_mode.setStyleSheet(
+                    "font-weight: bold; color: red; font-size: 14px;"
+                )
 
         # 2. GPS SATS
         sats = data.get("nav_gps_sats", data.get("sat", 0))

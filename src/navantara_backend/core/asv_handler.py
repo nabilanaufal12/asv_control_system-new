@@ -46,6 +46,7 @@ TELEMETRY_KEY_MAP = {
     "use_dummy_counter": "dum",
     "debug_waypoint_counter": "dbg_cnt",
     "vision_target": "vis",
+    "is_docking": "dock",
     "esp_status": "esp_sts",
     "current_race_id": "r_id",
 }
@@ -117,6 +118,11 @@ class AsvState:
     is_reversing: bool = False
     reverse_start_time: float = 0.0
 
+    # --- [BARU] Docking State ---
+    is_docking: bool = False
+    is_docking_completed: bool = False
+    docking_start_time: float = 0.0
+
     # AI Photo Centering State
     is_photo_centering: bool = False
     photo_pixel_error: float = 0.0
@@ -137,7 +143,7 @@ class AsvState:
     vision_mission_kotak: dict = field(
         default_factory=lambda: {
             "wp_start": 11,
-            "wp_end": 15,
+            "wp_end": 14,
             "trigger_dist": 165,
             "angle_left": 70,
             "angle_right": 110,
@@ -605,9 +611,8 @@ class AsvHandler:
                     logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
 
                 elif control_mode == "MANUAL":
-                    # Tambahkan 1000, 1000 untuk mematikan motor depan saat mode manual
-                    # Format Baru: A,<servo>,<dir_cmd>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
-                    command_to_send = f"A,{int(manual_servo_cmd)},2000,{int(manual_motor_cmd)},1000,1000\n"
+                    # Format 8 parameter: A, Servo, DirB, PwmB, DirFL, PwmFL, DirFR, PwmFR
+                    command_to_send = f"A,{int(manual_servo_cmd)},2000,{int(manual_motor_cmd)},2000,{int(manual_motor_cmd)},2000,{int(manual_motor_cmd)}\n"
                     logging.info(
                         f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us"
                     )
@@ -616,6 +621,17 @@ class AsvHandler:
                     mission_completed = bool(
                         waypoints and current_waypoint_index >= len(waypoints)
                     )
+
+                    # --- [BARU] DOCKING MISSION LOGIC ---
+                    dock_cfg = self.config.get("docking_mission", {})
+                    trigger_wp = dock_cfg.get("trigger_wp_index", 17)
+                    if dock_cfg.get("enabled", False) and current_effective_index >= trigger_wp and nav_dist_to_wp < 3.0:
+                        if not self.current_state.is_docking_completed:
+                            if not self.current_state.is_docking:
+                                with self.state_lock:
+                                    self.current_state.is_docking = True
+                                    self.current_state.docking_start_time = time.time()
+                                logging.info(f"[AsvHandler] DOCKING MISSION TERPICU (WP {current_effective_index}, Dist: {nav_dist_to_wp:.2f}m)")
 
                     # --- [BARU] FOTOGRAFI, LOITERING, & VISUAL SERVOING ---
                     is_in_photo_zone = False
@@ -659,7 +675,36 @@ class AsvHandler:
                                         f"[AsvHandler] Mulai Loitering di WP {stop_idx} untuk foto {active_photo_target}."
                                     )
 
-                    if self.current_state.is_loitering:
+                    if self.current_state.is_docking:
+                        elapsed = time.time() - self.current_state.docking_start_time
+                        arena_id = self.current_state.active_arena
+                        active_dock_cfg = dock_cfg.get(arena_id, dock_cfg.get("Arena_A", {}))
+                        duration = active_dock_cfg.get("duration_sec", 20.0)
+                        
+                        if elapsed < duration:
+                            s_ang = active_dock_cfg.get("servo_angle", 90)
+                            r_pwm = active_dock_cfg.get("rear_pwm", 1000)
+                            fl_dir = active_dock_cfg.get("front_left_dir", 2000)
+                            fl_pwm = active_dock_cfg.get("front_left_pwm", 1000)
+                            fr_dir = active_dock_cfg.get("front_right_dir", 2000)
+                            fr_pwm = active_dock_cfg.get("front_right_pwm", 1000)
+                            command_to_send = f"A,{int(s_ang)},2000,{int(r_pwm)},{int(fl_dir)},{int(fl_pwm)},{int(fr_dir)},{int(fr_pwm)}\n"
+                        else:
+                            with self.state_lock:
+                                self.current_state.is_docking = False
+                                self.current_state.is_docking_completed = True
+                                self.current_state.control_mode = "MANUAL"
+                                self.current_state.manual_servo_cmd = 90
+                                self.current_state.manual_motor_cmd = 1000
+                            
+                            # Beritahu ESP32 bahwa kita pindah ke MANUAL agar ESP tidak meng-override balik ke AUTO
+                            if self.serial_handler and self.serial_handler.is_connected:
+                                self.serial_handler.send_command("M,MANUAL\n")
+                                
+                            logging.info("[AsvHandler] DOCKING SELESAI. Motor Dimatikan. Beralih ke mode MANUAL (STOP).")
+                            command_to_send = f"A,90,2000,1000,2000,1000,2000,1000\n"
+
+                    elif self.current_state.is_loitering:
                         elapsed = time.time() - self.current_state.loiter_start_time
                         delay_req = (
                             active_photo_cfg.get("delay", 3.0)
@@ -669,7 +714,7 @@ class AsvHandler:
                         if elapsed < delay_req:
                             # Tahan motor (1000), kemudi netral (90), dir forward (2000)
                             command_to_send = (
-                                f"A,90,2000,1000,1000,1000\n"
+                                f"A,90,2000,1000,2000,1000,2000,1000\n"
                             )
                         else:
                             with self.state_lock:
@@ -703,7 +748,7 @@ class AsvHandler:
                         if elapsed < rev_delay_req:
                             # Mundur: Dir=1000, Speed=rev_pwm
                             command_to_send = (
-                                f"A,90,1000,{int(rev_pwm)},1000,1000\n"
+                                f"A,90,1000,{int(rev_pwm)},1000,{int(rev_pwm)},1000,{int(rev_pwm)}\n"
                             )
                         else:
                             with self.state_lock:
@@ -736,8 +781,7 @@ class AsvHandler:
                             # Jika tidak ada target, pakai kemudi GPS dari telemetry
                             servo_cmd = self.current_state.nav_servo_cmd
 
-                        # Format Baru: A,<servo>,<dir_cmd>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
-                        command_to_send = f"A,{int(servo_cmd)},2000,{int(target_pwm)},1000,1000\n"
+                        command_to_send = f"A,{int(servo_cmd)},2000,{int(target_pwm)},2000,{int(target_pwm)},2000,{int(target_pwm)}\n"
 
                     elif vision_target_active:
                         with self.state_lock:
@@ -820,8 +864,8 @@ class AsvHandler:
                                 "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W"
                             )
                         else:
-                            # Kirim 6 parameter: A, Servo, Dir (Selalu 2000 untuk obstacle avoidance), Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
-                            command_to_send = f"A,{servo_cmd},2000,{int(pwm_cmd)},{motor_depan_kiri},{motor_depan_kanan}\n"
+                            # Kirim 8 parameter: A, Servo, DirB, PwmB, DirFL, PwmFL, DirFR, PwmFR
+                            command_to_send = f"A,{servo_cmd},2000,{int(pwm_cmd)},2000,{motor_depan_kiri},2000,{motor_depan_kanan}\n"
                             logging.info(
                                 f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}"
                             )
@@ -911,6 +955,7 @@ class AsvHandler:
             "MANUAL_CAPTURE": self._handle_manual_capture,
             "SWAP_CAMERAS": self._handle_swap_cameras,
             "UPDATE_VISION_MISSION": self._handle_update_vision_mission,
+            "UPDATE_DOCKING_CONFIG": self._handle_update_docking_config,
         }
         handler = command_handlers.get(command)
         if handler:
@@ -1018,6 +1063,13 @@ class AsvHandler:
                 self.current_state.debug_waypoint_counter = wp_idx  # Fix: sinkronkan counter dummy ke state
                 # Sinkronkan juga nav_target_wp_index agar web monitoring ter-update
                 self.current_state.nav_target_wp_index = wp_idx
+                
+                # Reset status misi khusus agar tidak "bocor" antar waypoint saat ditest ulang di mode debug
+                self.current_state.is_docking = False
+                self.current_state.is_docking_completed = False
+                self.current_state.is_loitering = False
+                self.current_state.is_reversing = False
+                
                 logging.info(f"[AsvHandler] [SIM] WP Index disetel ke: {wp_idx}")
 
                 # Sinkronisasi koordinat dengan waypoint yang dimuat
@@ -1155,6 +1207,18 @@ class AsvHandler:
             f"Kotak(WP {self.current_state.vision_mission_kotak['wp_start']}-{self.current_state.vision_mission_kotak['wp_end']})"
         )
 
+    def _handle_update_docking_config(self, payload):
+        try:
+            with self.state_lock:
+                if "docking_mission" not in self.config:
+                    self.config["docking_mission"] = {}
+                self.config["docking_mission"].update(payload)
+                
+            logging.info(f"[AsvHandler] Konfigurasi Docking diperbarui secara real-time dari GUI.")
+            self.logger.log_event("Konfigurasi Docking di Hot-Reload.")
+        except Exception as e:
+            logging.warning(f"[AsvHandler] Gagal hot-reload konfigurasi Docking: {e}")
+
     def _get_active_vision_profile(self):
         """Mengembalikan profil aktif (bola atau kotak) berdasarkan waypoint saat ini."""
         wp = self.current_state.current_waypoint_index
@@ -1170,11 +1234,19 @@ class AsvHandler:
             kotak_profile["valid_classes"] = ["kotak-hijau", "kotak-biru"]
             return kotak_profile
 
-        # Default fallback ke profil bola
-        bola_profile = self.current_state.vision_mission_bola.copy()
-        bola_profile["profile_name"] = "bola"
-        bola_profile["valid_classes"] = ["bola-merah", "bola-hijau"]
-        return bola_profile
+        # Cek apakah masuk profil bola
+        if (
+            self.current_state.vision_mission_bola["wp_start"]
+            <= wp
+            <= self.current_state.vision_mission_bola["wp_end"]
+        ):
+            bola_profile = self.current_state.vision_mission_bola.copy()
+            bola_profile["profile_name"] = "bola"
+            bola_profile["valid_classes"] = ["bola-merah", "bola-hijau"]
+            return bola_profile
+            
+        # Di luar rentang misi vision, matikan deteksi
+        return {"profile_name": "none", "valid_classes": []}
 
     def _handle_manual_control(self, payload):
         """Menerjemahkan input keyboard (WASD) ke perintah servo dan motor."""
@@ -1314,8 +1386,8 @@ class AsvHandler:
             actuator_config = self.config.get("actuators", {})
             pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
             servo_def = actuator_config.get("servo_default_angle", 90)
-            # Format Baru: A,<servo>,<dir_cmd>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
-            command_str = f"A,{int(servo_def)},2000,{int(pwm_stop)},1000,1000\n"
+            # Format Baru 8 param: A, Servo, DirB, PwmB, DirFL, PwmFL, DirFR, PwmFR
+            command_str = f"A,{int(servo_def)},2000,{int(pwm_stop)},2000,{int(pwm_stop)},2000,{int(pwm_stop)}\n"
             logging.info(
                 f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
             )
@@ -1389,6 +1461,11 @@ class AsvHandler:
         with self.state_lock:
             if not self.current_state.waypoints:
                 return
+            
+            # Jika user memulai misi auto kembali, reset status docking
+            self.current_state.is_docking_completed = False
+            self.current_state.is_docking = False
+            
             self.current_state.control_mode = "AUTO"
             self.current_state.current_waypoint_index = 0
             self.current_state.use_dummy_counter = False

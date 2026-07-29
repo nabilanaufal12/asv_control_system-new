@@ -16,6 +16,7 @@ from .servo_view import ServoView
 from .connection_view import ConnectionView
 from .debug_panel import DebugPanel
 from .thruster_view import ThrusterView
+from .docking_view import DockingView
 
 
 class SettingsPanel(QGroupBox):
@@ -33,6 +34,7 @@ class SettingsPanel(QGroupBox):
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
     vision_mission_updated = Signal(dict)
+    docking_config_updated = Signal(dict)
 
     def __init__(self, config, title="Settings"):
         super().__init__(title)
@@ -125,7 +127,7 @@ class SettingsPanel(QGroupBox):
         kotak_layout.addWidget(self.spin_kotak_wp_start, 0, 1)
         self.spin_kotak_wp_end = QSpinBox()
         self.spin_kotak_wp_end.setRange(0, 30)
-        self.spin_kotak_wp_end.setValue(15)
+        self.spin_kotak_wp_end.setValue(14)
         self.spin_kotak_wp_end.setPrefix("End: ")
         kotak_layout.addWidget(self.spin_kotak_wp_end, 0, 2)
 
@@ -214,6 +216,8 @@ class SettingsPanel(QGroupBox):
         self.tab_widget.setTabToolTip(
             idx_thruster, "(Set absolute ESC hardware limits)"
         )
+        self.docking_view = DockingView(config=self.config)
+        
         self.tab_widget.addTab(self.connection_tab, "Connection")
         self.tab_widget.addTab(self.debug_tab, "Debug")
 
@@ -226,6 +230,7 @@ class SettingsPanel(QGroupBox):
         self.connection_tab.connect_requested.connect(self.connect_requested.emit)
         self.debug_tab.debug_command_sent.connect(self.debug_command_sent.emit)
         self.thruster_tab.speed_changed.connect(self.manual_speed_changed.emit)
+        self.docking_view.docking_config_updated.connect(self.docking_config_updated.emit)
 
         # --- [BARU] Koneksi Profil Misi Bola & Kotak ---
         self.slider_bola_pwm_utama.valueChanged.connect(
