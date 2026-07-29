@@ -95,11 +95,31 @@ class AsvState:
     last_avoidance_time: float = 0.0
     last_pixel_error: float = 0.0
     resume_waypoint_on_clear: bool = False
-    photo_mission_target_wp1: int = -1
-    photo_mission_target_wp2: int = -1
     photo_mission_qty_requested: int = 0
-    photo_mission_qty_taken_1: int = 0
-    photo_mission_qty_taken_2: int = 0
+    photo_mission_qty_taken_blue_surface: int = 0
+    photo_mission_qty_taken_blue_underwater: int = 0
+    photo_mission_qty_taken_green_surface: int = 0
+    photo_mission_qty_taken_green_underwater: int = 0
+
+    # Konfigurasi Misi Segmen Foto (Blue & Green)
+    photo_mission_blue: dict = field(
+        default_factory=lambda: {"start": 11, "stop": 12, "pwm": 1400, "delay": 3.0, "rev_pwm": 1300, "rev_delay": 2.0}
+    )
+    photo_mission_green: dict = field(
+        default_factory=lambda: {"start": 13, "stop": 14, "pwm": 1400, "delay": 3.0, "rev_pwm": 1300, "rev_delay": 2.0}
+    )
+
+    # Loitering State
+    is_loitering: bool = False
+    loiter_start_time: float = 0.0
+
+    # Reverse Maneuver State
+    is_reversing: bool = False
+    reverse_start_time: float = 0.0
+
+    # AI Photo Centering State
+    is_photo_centering: bool = False
+    photo_pixel_error: float = 0.0
 
     # --- [BARU] Profil Misi Bola & Kotak ---
     vision_mission_bola: dict = field(
@@ -524,46 +544,58 @@ class AsvHandler:
                 # [FIX INVERSI SERVO] LOGIKA DETEKSI TRIGGER WAYPOINT
                 # -----------------------------------------------------------
 
-                # 1. Normalisasi Status Arena (Fix Bug "ARENA" contains "A")
-                # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
-                raw_arena_val = str(active_arena or "").strip().upper()
-                is_arena_b = False
-                # Cek apakah string diakhiri dengan B atau sama dengan B
-                if raw_arena_val == "B" or raw_arena_val.endswith("_B"):
-                    is_arena_b = True
-
-                # 2. Tentukan Index Waypoint Efektif
+                ENABLE_WP_INVERSION_2025 = False
+                
+                # Tentukan Index Waypoint Efektif (digunakan secara global oleh Misi Foto dll)
                 # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
                 if use_dummy_counter:
                     current_effective_index = debug_waypoint_counter
                 else:
                     current_effective_index = current_waypoint_index
 
-                # 3. Logika Trigger Dinamis
-                # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
-                trigger_threshold_index = inversion_trigger_wp
+                if ENABLE_WP_INVERSION_2025:
+                    # 1. Normalisasi Status Arena (Fix Bug "ARENA" contains "A")
+                    # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
+                    raw_arena_val = str(active_arena or "").strip().upper()
+                    is_arena_b = False
+                    # Cek apakah string diakhiri dengan B atau sama dengan B
+                    if raw_arena_val == "B" or raw_arena_val.endswith("_B"):
+                        is_arena_b = True
 
-                # Trigger aktif jika kita SEDANG MENUJU atau SUDAH LEWAT waypoint trigger
-                # Misal Trigger WP 6 (index 5). Saat current_index = 5, artinya kita OTW ke WP 6.
-                is_wp_triggered = current_effective_index >= trigger_threshold_index
+                    # 3. Logika Trigger Dinamis
+                    # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
+                    trigger_threshold_index = inversion_trigger_wp
 
-                # 4. Kalkulasi XOR (Exclusive OR)
-                # Arena A (0) ^ Triggered (0) = 0 (Normal)
-                # Arena A (0) ^ Triggered (1) = 1 (Inverted) -> Misal mau inversi di akhir lintasan A
-                # Arena B (1) ^ Triggered (0) = 1 (Inverted Awal)
-                # Arena B (1) ^ Triggered (1) = 0 (Normal Kembali)
-                final_inversion_state = is_arena_b ^ is_wp_triggered
+                    # Trigger aktif jika kita SEDANG MENUJU atau SUDAH LEWAT waypoint trigger
+                    # Misal Trigger WP 6 (index 5). Saat current_index = 5, artinya kita OTW ke WP 6.
+                    is_wp_triggered = current_effective_index >= trigger_threshold_index
 
-                # 5. Update State
-                with self.state_lock:
-                    if self.current_state.inverse_servo != final_inversion_state:
-                        self.current_state.inverse_servo = final_inversion_state
+                    # 4. Kalkulasi XOR (Exclusive OR)
+                    # Arena A (0) ^ Triggered (0) = 0 (Normal)
+                    # Arena A (0) ^ Triggered (1) = 1 (Inverted) -> Misal mau inversi di akhir lintasan A
+                    # Arena B (1) ^ Triggered (0) = 1 (Inverted Awal)
+                    # Arena B (1) ^ Triggered (1) = 0 (Normal Kembali)
+                    final_inversion_state = is_arena_b ^ is_wp_triggered
 
-                        mode_lbl = "INVERTED" if final_inversion_state else "NORMAL"
-                        arena_lbl = "B" if is_arena_b else "A"
-                        logging.info(
-                            f"[Logic Inversi] CHANGE -> {mode_lbl} (Arena={arena_lbl}, CurrWP={current_effective_index}, TrigWP={trigger_threshold_index+1})"
-                        )
+                    # 5. Update State
+                    with self.state_lock:
+                        if self.current_state.inverse_servo != final_inversion_state:
+                            self.current_state.inverse_servo = final_inversion_state
+
+                            mode_lbl = "INVERTED" if final_inversion_state else "NORMAL"
+                            arena_lbl = "B" if is_arena_b else "A"
+                            logging.info(
+                                f"[Logic Inversi] CHANGE -> {mode_lbl} (Arena={arena_lbl}, CurrWP={current_effective_index}, TrigWP={trigger_threshold_index+1})"
+                            )
+                else:
+                    final_inversion_state = False
+                    # 2026 Rules: No inversion logic. Fallback to normal mode.
+                    with self.state_lock:
+                        if self.current_state.inverse_servo:
+                            self.current_state.inverse_servo = False
+                            logging.info(
+                                "[Logic Inversi] Dinonaktifkan (2026 Rules) -> NORMAL"
+                            )
                 # -----------------------------------------------------------
 
                 command_to_send = None
@@ -573,8 +605,9 @@ class AsvHandler:
                     logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
 
                 elif control_mode == "MANUAL":
-                    # Tambahkan 1500, 1500 untuk mematikan motor depan saat mode manual
-                    command_to_send = f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)},{self.PWM_NEUTRAL},{self.PWM_NEUTRAL}\n"
+                    # Tambahkan 1000, 1000 untuk mematikan motor depan saat mode manual
+                    # Format Baru: A,<servo>,<dir_cmd>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
+                    command_to_send = f"A,{int(manual_servo_cmd)},2000,{int(manual_motor_cmd)},1000,1000\n"
                     logging.info(
                         f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us"
                     )
@@ -583,10 +616,130 @@ class AsvHandler:
                     mission_completed = bool(
                         waypoints and current_waypoint_index >= len(waypoints)
                     )
-                    if mission_completed:
+
+                    # --- [BARU] FOTOGRAFI, LOITERING, & VISUAL SERVOING ---
+                    is_in_photo_zone = False
+                    active_photo_cfg = None
+                    active_photo_target = None
+
+                    with self.state_lock:
+                        blue_cfg = self.current_state.photo_mission_blue
+                        green_cfg = self.current_state.photo_mission_green
+
+                        if (
+                            blue_cfg.get("start", -1)
+                            <= current_effective_index
+                            <= blue_cfg.get("stop", -1)
+                            and blue_cfg.get("start", -1) != -1
+                        ):
+                            is_in_photo_zone = True
+                            active_photo_cfg = blue_cfg
+                            active_photo_target = "kotak-biru"
+                        elif (
+                            green_cfg.get("start", -1)
+                            <= current_effective_index
+                            <= green_cfg.get("stop", -1)
+                            and green_cfg.get("start", -1) != -1
+                        ):
+                            is_in_photo_zone = True
+                            active_photo_cfg = green_cfg
+                            active_photo_target = "kotak-hijau"
+
+                        # Cek Stop & Wait (Loitering) & Reverse Maneuver
+                        if is_in_photo_zone and active_photo_cfg:
+                            stop_idx = active_photo_cfg.get("stop", -1)
+                            if (
+                                current_effective_index == stop_idx
+                                and nav_dist_to_wp < 3.0
+                            ):  # 3.0m toleransi
+                                if not self.current_state.is_loitering and not self.current_state.is_reversing:
+                                    self.current_state.is_loitering = True
+                                    self.current_state.loiter_start_time = time.time()
+                                    logging.info(
+                                        f"[AsvHandler] Mulai Loitering di WP {stop_idx} untuk foto {active_photo_target}."
+                                    )
+
+                    if self.current_state.is_loitering:
+                        elapsed = time.time() - self.current_state.loiter_start_time
+                        delay_req = (
+                            active_photo_cfg.get("delay", 3.0)
+                            if active_photo_cfg
+                            else 3.0
+                        )
+                        if elapsed < delay_req:
+                            # Tahan motor (1000), kemudi netral (90), dir forward (2000)
+                            command_to_send = (
+                                f"A,90,2000,1000,1000,1000\n"
+                            )
+                        else:
+                            with self.state_lock:
+                                self.current_state.is_loitering = False
+                                self.current_state.is_reversing = True
+                                self.current_state.reverse_start_time = time.time()
+
+                            # Trigger final photo
+                            if hasattr(self, "vision_service"):
+                                self.vision_service.handle_photography_mission(
+                                    self.current_state, mode="surface"
+                                )
+
+                            logging.info(
+                                "[AsvHandler] Selesai Loitering (Foto Final diambil), memulai Reverse Maneuver."
+                            )
+
+                    elif self.current_state.is_reversing:
+                        elapsed = time.time() - self.current_state.reverse_start_time
+                        rev_delay_req = (
+                            active_photo_cfg.get("rev_delay", 2.0)
+                            if active_photo_cfg
+                            else 2.0
+                        )
+                        rev_pwm = (
+                            active_photo_cfg.get("rev_pwm", 1300)
+                            if active_photo_cfg
+                            else 1300
+                        )
+
+                        if elapsed < rev_delay_req:
+                            # Mundur: Dir=1000, Speed=rev_pwm
+                            command_to_send = (
+                                f"A,90,1000,{int(rev_pwm)},1000,1000\n"
+                            )
+                        else:
+                            with self.state_lock:
+                                self.current_state.is_reversing = False
+                            logging.info(
+                                "[AsvHandler] Selesai Reverse Maneuver, melanjutkan misi."
+                            )
+                            command_to_send = "W\n"
+
+                    elif mission_completed:
                         command_to_send = "W\n"
 
-                    if vision_target_active:
+                    # Jika dalam zona foto, override PWM (Speed limit) & apply Visual Servoing
+                    elif is_in_photo_zone:
+                        target_pwm = active_photo_cfg.get("pwm", 1400)
+
+                        # Cek apakah sedang melihat target foto
+                        if (
+                            self.current_state.is_photo_centering
+                            and self.current_state.vision_target.get("active")
+                        ):
+                            pixel_error = self.current_state.photo_pixel_error
+                            Kp = 0.05  # Proportional gain
+                            servo_cmd = 90 + (pixel_error * Kp)
+                            servo_cmd = max(45, min(135, servo_cmd))  # Clamp
+                            logging.info(
+                                f"[AsvHandler] AI Centering ({active_photo_target}): Error={pixel_error:.1f}, Servo={servo_cmd:.1f}"
+                            )
+                        else:
+                            # Jika tidak ada target, pakai kemudi GPS dari telemetry
+                            servo_cmd = self.current_state.nav_servo_cmd
+
+                        # Format Baru: A,<servo>,<dir_cmd>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
+                        command_to_send = f"A,{int(servo_cmd)},2000,{int(target_pwm)},1000,1000\n"
+
+                    elif vision_target_active:
                         with self.state_lock:
                             self.current_state.recovering_from_avoidance = False
                             self.current_state.is_avoiding = True
@@ -667,8 +820,8 @@ class AsvHandler:
                                 "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W"
                             )
                         else:
-                            # Kirim 5 parameter: A, Servo (Selalu 90), Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
-                            command_to_send = f"A,{servo_cmd},{int(pwm_cmd)},{motor_depan_kiri},{motor_depan_kanan}\n"
+                            # Kirim 6 parameter: A, Servo, Dir (Selalu 2000 untuk obstacle avoidance), Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
+                            command_to_send = f"A,{servo_cmd},2000,{int(pwm_cmd)},{motor_depan_kiri},{motor_depan_kanan}\n"
                             logging.info(
                                 f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}"
                             )
@@ -862,6 +1015,7 @@ class AsvHandler:
             if "set_wp_index" in payload:
                 wp_idx = int(payload["set_wp_index"])
                 self.current_state.current_waypoint_index = wp_idx
+                self.current_state.debug_waypoint_counter = wp_idx  # Fix: sinkronkan counter dummy ke state
                 # Sinkronkan juga nav_target_wp_index agar web monitoring ter-update
                 self.current_state.nav_target_wp_index = wp_idx
                 logging.info(f"[AsvHandler] [SIM] WP Index disetel ke: {wp_idx}")
@@ -906,6 +1060,8 @@ class AsvHandler:
         with self.state_lock:
             was_active = self.current_state.vision_target.get("active")
             is_active = payload.get("active")
+            is_photo_centering = payload.get("is_photo_centering", False)
+
             if was_active and not is_active:
                 logging.info("[AsvHandler] Deteksi selesai -> langsung ke waypoint")
                 self.current_state.recovering_from_avoidance = False
@@ -915,8 +1071,17 @@ class AsvHandler:
                 self.current_state.gate_context["last_gate_config"] = None
 
             self.current_state.vision_target["active"] = is_active
+            self.current_state.is_photo_centering = is_photo_centering
+
             if is_active:
                 self.current_state.vision_target.update(payload)
+
+                # Calculate pixel error for centering
+                if is_photo_centering:
+                    center_x = payload.get("object_center_x", 0)
+                    frame_width = payload.get("frame_width", 1)
+                    frame_center_x = frame_width / 2.0
+                    self.current_state.photo_pixel_error = center_x - frame_center_x
 
     def _handle_manual_capture(self, payload):
         """
@@ -1149,7 +1314,8 @@ class AsvHandler:
             actuator_config = self.config.get("actuators", {})
             pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
             servo_def = actuator_config.get("servo_default_angle", 90)
-            command_str = f"A,{int(servo_def)},{int(pwm_stop)},{self.PWM_NEUTRAL},{self.PWM_NEUTRAL}\n"
+            # Format Baru: A,<servo>,<dir_cmd>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
+            command_str = f"A,{int(servo_def)},2000,{int(pwm_stop)},1000,1000\n"
             logging.info(
                 f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
             )
@@ -1239,31 +1405,36 @@ class AsvHandler:
 
     def _handle_set_photo_mission(self, payload):
         try:
-            # [FIX] GUI mengirimkan indeks 0-based, langsung gunakan tanpa pengurangan
-            wp1 = int(payload.get("wp1", -1))
-            wp2 = int(payload.get("wp2", -1))
-            count = int(payload.get("count", 0))
-
             with self.state_lock:
-                self.current_state.photo_mission_target_wp1 = (
-                    wp1  # Start Index (0-based)
-                )
-                self.current_state.photo_mission_target_wp2 = (
-                    wp2  # Stop Index (0-based)
-                )
+                self.current_state.photo_mission_blue = {
+                    "start": int(payload.get("blue_start", -1)),
+                    "stop": int(payload.get("blue_stop", -1)),
+                    "pwm": int(payload.get("blue_pwm", 1400)),
+                    "delay": float(payload.get("blue_delay", 3.0)),
+                    "rev_pwm": int(payload.get("blue_rev_pwm", 1300)),
+                    "rev_delay": float(payload.get("blue_rev_delay", 2.0)),
+                }
+
+                self.current_state.photo_mission_green = {
+                    "start": int(payload.get("green_start", -1)),
+                    "stop": int(payload.get("green_stop", -1)),
+                    "pwm": int(payload.get("green_pwm", 1400)),
+                    "delay": float(payload.get("green_delay", 3.0)),
+                    "rev_pwm": int(payload.get("green_rev_pwm", 1300)),
+                    "rev_delay": float(payload.get("green_rev_delay", 2.0)),
+                }
+
+                count = int(payload.get("count", 0))
                 self.current_state.photo_mission_qty_requested = count
-                # Reset counter
-                self.current_state.photo_mission_qty_taken_1 = (
-                    0  # Kita pakai ini sebagai counter utama
-                )
-                self.current_state.photo_mission_qty_taken_2 = (
-                    0  # Tidak dipakai di mode segmen
-                )
+                self.current_state.photo_mission_qty_taken_blue_surface = 0
+                self.current_state.photo_mission_qty_taken_blue_underwater = 0
+                self.current_state.photo_mission_qty_taken_green_surface = 0
+                self.current_state.photo_mission_qty_taken_green_underwater = 0
 
             logging.info(
-                f"[AsvHandler] Misi Segmen Foto diatur: Start Index={wp1}, Stop Index={wp2}, Max={count} foto."
+                f"[AsvHandler] Misi Segmen Foto diatur (Blue/Green Box): Max={count} foto."
             )
-            self.logger.log_event(f"Misi Foto Segmen: Index {wp1}-{wp2}, max {count}.")
+            self.logger.log_event(f"Misi Foto: Max {count} foto per target.")
 
         except Exception as e:
             logging.warning(

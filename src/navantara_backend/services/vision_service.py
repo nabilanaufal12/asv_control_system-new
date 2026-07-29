@@ -844,21 +844,31 @@ class VisionService:
             current_wp = self.asv_handler.current_state.nav_target_wp_index
 
             # Ambil Konfigurasi Segmen & Kuota
-            start_wp = self.asv_handler.current_state.photo_mission_target_wp1
-            stop_wp = self.asv_handler.current_state.photo_mission_target_wp2
+            blue_cfg = self.asv_handler.current_state.photo_mission_blue
+            green_cfg = self.asv_handler.current_state.photo_mission_green
             qty_req = self.asv_handler.current_state.photo_mission_qty_requested
 
-            # Ambil Counter Saat Ini
-            taken_1 = (
-                self.asv_handler.current_state.photo_mission_qty_taken_1
-            )  # Surface
-            taken_2 = (
-                self.asv_handler.current_state.photo_mission_qty_taken_2
-            )  # Underwater
-
             # Kondisi Dasar: Misi Aktif & Dalam Segmen
-            mission_active = start_wp != -1 and stop_wp != -1
-            in_segment = (start_wp <= current_wp) and (current_wp < stop_wp)
+            in_blue = (
+                blue_cfg.get("start", -1) <= current_wp < blue_cfg.get("stop", -1)
+                and blue_cfg.get("start", -1) != -1
+            )
+            in_green = (
+                green_cfg.get("start", -1) <= current_wp < green_cfg.get("stop", -1)
+                and green_cfg.get("start", -1) != -1
+            )
+            in_segment = in_blue or in_green
+            mission_active = qty_req > 0
+            
+            if in_blue:
+                taken_1 = self.asv_handler.current_state.photo_mission_qty_taken_blue_surface
+                taken_2 = self.asv_handler.current_state.photo_mission_qty_taken_blue_underwater
+            elif in_green:
+                taken_1 = self.asv_handler.current_state.photo_mission_qty_taken_green_surface
+                taken_2 = self.asv_handler.current_state.photo_mission_qty_taken_green_underwater
+            else:
+                taken_1 = 999
+                taken_2 = 999
 
             current_state_photo = self.asv_handler.current_state
 
@@ -875,7 +885,10 @@ class VisionService:
 
                 # Update State
                 with self.asv_handler.state_lock:
-                    self.asv_handler.current_state.photo_mission_qty_taken_1 += 1
+                    if in_blue:
+                        self.asv_handler.current_state.photo_mission_qty_taken_blue_surface += 1
+                    elif in_green:
+                        self.asv_handler.current_state.photo_mission_qty_taken_green_surface += 1
 
                 self.last_auto_photo_time_surface = current_time
                 print(
@@ -895,7 +908,10 @@ class VisionService:
 
                 # Update State
                 with self.asv_handler.state_lock:
-                    self.asv_handler.current_state.photo_mission_qty_taken_2 += 1
+                    if in_blue:
+                        self.asv_handler.current_state.photo_mission_qty_taken_blue_underwater += 1
+                    elif in_green:
+                        self.asv_handler.current_state.photo_mission_qty_taken_green_underwater += 1
 
                 self.last_auto_photo_time_underwater = current_time
                 print(
@@ -935,11 +951,32 @@ class VisionService:
             # Ambil profil misi aktif dari asv_handler
             active_profile = self.asv_handler._get_active_vision_profile()
 
-            # --- [PERBAIKAN] Gunakan kelas valid dari profil aktif ---
-            if (
-                cls in active_profile["valid_classes"] or cls == "bola-biru"
-            ):  # bola-biru selalu valid (docking)
-                valid_buoys.append(det)
+            # --- [BARU] CEK PHOTO MISSION ZONE ---
+            current_wp = self.asv_handler.current_state.current_waypoint_index
+            blue_cfg = self.asv_handler.current_state.photo_mission_blue
+            green_cfg = self.asv_handler.current_state.photo_mission_green
+
+            in_blue_zone = (
+                blue_cfg.get("start", -1) <= current_wp <= blue_cfg.get("stop", -1)
+                and blue_cfg.get("start", -1) != -1
+            )
+            in_green_zone = (
+                green_cfg.get("start", -1) <= current_wp <= green_cfg.get("stop", -1)
+                and green_cfg.get("start", -1) != -1
+            )
+
+            if in_blue_zone:
+                if cls == "kotak-biru":
+                    valid_buoys.append(det)
+            elif in_green_zone:
+                if cls == "kotak-hijau":
+                    valid_buoys.append(det)
+            else:
+                # --- [PERBAIKAN] Gunakan kelas valid dari profil aktif ---
+                if (
+                    cls in active_profile["valid_classes"] or cls == "bola-biru"
+                ):  # bola-biru selalu valid (docking)
+                    valid_buoys.append(det)
 
         if valid_buoys:
             # Cari objek yang paling dekat dengan kapal
@@ -965,6 +1002,7 @@ class VisionService:
                     "obstacle_class": closest_buoy.get("class", "unknown"),
                     "object_center_x": closest_buoy["center"][0],
                     "frame_width": frame_width,
+                    "is_photo_centering": in_blue_zone or in_green_zone,
                 }
 
                 logging.info(

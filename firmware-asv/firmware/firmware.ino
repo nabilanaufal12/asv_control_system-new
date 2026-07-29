@@ -77,6 +77,7 @@ bool wasInSaveMode = false;
 // --- KONTROL DARI JETSON/KOMUNIKASI SERIAL ---
 char serialCommand = 'W'; 
 int ai_servo_val = 90; 
+int ai_dir_val = 1500; // Untuk direction (relays)
 int ai_motor_val = 1500; // Untuk motor bawah
 int ai_motor_depan_kiri_val = 1000;  // Nilai dari serial Jetson untuk motor depan kiri
 int ai_motor_depan_kanan_val = 1000; // Nilai dari serial Jetson untuk motor depan kanan
@@ -251,20 +252,23 @@ void checkSerialInput() {
         serialCommand = serialInputBuffer.charAt(0); 
         
         if (serialCommand == 'A') {
-          // FORMAT BARU: A,<servo>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
+          // FORMAT BARU: A,<servo>,<dir_cmd>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
           int comma1 = serialInputBuffer.indexOf(',');
           int comma2 = serialInputBuffer.indexOf(',', comma1 + 1);
           int comma3 = serialInputBuffer.indexOf(',', comma2 + 1);
           int comma4 = serialInputBuffer.indexOf(',', comma3 + 1);
+          int comma5 = serialInputBuffer.indexOf(',', comma4 + 1);
 
-          // Cek apakah ada minimal 4 koma sebelum nilai diekstrak
-          if (comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0) {
+          // Cek apakah ada minimal 5 koma sebelum nilai diekstrak
+          if (comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0 && comma5 > 0) {
             String servoStr          = serialInputBuffer.substring(comma1 + 1, comma2);
-            String motorBwhStr       = serialInputBuffer.substring(comma2 + 1, comma3);
-            String motorDepanKiriStr = serialInputBuffer.substring(comma3 + 1, comma4);
-            String motorDepanKananStr= serialInputBuffer.substring(comma4 + 1);
+            String dirStr            = serialInputBuffer.substring(comma2 + 1, comma3);
+            String motorBwhStr       = serialInputBuffer.substring(comma3 + 1, comma4);
+            String motorDepanKiriStr = serialInputBuffer.substring(comma4 + 1, comma5);
+            String motorDepanKananStr= serialInputBuffer.substring(comma5 + 1);
 
             ai_servo_val             = servoStr.toInt();
+            ai_dir_val               = dirStr.toInt();
             ai_motor_val             = motorBwhStr.toInt();
             ai_motor_depan_kiri_val  = motorDepanKiriStr.toInt();
             ai_motor_depan_kanan_val = motorDepanKananStr.toInt();
@@ -534,7 +538,7 @@ void loop() {
   // ----------------- AUTO MODE -----------------
   else {
     mode = "AUTO";
-    finalDir = 1500; 
+    finalDir = ai_dir_val; 
 
     if (serialCommand == 'A') {
       int calculatedServoVal = ai_servo_val;

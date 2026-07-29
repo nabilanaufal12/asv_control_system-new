@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QSplitter,
 )
-from PySide6.QtCore import Slot, Qt
+from PySide6.QtCore import Slot, Qt, QTimer
 from PySide6.QtGui import QPixmap
 
 # --- [MODIFIKASI] Menghapus import MapView dan LogPanel ---
@@ -83,6 +83,9 @@ class MainWindow(QMainWindow):
 
         print("Memulai koneksi klien API ke server...")
         self.api_client.connect_to_server()
+
+        # Load Lintasan A as default trajectory after allowing time for connection
+        QTimer.singleShot(1500, lambda: self.load_predefined_mission("A"))
 
         self.showMaximized()
 
@@ -311,16 +314,7 @@ class MainWindow(QMainWindow):
         tab_wp_actions_layout.setContentsMargins(4, 8, 4, 4)
 
         # Misi Fotografi - reparent from waypoints_panel
-        photo_box = QGroupBox("Misi Fotografi (Segmen)")
-        photo_layout = QVBoxLayout()
-        photo_form = QFormLayout()
-        photo_form.addRow("Start WP Index:", self.waypoints_panel.wp_target1_input)
-        photo_form.addRow("Stop WP Index:", self.waypoints_panel.wp_target2_input)
-        photo_form.addRow("Max Foto:", self.waypoints_panel.photo_count_input)
-        photo_layout.addLayout(photo_form)
-        photo_layout.addWidget(self.waypoints_panel.set_photo_mission_button)
-        photo_box.setLayout(photo_layout)
-        tab_wp_actions_layout.addWidget(photo_box)
+        tab_wp_actions_layout.addWidget(self.waypoints_panel.photo_mission_widget)
 
         # Konfigurasi Inversi Servo - reparent from waypoints_panel
         inversion_box = QGroupBox("Waypoint Payload/Triggers (Inversi)")
@@ -587,6 +581,8 @@ class MainWindow(QMainWindow):
 
             if waypoints_list is not None:
                 self.waypoints_panel.load_waypoints_to_list(waypoints_list)
+                # Automatically send the waypoints to the backend
+                self.waypoints_panel.send_all_waypoints()
             else:
                 logging.error(f"Gagal memuat misi {mission_id}: format data salah.")
 

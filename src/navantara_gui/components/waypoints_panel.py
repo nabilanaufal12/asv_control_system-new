@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
     QListWidget,
     QAbstractItemView,
     QFormLayout,
-    QSpinBox,  # [BARU] Untuk input angka trigger
+    QSpinBox,
+    QDoubleSpinBox,
+    QLabel,
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator, QIntValidator
@@ -77,35 +79,109 @@ class WaypointsPanel(QGroupBox):
         button_layout.addWidget(self.delete_button)
 
         # --- 4. Photo Mission Box (Segmen) ---
-        photo_mission_box = QGroupBox("Misi Fotografi (Segmen)")
-        photo_mission_layout = QVBoxLayout()
+        self.photo_mission_widget = QGroupBox("Misi Fotografi (Blue/Green Box)")
+        photo_layout = QVBoxLayout()
 
-        photo_form_layout = QFormLayout()
-        self.wp_target1_input = QLineEdit()
-        self.wp_target2_input = QLineEdit()
-        self.photo_count_input = QLineEdit()
+        # Kotak Biru
+        blue_box = QGroupBox("Target: Kotak Biru")
+        blue_form = QFormLayout()
 
-        int_validator = QIntValidator(self)
-        self.wp_target1_input.setValidator(int_validator)
-        self.wp_target2_input.setValidator(int_validator)
-        self.photo_count_input.setValidator(int_validator)
+        blue_wp_layout = QHBoxLayout()
+        self.spin_blue_start = QSpinBox()
+        self.spin_blue_start.setRange(0, 99)
+        self.spin_blue_start.setValue(11)
+        self.spin_blue_stop = QSpinBox()
+        self.spin_blue_stop.setRange(0, 99)
+        self.spin_blue_stop.setValue(12)
+        blue_wp_layout.addWidget(QLabel("Start:"))
+        blue_wp_layout.addWidget(self.spin_blue_start)
+        blue_wp_layout.addWidget(QLabel("Stop:"))
+        blue_wp_layout.addWidget(self.spin_blue_stop)
 
-        self.wp_target1_input.setPlaceholderText("Start Index (Contoh: 1)")
-        self.wp_target2_input.setPlaceholderText("Stop Index (Contoh: 3)")
-        self.photo_count_input.setPlaceholderText("Max Total Foto")
+        self.spin_blue_pwm = QSpinBox()
+        self.spin_blue_pwm.setRange(1000, 2000)
+        self.spin_blue_pwm.setValue(1400)
 
-        photo_form_layout.addRow("Start WP Index:", self.wp_target1_input)
-        photo_form_layout.addRow("Stop WP Index:", self.wp_target2_input)
-        photo_form_layout.addRow("Max Foto:", self.photo_count_input)
+        self.spin_blue_delay = QDoubleSpinBox()
+        self.spin_blue_delay.setRange(0.0, 30.0)
+        self.spin_blue_delay.setValue(3.0)
+        self.spin_blue_delay.setDecimals(1)
 
-        self.set_photo_mission_button = QPushButton("Set Segment Mission")
+        self.spin_blue_rev_pwm = QSpinBox()
+        self.spin_blue_rev_pwm.setRange(1000, 2000)
+        self.spin_blue_rev_pwm.setValue(1300)
+
+        self.spin_blue_rev_delay = QDoubleSpinBox()
+        self.spin_blue_rev_delay.setRange(0.0, 30.0)
+        self.spin_blue_rev_delay.setValue(2.0)
+        self.spin_blue_rev_delay.setDecimals(1)
+
+        blue_form.addRow("WP Range:", blue_wp_layout)
+        blue_form.addRow("Speed (PWM):", self.spin_blue_pwm)
+        blue_form.addRow("Stop Delay (s):", self.spin_blue_delay)
+        blue_form.addRow("Reverse Speed:", self.spin_blue_rev_pwm)
+        blue_form.addRow("Reverse Delay (s):", self.spin_blue_rev_delay)
+        blue_box.setLayout(blue_form)
+
+        # Kotak Hijau
+        green_box = QGroupBox("Target: Kotak Hijau")
+        green_form = QFormLayout()
+
+        green_wp_layout = QHBoxLayout()
+        self.spin_green_start = QSpinBox()
+        self.spin_green_start.setRange(0, 99)
+        self.spin_green_start.setValue(13)
+        self.spin_green_stop = QSpinBox()
+        self.spin_green_stop.setRange(0, 99)
+        self.spin_green_stop.setValue(14)
+        green_wp_layout.addWidget(QLabel("Start:"))
+        green_wp_layout.addWidget(self.spin_green_start)
+        green_wp_layout.addWidget(QLabel("Stop:"))
+        green_wp_layout.addWidget(self.spin_green_stop)
+
+        self.spin_green_pwm = QSpinBox()
+        self.spin_green_pwm.setRange(1000, 2000)
+        self.spin_green_pwm.setValue(1400)
+
+        self.spin_green_delay = QDoubleSpinBox()
+        self.spin_green_delay.setRange(0.0, 30.0)
+        self.spin_green_delay.setValue(3.0)
+        self.spin_green_delay.setDecimals(1)
+
+        self.spin_green_rev_pwm = QSpinBox()
+        self.spin_green_rev_pwm.setRange(1000, 2000)
+        self.spin_green_rev_pwm.setValue(1300)
+
+        self.spin_green_rev_delay = QDoubleSpinBox()
+        self.spin_green_rev_delay.setRange(0.0, 30.0)
+        self.spin_green_rev_delay.setValue(2.0)
+        self.spin_green_rev_delay.setDecimals(1)
+
+        green_form.addRow("WP Range:", green_wp_layout)
+        green_form.addRow("Speed (PWM):", self.spin_green_pwm)
+        green_form.addRow("Stop Delay (s):", self.spin_green_delay)
+        green_form.addRow("Reverse Speed:", self.spin_green_rev_pwm)
+        green_form.addRow("Reverse Delay (s):", self.spin_green_rev_delay)
+        green_box.setLayout(green_form)
+
+        # Global Config
+        global_layout = QHBoxLayout()
+        global_layout.addWidget(QLabel("Max Foto/Target:"))
+        self.spin_photo_max = QSpinBox()
+        self.spin_photo_max.setRange(1, 100)
+        self.spin_photo_max.setValue(3)
+        global_layout.addWidget(self.spin_photo_max)
+
+        self.set_photo_mission_button = QPushButton("Set Photo Mission")
         self.set_photo_mission_button.setStyleSheet(
             "background-color: #DAA520; color: white; font-weight: bold;"
         )
 
-        photo_mission_layout.addLayout(photo_form_layout)
-        photo_mission_layout.addWidget(self.set_photo_mission_button)
-        photo_mission_box.setLayout(photo_mission_layout)
+        photo_layout.addWidget(blue_box)
+        photo_layout.addWidget(green_box)
+        photo_layout.addLayout(global_layout)
+        photo_layout.addWidget(self.set_photo_mission_button)
+        self.photo_mission_widget.setLayout(photo_layout)
 
         # --- 5. [BARU] Konfigurasi Trigger Inversi ---
         inversion_box = QGroupBox("Konfigurasi Inversi Servo")
@@ -139,7 +215,7 @@ class WaypointsPanel(QGroupBox):
         main_layout.addLayout(input_form_layout)
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
-        main_layout.addWidget(photo_mission_box)
+        main_layout.addWidget(self.photo_mission_widget)
         main_layout.addWidget(inversion_box)  # [BARU] Tambahkan ke layout
         main_layout.addLayout(send_layout)
 
@@ -240,34 +316,25 @@ class WaypointsPanel(QGroupBox):
 
     @Slot()
     def _on_set_photo_mission(self):
-        """Handler untuk set misi foto segmen."""
-        wp1_text = self.wp_target1_input.text()
-        wp2_text = self.wp_target2_input.text()
-        count_text = self.photo_count_input.text()
+        """Handler untuk set misi foto (Kotak Biru & Hijau)."""
+        payload = {
+            "blue_start": self.spin_blue_start.value(),
+            "blue_stop": self.spin_blue_stop.value(),
+            "blue_pwm": self.spin_blue_pwm.value(),
+            "blue_delay": self.spin_blue_delay.value(),
+            "blue_rev_pwm": self.spin_blue_rev_pwm.value(),
+            "blue_rev_delay": self.spin_blue_rev_delay.value(),
+            "green_start": self.spin_green_start.value(),
+            "green_stop": self.spin_green_stop.value(),
+            "green_pwm": self.spin_green_pwm.value(),
+            "green_delay": self.spin_green_delay.value(),
+            "green_rev_pwm": self.spin_green_rev_pwm.value(),
+            "green_rev_delay": self.spin_green_rev_delay.value(),
+            "count": self.spin_photo_max.value(),
+        }
 
-        if not wp1_text or not wp2_text or not count_text:
-            print(
-                "[WaypointsPanel] Error: Harap isi Start Index, Stop Index, dan Jumlah Foto."
-            )
-            return
-
-        try:
-            wp1 = int(wp1_text)
-            wp2 = int(wp2_text)
-            count = int(count_text)
-
-            if count <= 0:
-                print("[WaypointsPanel] Error: Jumlah Foto harus > 0.")
-                return
-
-            payload = {"wp1": wp1, "wp2": wp2, "count": count}
-            self.send_photo_mission.emit(payload)
-            print(
-                f"[WaypointsPanel] Misi Segmen dikirim: Start={wp1}, Stop={wp2}, Max={count}"
-            )
-
-        except ValueError:
-            print("[WaypointsPanel] Error: Input harus berupa angka bulat.")
+        self.send_photo_mission.emit(payload)
+        print(f"[WaypointsPanel] Emit SET_PHOTO_MISSION: {payload}")
 
     # --- [HANDLER BARU] ---
     @Slot()
