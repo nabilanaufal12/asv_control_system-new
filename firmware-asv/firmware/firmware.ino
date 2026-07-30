@@ -4,11 +4,12 @@
 #include <Preferences.h> // Library untuk menyimpan data di memori non-volatile (NVS/EEPROM)
 #include <ArduinoJson.h> // Library untuk memproses dan mengirim data JSON (telemetri)
 
-// ---------------- FREERTOS TASK HANDLES ----------------
+// ---------------- FREERTOS TASK HANDLES & MUTEX ----------------
 TaskHandle_t TaskSensorHandle;
 TaskHandle_t TaskMotorHandle;
+SemaphoreHandle_t stateMutex; // Mutex untuk proteksi data antar core (IPC)
 
-// ---------------- GPS (Diganti ke U-Blox 10Hz) ----------------
+// ---------------- GPS (U-Blox 10Hz) ----------------
 SFE_UBLOX_GPS myGPS;
 HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
 #define GPS_BAUD_RATE 9600 // Baud rate komunikasi ke modul GPS
@@ -23,17 +24,14 @@ HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
 #define ANGLE_16BIT_REGISTER 2 // Register untuk membaca heading 16-bit
 
 // ---------------- Konfigurasi Pin Aktuator ----------------
-// Pin Servo Kemudi
 #define PIN_SERVO_KIRI 32
 #define PIN_SERVO_KANAN 23
 
-// Pin ESC Motor
 #define PIN_ESC_DEPAN_KIRI 27
 #define PIN_ESC_DEPAN_KANAN 25
 #define PIN_ESC_BAWAH_KIRI 26
 #define PIN_ESC_BAWAH_KANAN 33
 
-// Pin Arah (Maju/Mundur) menggunakan sinyal PWM
 #define DIR_DEPAN_KIRI 14
 #define DIR_DEPAN_KANAN 19
 #define DIR_BAWAH_KIRI 15
@@ -54,16 +52,12 @@ Servo dirBawahKanan;
 
 // ---------------- PID ----------------
 double Kp = 2.0, Ki = 0.0, Kd = 0.5; // Konstanta PID
-
-// --- Tuning Variables ---
 volatile int servo_min_angle = 0;
 volatile int servo_max_angle = 180;
 volatile int thruster_manual_pwm = 1500;
 
-// --- Waypoint Inversion Control for AI Mode ---
 const int AI_SERVO_INVERSION_INDEX = 7; 
-
-double error_val = 0, lastError = 0, integral = 0; // 'error' diganti agar aman
+double error_val = 0, lastError = 0, integral = 0; // Hanya diakses oleh TaskSensor, tidak perlu Mutex
 
 // ---------------- Waypoint ----------------
 #define MAX_DATA 20 
@@ -71,51 +65,54 @@ Preferences preferences;
 
 float latitudes[MAX_DATA]; 
 float longitudes[MAX_DATA]; 
-volatile int dataIndex = 0; 
-volatile int counter = 0; 
+int dataIndex = 0; 
+int counter = 0; 
 
-volatile bool captureTriggered = false; 
-volatile bool wasInCaptureMode = false; 
-volatile bool wasInSaveMode = false; 
+// --- Variabel flag aksi (Protected by Mutex) ---
+bool captureTriggered = false; 
+bool saveTriggered = false;
+bool clearTriggered = false;
 
-// --- KONTROL DARI JETSON/KOMUNIKASI SERIAL ---
-volatile char serialCommand = 'W'; 
-volatile int ai_servo_val = 90; 
-volatile int ai_dir_val = 1500; // Untuk direction (relays)
-volatile int ai_motor_val = 1500; // Untuk motor bawah
-volatile int ai_motor_depan_kiri_val = 1000;  // Nilai dari serial Jetson untuk motor depan kiri
-volatile int ai_motor_depan_kanan_val = 1000; // Nilai dari serial Jetson untuk motor depan kanan
-volatile int ai_dir_depan_kiri_val = 1500;
-volatile int ai_dir_depan_kanan_val = 1500;
+// --- KONTROL DARI JETSON/KOMUNIKASI SERIAL (Protected by Mutex) ---
+char serialCommand = 'W'; 
+int ai_servo_val = 90; 
+int ai_dir_val = 1500; 
+int ai_motor_val = 1500; 
+int ai_dir_depan_kiri_val = 1500;
+int ai_motor_depan_kiri_val = 1000;  
+int ai_dir_depan_kanan_val = 1500;
+int ai_motor_depan_kanan_val = 1000; 
 
 // --- Buffer JSON & Serial ---
 StaticJsonDocument<400> jsonDoc;
-String serialInputBuffer = ""; 
+char serialInputBuffer[128];
+int serialInputIndex = 0;
 
-// --- Variabel Global Telemetri (Volatile untuk IPC) ---
-volatile float heading = 0.0;
-volatile double lat = 0.0, lon = 0.0;
-volatile double speed = 0.0; 
-volatile int sats = 0;
+// --- Variabel Global Telemetri (Protected by Mutex) ---
+float heading = 0.0;
+double lat = 0.0, lon = 0.0;
+double speed = 0.0; 
+int sats = 0;
 
-volatile bool isManual = true;
-volatile int last_rc_ch5 = 1000; 
+bool isManual = true;
+int last_rc_ch5 = 1000; 
 
-// Variabel penampung state untuk telemetri
-volatile int finalServo_g = 90;
-volatile int finalMotor_g = 1500;           
-volatile int finalMotorDepanKiri_g = 1000;  
-volatile int finalMotorDepanKanan_g = 1000; 
-volatile int finalDir_g = 1500;             
+// Output final aktuator
+int finalServo_g = 90;
+int finalMotor_g = 1500;           
+int finalMotorDepanKiri_g = 1000;  
+int finalMotorDepanKanan_g = 1000; 
+int finalDir_g = 1500;             
+int finalDirDepanKiri_g = 1500;
+int finalDirDepanKanan_g = 1500;
 
-volatile int wp_target_idx_g = 0;
-volatile double wp_dist_m_g = 0.0;
-volatile double wp_target_brg_g = 0.0;
-volatile double wp_error_hdg_g = 0.0;
+int wp_target_idx_g = 0;
+double wp_dist_m_g = 0.0;
+double wp_target_brg_g = 0.0;
+double wp_error_hdg_g = 0.0;
 
 char mode_g[16] = "MANUAL";
 char status_g[16] = "ACTIVE";
-// -----------------------------------------------------
 
 // ---------------- Haversine ----------------
 #define R 6371000.0
@@ -212,10 +209,12 @@ void saveDataToMemory() {
   preferences.begin("gps-data", false); 
   preferences.putUInt("dataCount", dataIndex);
   for (int i = 0; i < dataIndex; i++) {
-    String latKey = "lat" + String(i);
-    String lngKey = "lng" + String(i);
-    preferences.putFloat(latKey.c_str(), latitudes[i]);
-    preferences.putFloat(lngKey.c_str(), longitudes[i]);
+    char latKey[10];
+    char lngKey[10];
+    sprintf(latKey, "lat%d", i);
+    sprintf(lngKey, "lng%d", i);
+    preferences.putFloat(latKey, latitudes[i]);
+    preferences.putFloat(lngKey, longitudes[i]);
   }
   preferences.end(); 
 }
@@ -227,10 +226,12 @@ void loadDataFromMemory() {
     dataIndex = MAX_DATA;
   }
   for (int i = 0; i < dataIndex; i++) {
-    String latKey = "lat" + String(i);
-    String lngKey = "lng" + String(i);
-    latitudes[i] = preferences.getFloat(latKey.c_str(), 0.0);
-    longitudes[i] = preferences.getFloat(lngKey.c_str(), 0.0);
+    char latKey[10];
+    char lngKey[10];
+    sprintf(latKey, "lat%d", i);
+    sprintf(lngKey, "lng%d", i);
+    latitudes[i] = preferences.getFloat(latKey, 0.0);
+    longitudes[i] = preferences.getFloat(lngKey, 0.0);
   }
   preferences.end(); 
 }
@@ -240,130 +241,82 @@ void clearAllData() {
   preferences.clear();
   preferences.end();
   dataIndex = 0;
-  Serial.println("🗑 Semua data lama telah dihapus.");
+  // Serial.println() dihindari karena dipanggil dari TaskMotor
 }
 
-void displayAllData() {
-  if (dataIndex > 0) {
-    Serial.println("📋 DATA KOORDINAT TERSIMPAN:");
-    Serial.println("==========================================");
-    for (int i = 0; i < dataIndex; i++) {
-      Serial.print("Titik ");
-      if (i < 9) Serial.print("0");
-      Serial.print(i);
-      Serial.print(": ");
-      Serial.print(latitudes[i], 6);
-      Serial.print(", ");
-      Serial.println(longitudes[i], 6);
-    }
-    Serial.println("==========================================");
-    Serial.print("Total: ");
-    Serial.print(dataIndex);
-    Serial.print("/");
-    Serial.print(MAX_DATA);
-    Serial.println(" titik");
-  } else {
-    Serial.println("📋 Tidak ada data koordinat yang tersimpan.");
-  }
-}
-
-// --- FUNGSI MEMBACA PERINTAH SERIAL ---
+// --- FUNGSI MEMBACA PERINTAH SERIAL (Dipanggil oleh TaskMotor) ---
 void checkSerialInput() {
   while (Serial.available() > 0) {
     char incomingChar = Serial.read(); 
     
     if (incomingChar == '\n') {
-      serialInputBuffer.trim(); 
+      serialInputBuffer[serialInputIndex] = '\0'; // Null-terminate
       
-      if (serialInputBuffer.length() > 0) {
-        serialCommand = serialInputBuffer.charAt(0); 
+      if (serialInputIndex > 0) {
+        char cmd = serialInputBuffer[0];
         
-        if (serialCommand == 'A') {
-          int comma1 = serialInputBuffer.indexOf(',');
-          int comma2 = serialInputBuffer.indexOf(',', comma1 + 1);
-          int comma3 = serialInputBuffer.indexOf(',', comma2 + 1);
-          int comma4 = serialInputBuffer.indexOf(',', comma3 + 1);
-          int comma5 = serialInputBuffer.indexOf(',', comma4 + 1);
-          int comma6 = serialInputBuffer.indexOf(',', comma5 + 1);
-          int comma7 = serialInputBuffer.indexOf(',', comma6 + 1);
-
-          if (comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0 && comma5 > 0 && comma6 > 0 && comma7 > 0) {
-            String servoStr          = serialInputBuffer.substring(comma1 + 1, comma2);
-            String dirStr            = serialInputBuffer.substring(comma2 + 1, comma3);
-            String motorBwhStr       = serialInputBuffer.substring(comma3 + 1, comma4);
-            String dirDepanKiriStr   = serialInputBuffer.substring(comma4 + 1, comma5);
-            String motorDepanKiriStr = serialInputBuffer.substring(comma5 + 1, comma6);
-            String dirDepanKananStr  = serialInputBuffer.substring(comma6 + 1, comma7);
-            String motorDepanKananStr= serialInputBuffer.substring(comma7 + 1);
-
-            ai_servo_val             = servoStr.toInt();
-            ai_dir_val               = dirStr.toInt();
-            ai_motor_val             = motorBwhStr.toInt();
-            ai_dir_depan_kiri_val    = dirDepanKiriStr.toInt();
-            ai_motor_depan_kiri_val  = motorDepanKiriStr.toInt();
-            ai_dir_depan_kanan_val   = dirDepanKananStr.toInt();
-            ai_motor_depan_kanan_val = motorDepanKananStr.toInt();
+        if (cmd == 'A') {
+          // Format Baru: A,servo,dir,motorBwh,dirDepanKiri,motorDepanKiri,dirDepanKanan,motorDepanKanan
+          int c1, c2, c3, c4, c5, c6, c7;
+          if (sscanf(serialInputBuffer, "A,%d,%d,%d,%d,%d,%d,%d", &c1, &c2, &c3, &c4, &c5, &c6, &c7) == 7) {
+            xSemaphoreTake(stateMutex, portMAX_DELAY);
+            serialCommand = cmd;
+            ai_servo_val = c1;
+            ai_dir_val = c2;
+            ai_motor_val = c3;
+            ai_dir_depan_kiri_val = c4;
+            ai_motor_depan_kiri_val = c5;
+            ai_dir_depan_kanan_val = c6;
+            ai_motor_depan_kanan_val = c7;
+            xSemaphoreGive(stateMutex);
           }
         }
-        else if (serialCommand == 'M') {
-          int comma1 = serialInputBuffer.indexOf(',');
-          if (comma1 > 0) {
-            String modeStr = serialInputBuffer.substring(comma1 + 1);
-            modeStr.trim();
-            if (modeStr == "AUTO" && isManual) {
-              Serial.println("[Serial CMD] Switching to AUTO (from GUI)...");
+        else if (cmd == 'W') {
+           xSemaphoreTake(stateMutex, portMAX_DELAY);
+           serialCommand = cmd;
+           xSemaphoreGive(stateMutex);
+        }
+        else if (cmd == 'M') {
+          if (strncmp(serialInputBuffer, "M,AUTO", 6) == 0) {
+            xSemaphoreTake(stateMutex, portMAX_DELAY);
+            if (isManual) {
               isManual = false;
               counter = 0;
-            } else if (modeStr == "MANUAL" && !isManual) {
-              Serial.println("[Serial CMD] Switching to MANUAL (from GUI)...");
-              isManual = true;
-              wasInCaptureMode = false;
-              wasInSaveMode = false;
             }
+            xSemaphoreGive(stateMutex);
+          } else if (strncmp(serialInputBuffer, "M,MANUAL", 8) == 0) {
+            xSemaphoreTake(stateMutex, portMAX_DELAY);
+            if (!isManual) {
+              isManual = true;
+            }
+            xSemaphoreGive(stateMutex);
           }
         }
-        else if (serialCommand == 'T') {
-          int comma1 = serialInputBuffer.indexOf(',');
-          int comma2 = serialInputBuffer.indexOf(',', comma1 + 1);
-          int comma3 = serialInputBuffer.indexOf(',', comma2 + 1);
-          int comma4 = serialInputBuffer.indexOf(',', comma3 + 1);
-          
-          if (comma1 > 0 && comma2 > 0) {
-            String typeStr = serialInputBuffer.substring(comma1 + 1, comma2);
-            if (typeStr == "PID" && comma3 > 0 && comma4 > 0) {
-              String pStr = serialInputBuffer.substring(comma2 + 1, comma3);
-              String iStr = serialInputBuffer.substring(comma3 + 1, comma4);
-              String dStr = serialInputBuffer.substring(comma4 + 1);
-              
-              Kp = pStr.toDouble();
-              Ki = iStr.toDouble();
-              Kd = dStr.toDouble();
-              
-              Serial.println("ACK:PID_UPDATED");
-            }
-            else if (typeStr == "SRV" && comma3 > 0) {
-              String leftStr = serialInputBuffer.substring(comma2 + 1, comma3);
-              String rightStr = serialInputBuffer.substring(comma3 + 1);
-              
-              servo_min_angle = leftStr.toInt();
-              servo_max_angle = rightStr.toInt();
-              
-              Serial.println("ACK:SERVO_UPDATED");
-            }
-            else if (typeStr == "THR") {
-              String speedStr = (comma3 > 0) ? serialInputBuffer.substring(comma2 + 1, comma3) : serialInputBuffer.substring(comma2 + 1);
-              int pct = speedStr.toInt();
-              thruster_manual_pwm = 1500 + (pct * 5); // 0-100% -> 1500-2000 PWM
-              
-              Serial.println("ACK:THRUSTER_UPDATED");
-            }
+        else if (cmd == 'T') {
+          double p, i, d;
+          int minA, maxA, pct;
+          if (sscanf(serialInputBuffer, "T,PID,%lf,%lf,%lf", &p, &i, &d) == 3) {
+            xSemaphoreTake(stateMutex, portMAX_DELAY);
+            Kp = p; Ki = i; Kd = d;
+            xSemaphoreGive(stateMutex);
+          }
+          else if (sscanf(serialInputBuffer, "T,SRV,%d,%d", &minA, &maxA) == 2) {
+            xSemaphoreTake(stateMutex, portMAX_DELAY);
+            servo_min_angle = minA;
+            servo_max_angle = maxA;
+            xSemaphoreGive(stateMutex);
+          }
+          else if (sscanf(serialInputBuffer, "T,THR,%d", &pct) == 1) {
+            xSemaphoreTake(stateMutex, portMAX_DELAY);
+            thruster_manual_pwm = 1500 + (pct * 5); // 0-100% -> 1500-2000 PWM
+            xSemaphoreGive(stateMutex);
           }
         }
       }
-      serialInputBuffer = "";
-    } else {
-      if (serialInputBuffer.length() < 128) { 
-        serialInputBuffer += incomingChar;
+      serialInputIndex = 0;
+    } else if (incomingChar != '\r') {
+      if (serialInputIndex < sizeof(serialInputBuffer) - 1) { 
+        serialInputBuffer[serialInputIndex++] = incomingChar;
       }
     }
   }
@@ -377,36 +330,170 @@ void checkSerialInput() {
 void TaskSensor(void *pvParameters) {
   for(;;) {
     // 1. Baca GPS
-    if (myGPS.getPVT()) { 
-      uint8_t fixType = myGPS.getFixType(); 
-
-      if (fixType > 0) digitalWrite(LED_GPS, HIGH);
-      else digitalWrite(LED_GPS, LOW);
-
-      if (fixType > 0) { 
-          lat = myGPS.getLatitude() / 10000000.0;
-          lon = myGPS.getLongitude() / 10000000.0;
-          speed = myGPS.getGroundSpeed() / 1000.0 * 3.6; 
-          sats = myGPS.getSIV(); 
-      } else { 
-          lat = 0.0;
-          lon = 0.0;
-          speed = 0.0;
-          sats = 0;
-      }
-    }
-
+    bool gotGPS = myGPS.getPVT();
+    uint8_t fixType = gotGPS ? myGPS.getFixType() : 0;
+    
     // 2. Baca Kompas
     float temp_heading = readCompass();
+
+    // -- AMBIL MUTEX UNTUK MEMBACA & MEMPERBARUI STATE --
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+
+    // Update LED dan Variabel GPS global
+    digitalWrite(LED_GPS, fixType > 0 ? HIGH : LOW);
+    if (fixType > 0) { 
+        lat = myGPS.getLatitude() / 10000000.0;
+        lon = myGPS.getLongitude() / 10000000.0;
+        speed = myGPS.getGroundSpeed() / 1000.0 * 3.6; 
+        sats = myGPS.getSIV(); 
+    } else { 
+        lat = 0.0;
+        lon = 0.0;
+        speed = 0.0;
+        sats = 0;
+    }
+
     if (temp_heading != -1) {
       heading = temp_heading;
     }
 
-    // 3. Telemetri JSON
+    // ----------------------------------------------------
+    // NAVIGASI (HANYA DIEKSEKUSI DI LOOP SENSOR ~10Hz)
+    // ----------------------------------------------------
+    int finalServo = 90;
+    int finalMotor = 1500;
+    int finalMotorDepanKiri = 1000;
+    int finalMotorDepanKanan = 1000;
+    int finalDir = 1500;
+    int finalDirDepanKiri = 1500;
+    int finalDirDepanKanan = 1500;
+    
+    char local_mode[16];
+    char local_status[16];
+    strcpy(local_mode, isManual ? "MANUAL" : "AUTO");
+    strcpy(local_status, "ACTIVE");
+
+    int wp_target_idx = 0;
+    double wp_dist_m = 0.0;
+    double wp_target_brg = 0.0;
+    double wp_error_hdg = 0.0;
+
+    if (!isManual) {
+       finalDir = ai_dir_val;
+       finalDirDepanKiri = ai_dir_depan_kiri_val;
+       finalDirDepanKanan = ai_dir_depan_kanan_val;
+
+       if (serialCommand == 'A') {
+         int calculatedServoVal = ai_servo_val;
+         
+         if (counter >= AI_SERVO_INVERSION_INDEX) {
+           calculatedServoVal = 180 - ai_servo_val; 
+           if (calculatedServoVal > servo_max_angle) calculatedServoVal = servo_max_angle;
+           if (calculatedServoVal < servo_min_angle) calculatedServoVal = servo_min_angle;
+           strcpy(local_status, "AI_INVERTED");
+         } else {
+           strcpy(local_status, "AI_ACTIVE");
+         }
+         
+         finalServo           = calculatedServoVal;
+         finalMotor           = ai_motor_val; 
+         finalMotorDepanKiri  = ai_motor_depan_kiri_val;
+         finalMotorDepanKanan = ai_motor_depan_kanan_val;
+       } 
+       else if (serialCommand == 'W') {
+         strcpy(local_status, "WAYPOINT");
+         finalDir = 2000;
+         finalDirDepanKiri = 2000;
+         finalDirDepanKanan = 2000;
+         
+         if (dataIndex > 0 && lat != 0.0 && lon != 0.0) { 
+           if (counter >= dataIndex) { 
+             finalServo = 90;
+             finalMotor = 1000; 
+             finalMotorDepanKiri = 1000;  
+             finalMotorDepanKanan = 1000; 
+             strcpy(local_status, "WP_COMPLETE");
+             wp_target_idx = dataIndex; 
+           } else { 
+             double targetLat = latitudes[counter];
+             double targetLon = longitudes[counter];
+             double dist = haversine(lat, lon, targetLat, targetLon); 
+             double targetBearing = bearing(lat, lon, targetLat, targetLon); 
+             
+             double errorHeading = targetBearing - heading;
+             if (errorHeading > 180) errorHeading -= 360;
+             if (errorHeading < -180) errorHeading += 360;
+             
+             // Hitung PID di 10Hz
+             finalServo = PID_servo(targetBearing, heading);
+             
+             // Ambil nilai Motor dari TaskMotor/PPM (Disinkronkan)
+             finalMotor = readChannel(6); 
+             finalMotorDepanKiri = 1000;       
+             finalMotorDepanKanan = 1000;      
+
+             if (dist < 1.75) {
+               counter++; // Capai WP
+             }
+
+             wp_target_idx = counter + 1; 
+             wp_dist_m = dist;
+             wp_target_brg = targetBearing;
+             wp_error_hdg = errorHeading;
+           }
+         } else {
+           finalServo = 90;
+           finalMotor = 1000; 
+           finalMotorDepanKiri = 1000;   
+           finalMotorDepanKanan = 1000;  
+           strcpy(local_status, dataIndex == 0 ? "NO_WAYPOINTS" : "GPS_INVALID");
+         }
+       }
+       
+       // Terapkan hasil perhitungan ke Global Variable agar dieksekusi TaskMotor
+       finalServo_g = finalServo;
+       finalMotor_g = finalMotor;
+       finalMotorDepanKiri_g = finalMotorDepanKiri;
+       finalMotorDepanKanan_g = finalMotorDepanKanan;
+       finalDir_g = finalDir;
+       finalDirDepanKiri_g = finalDirDepanKiri;
+       finalDirDepanKanan_g = finalDirDepanKanan;
+       
+       wp_target_idx_g = wp_target_idx;
+       wp_dist_m_g = wp_dist_m;
+       wp_target_brg_g = wp_target_brg;
+       wp_error_hdg_g = wp_error_hdg;
+       
+       strcpy(mode_g, local_mode);
+       strcpy(status_g, local_status);
+    } 
+    
+    // --- Manajemen Simpan Waypoint (Dipindahkan ke Sensor Loop) ---
+    if (isManual) {
+      if (clearTriggered) {
+         clearAllData();
+         clearTriggered = false;
+      }
+      if (captureTriggered) {
+         if (dataIndex < MAX_DATA && lat != 0.0 && lon != 0.0) {
+            latitudes[dataIndex] = lat;
+            longitudes[dataIndex] = lon;
+            dataIndex++;
+            saveDataToMemory();
+         }
+         captureTriggered = false;
+      }
+      if (saveTriggered) {
+         saveDataToMemory();
+         saveTriggered = false;
+      }
+    }
+
+    // --- TELEMETRI JSON (HANYA TASK SENSOR YANG BOLEH SERIAL PRINT) ---
     jsonDoc.clear(); 
 
-    jsonDoc["mode"] = String(mode_g);
-    jsonDoc["status"] = String(status_g);
+    jsonDoc["mode"] = mode_g;
+    jsonDoc["status"] = status_g;
 
     jsonDoc["heading"] = (float)round(heading * 100) / 100;
     jsonDoc["lat"] = lat;
@@ -425,10 +512,10 @@ void TaskSensor(void *pvParameters) {
       jsonDoc["ai_wp_start_invert"] = AI_SERVO_INVERSION_INDEX + 1;
     }
 
-    if (String(mode_g) == "AUTO" && serialCommand == 'W') { 
+    if (strcmp(mode_g, "AUTO") == 0 && serialCommand == 'W') { 
       jsonDoc["wp_target_idx"] = wp_target_idx_g;
       
-      if (String(status_g) == "WP_COMPLETE") {
+      if (strcmp(status_g, "WP_COMPLETE") == 0) {
         jsonDoc["wp_dist_m"] = 0.0;
         jsonDoc["wp_target_brg"] = 0.0;
         jsonDoc["wp_error_hdg"] = 0.0;
@@ -442,45 +529,41 @@ void TaskSensor(void *pvParameters) {
     serializeJson(jsonDoc, Serial);
     Serial.println(); 
 
+    // LEPASKAN MUTEX
+    xSemaphoreGive(stateMutex);
+
     // Jalankan task ini ~10Hz
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
 void TaskMotor(void *pvParameters) {
+  bool local_wasInCaptureMode = false;
+  bool local_wasInSaveMode = false;
+
   for(;;) {
+    // 1. Baca Serial (Menggunakan Char array, NO STRING HEAP!)
     checkSerialInput(); 
 
+    // 2. Baca RC Input
+    int ch1 = readChannel(0); 
+    int ch3 = readChannel(2); 
     int ch5 = readChannel(4); 
     int ch6 = readChannel(5); 
+    int ch8 = readChannel(7);
 
-    String local_mode = "MANUAL";
-    String local_status = "ACTIVE";
+    // -- AMBIL MUTEX UNTUK MEMBACA/MENULIS STATE --
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
     
-    int finalServo = 90;
-    int finalMotor = 1500;           
-    int finalMotorDepanKiri = 1000;  
-    int finalMotorDepanKanan = 1000; 
-    int finalDir = 1500;             
-    int finalDirDepanKiri = 1500;
-    int finalDirDepanKanan = 1500;
-    
-    int wp_target_idx = 0;
-    double wp_dist_m = 0.0;
-    double wp_target_brg = 0.0;
-    double wp_error_hdg = 0.0;
-
     bool rc_wants_manual = (ch5 < 1500);
     bool rc_was_manual = (last_rc_ch5 < 1500);
     
     if (rc_wants_manual != rc_was_manual) {
       if (rc_wants_manual && !isManual) {
-        Serial.println("[RC Edge] Switching to MANUAL...");
         isManual = true;
-        wasInCaptureMode = false;
-        wasInSaveMode = false;
+        local_wasInCaptureMode = false;
+        local_wasInSaveMode = false;
       } else if (!rc_wants_manual && isManual) {
-        Serial.println("[RC Edge] Switching to AUTO...");
         isManual = false;
         counter = 0;
       }
@@ -489,178 +572,67 @@ void TaskMotor(void *pvParameters) {
 
     // ----------------- MANUAL MODE -----------------
     if (isManual) {
-      local_mode = "MANUAL";
+      strcpy(mode_g, "MANUAL");
+      strcpy(status_g, "ACTIVE");
 
-      int ch1 = readChannel(0); 
-      finalServo = map(ch1, 1000, 2000, servo_min_angle, servo_max_angle); 
+      finalServo_g = map(ch1, 1000, 2000, servo_min_angle, servo_max_angle); 
+      finalMotor_g = ch3;
+      finalMotorDepanKiri_g = 1000;
+      finalMotorDepanKanan_g = 1000;
+      finalDir_g = ch8;
+      finalDirDepanKiri_g = ch8;
+      finalDirDepanKanan_g = ch8;
 
-      int ch3 = readChannel(2); 
-      finalMotor = ch3;
-
-      finalMotorDepanKiri = 1000;
-      finalMotorDepanKanan = 1000;
-
-      int ch8 = readChannel(7);
-      finalDir = ch8;
-      finalDirDepanKiri = ch8;
-      finalDirDepanKanan = ch8;
-
+      // Handle RC switch mode
       if (ch6 >= 1400 && ch6 <= 1600) { 
-        if (!wasInCaptureMode) {
-          Serial.println("🟡 MODE REKAM: Siap merekam waypoint baru.");
-          wasInCaptureMode = true;
-          captureTriggered = false;
+        if (!local_wasInCaptureMode) {
+          local_wasInCaptureMode = true;
         }
       } else if (ch6 > 1900) { 
-        if (wasInCaptureMode && !captureTriggered) {
-          if (wasInSaveMode) {
-            clearAllData();
-            wasInSaveMode = false;
+        if (local_wasInCaptureMode && !captureTriggered) {
+          if (local_wasInSaveMode) {
+            clearTriggered = true; // Signal sensor task to clear
+            local_wasInSaveMode = false;
           }
-          if (dataIndex >= MAX_DATA) {
-            Serial.println("⚠ Memori penuh. Tidak bisa menambah titik lagi.");
-          } else {
-            if (lat != 0.0 && lon != 0.0) { 
-              latitudes[dataIndex] = lat;
-              longitudes[dataIndex] = lon;
-              dataIndex++;
-              saveDataToMemory();
-              Serial.println("📍 Titik ke-" + String(dataIndex) + " direkam.");
-            } else {
-              Serial.println("❌ GPS belum lock. Tidak dapat menambah data.");
-            }
-          }
-          captureTriggered = true;
+          captureTriggered = true; // Signal sensor task to save point
         }
-        wasInCaptureMode = false;
+        local_wasInCaptureMode = false;
       } else if (ch6 < 1100) { 
-        if (!wasInSaveMode) {
-          saveDataToMemory();
-          Serial.println("✅ Semua waypoint tersimpan.");
-          displayAllData();
-          wasInSaveMode = true;
+        if (!local_wasInSaveMode) {
+          saveTriggered = true; // Signal sensor task to write preferences
+          local_wasInSaveMode = true;
         }
-        wasInCaptureMode = false;
-      }
-    }
-    // ----------------- AUTO MODE -----------------
-    else {
-      local_mode = "AUTO";
-      finalDir = ai_dir_val; 
-      finalDirDepanKiri = ai_dir_depan_kiri_val;
-      finalDirDepanKanan = ai_dir_depan_kanan_val;
-
-      if (serialCommand == 'A') {
-        int calculatedServoVal = ai_servo_val;
-        
-        if (counter >= AI_SERVO_INVERSION_INDEX) {
-          calculatedServoVal = 180 - ai_servo_val; 
-          
-          if (calculatedServoVal > servo_max_angle) calculatedServoVal = servo_max_angle;
-          if (calculatedServoVal < servo_min_angle) calculatedServoVal = servo_min_angle;
-          
-          local_status = "AI_INVERTED"; 
-        } else {
-          local_status = "AI_ACTIVE";
-        }
-
-        finalServo           = calculatedServoVal;
-        finalMotor           = ai_motor_val; 
-        finalMotorDepanKiri  = ai_motor_depan_kiri_val;
-        finalMotorDepanKanan = ai_motor_depan_kanan_val;
-        finalDir             = ai_dir_val;
-        finalDirDepanKiri    = ai_dir_depan_kiri_val;
-        finalDirDepanKanan   = ai_dir_depan_kanan_val;
-        
-      } 
-      else if (serialCommand == 'W') {
-        local_status = "WAYPOINT";
-        finalDir = 2000; // Maju
-        finalDirDepanKiri = 2000;
-        finalDirDepanKanan = 2000;
-        
-        if (dataIndex > 0 && lat != 0.0 && lon != 0.0) { 
-          
-          if (counter >= dataIndex) { 
-            finalServo = 90;
-            finalMotor = 1000; 
-            finalMotorDepanKiri = 1000;  
-            finalMotorDepanKanan = 1000; 
-            local_status = "WP_COMPLETE";
-            wp_target_idx = dataIndex; 
-          } else { 
-            double targetLat = latitudes[counter];
-            double targetLon = longitudes[counter];
-            double dist = haversine(lat, lon, targetLat, targetLon); 
-            double targetBearing = bearing(lat, lon, targetLat, targetLon); 
-            
-            double errorHeading = targetBearing - heading;
-            if (errorHeading > 180) errorHeading -= 360;
-            if (errorHeading < -180) errorHeading += 360;
-            
-            int servoPos = PID_servo(targetBearing, heading);
-            finalServo = servoPos;
-
-            int motorSpeed = readChannel(6);  
-            finalMotor = motorSpeed;          
-            
-            finalMotorDepanKiri = 1000;       
-            finalMotorDepanKanan = 1000;      
-
-            if (dist < 1.75) {
-              counter++; 
-              Serial.print("✅ WP #");
-              Serial.print(counter);
-              Serial.println(" tercapai. Menuju WP berikutnya.");
-            }
-
-            wp_target_idx = counter + 1; 
-            wp_dist_m = dist;
-            wp_target_brg = targetBearing;
-            wp_error_hdg = errorHeading;
-          }
-          
-        } else {
-          finalServo = 90;
-          finalMotor = 1000; 
-          finalMotorDepanKiri = 1000;   
-          finalMotorDepanKanan = 1000;  
-          if (dataIndex == 0) local_status = "NO_WAYPOINTS";
-          else local_status = "GPS_INVALID";
-        }
+        local_wasInCaptureMode = false;
       }
     }
 
-    // Eksekusi Hardware
-    servoKiri.write(finalServo); 
-    servoKanan.write(finalServo); 
-
-    dirDepanKiri.writeMicroseconds(finalDirDepanKiri);
-    dirDepanKanan.writeMicroseconds(finalDirDepanKanan);
-    dirBawahKiri.writeMicroseconds(finalDir);
-    dirBawahKanan.writeMicroseconds(finalDir);
-
-    escDepanKiri.writeMicroseconds(finalMotorDepanKiri);
-    escDepanKanan.writeMicroseconds(finalMotorDepanKanan);
+    // Ambil variabel ke stack lokal agar aman saat eksekusi IO hardware
+    int srv = finalServo_g;
+    int mtr = finalMotor_g;
+    int mdk = finalMotorDepanKiri_g;
+    int mdk_r = finalMotorDepanKanan_g;
+    int dir = finalDir_g;
+    int ddk = finalDirDepanKiri_g;
+    int ddk_r = finalDirDepanKanan_g;
     
-    escBawahKiri.writeMicroseconds(finalMotor);
-    escBawahKanan.writeMicroseconds(finalMotor);
+    // LEPASKAN MUTEX
+    xSemaphoreGive(stateMutex);
 
-    // Update global telemetry variables
-    local_mode.toCharArray(mode_g, 16);
-    local_status.toCharArray(status_g, 16);
-    finalServo_g = finalServo;
-    finalMotor_g = finalMotor;
-    finalMotorDepanKiri_g = finalMotorDepanKiri;
-    finalMotorDepanKanan_g = finalMotorDepanKanan;
-    finalDir_g = finalDir;
-    
-    wp_target_idx_g = wp_target_idx;
-    wp_dist_m_g = wp_dist_m;
-    wp_target_brg_g = wp_target_brg;
-    wp_error_hdg_g = wp_error_hdg;
+    // 3. Eksekusi Hardware
+    servoKiri.write(srv); 
+    servoKanan.write(srv); 
 
-    // Jalankan task ini ~50Hz
+    dirDepanKiri.writeMicroseconds(ddk);
+    dirDepanKanan.writeMicroseconds(ddk_r);
+    dirBawahKiri.writeMicroseconds(dir);
+    dirBawahKanan.writeMicroseconds(dir);
+
+    escDepanKiri.writeMicroseconds(mdk);
+    escDepanKanan.writeMicroseconds(mdk_r);
+    escBawahKiri.writeMicroseconds(mtr);
+    escBawahKanan.writeMicroseconds(mtr);
+
+    // Jalankan task ini pada ~50Hz untuk kelancaran Motor dan RC
     vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
@@ -672,7 +644,10 @@ void TaskMotor(void *pvParameters) {
 void setup() {
   Serial.begin(230400); 
 
-  Serial.println("Menginisialisasi ESC, Pin Arah, dan Servo...");
+  // Inisialisasi Mutex
+  stateMutex = xSemaphoreCreateMutex();
+
+  // Inisialisasi Aktuator
   escDepanKiri.attach(PIN_ESC_DEPAN_KIRI);
   escDepanKanan.attach(PIN_ESC_DEPAN_KANAN);
   escBawahKiri.attach(PIN_ESC_BAWAH_KIRI);
@@ -689,15 +664,8 @@ void setup() {
   pinMode(LED_GPS, OUTPUT);
   digitalWrite(LED_GPS, LOW); 
 
-  Serial.println("Mencoba koneksi ke GPS U-Blox...");
   gpsSerial.begin(GPS_BAUD_RATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN); 
-
-  if (myGPS.begin(gpsSerial)) {
-    Serial.println("Koneksi GPS berhasil!");
-  } else {
-    Serial.println("Gagal koneksi ke GPS. Cek kabel & baud rate.");
-  }
-
+  myGPS.begin(gpsSerial);
   myGPS.setUART1Output(COM_TYPE_UBX); 
   myGPS.setNavigationFrequency(10); 
   myGPS.setAutoPVT(true); 
@@ -709,22 +677,12 @@ void setup() {
 
   loadDataFromMemory(); 
 
-  Serial.println("");
-  Serial.println("🌍 GPS + WAYPOINT SYSTEM (INTEGRATED)");
-  Serial.println("================================");
-  Serial.print("Data tersimpan: ");
-  Serial.print(dataIndex);
-  Serial.print("/");
-  Serial.print(MAX_DATA);
-  Serial.println(" titik");
-  Serial.println("================================");
-
   // INISIALISASI FREERTOS TASKS
   xTaskCreatePinnedToCore(
     TaskSensor,        // Fungsi Task
     "TaskSensor",      // Nama Task
     4096,              // Ukuran Stack
-    NULL,              // Parameter (opsional)
+    NULL,              // Parameter
     1,                 // Prioritas (1 = sedang)
     &TaskSensorHandle, // Task Handle
     0                  // Pinned to Core 0
@@ -742,7 +700,6 @@ void setup() {
 }
 
 void loop() {
-  // Loop bawaan Arduino di Core 1 dikosongkan.
   // Semua tugas sudah ditangani oleh FreeRTOS.
   vTaskDelete(NULL);
 }

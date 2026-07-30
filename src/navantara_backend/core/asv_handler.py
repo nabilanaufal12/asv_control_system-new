@@ -164,6 +164,7 @@ class AsvHandler:
 
     def __init__(self, config, socketio):
         self.config = config
+        self.mission_config = self.config.get("auto_missions", {})
         self.socketio = socketio
 
         # --- [NEW] Route Python Logs to GUI ---
@@ -623,7 +624,7 @@ class AsvHandler:
                     )
 
                     # --- [BARU] DOCKING MISSION LOGIC ---
-                    dock_cfg = self.config.get("docking_mission", {})
+                    dock_cfg = self.mission_config.get("docking", {})
                     trigger_wp = dock_cfg.get("trigger_wp_index", 17)
                     if dock_cfg.get("enabled", False) and current_effective_index >= trigger_wp and nav_dist_to_wp < 3.0:
                         if not self.current_state.is_docking_completed:
@@ -637,43 +638,42 @@ class AsvHandler:
                     is_in_photo_zone = False
                     active_photo_cfg = None
                     active_photo_target = None
+                    photo_master_cfg = self.mission_config.get("photography", {})
+                    blue_cfg = photo_master_cfg.get("target_blue_box", {})
+                    green_cfg = photo_master_cfg.get("target_green_box", {})
 
-                    with self.state_lock:
-                        blue_cfg = self.current_state.photo_mission_blue
-                        green_cfg = self.current_state.photo_mission_green
+                    if (
+                        blue_cfg.get("wp_start", -1)
+                        <= current_effective_index
+                        <= blue_cfg.get("wp_stop", -1)
+                        and blue_cfg.get("wp_start", -1) != -1
+                    ):
+                        is_in_photo_zone = True
+                        active_photo_cfg = blue_cfg
+                        active_photo_target = "kotak-biru"
+                    elif (
+                        green_cfg.get("wp_start", -1)
+                        <= current_effective_index
+                        <= green_cfg.get("wp_stop", -1)
+                        and green_cfg.get("wp_start", -1) != -1
+                    ):
+                        is_in_photo_zone = True
+                        active_photo_cfg = green_cfg
+                        active_photo_target = "kotak-hijau"
 
+                    # Cek Stop & Wait (Loitering) & Reverse Maneuver
+                    if is_in_photo_zone and active_photo_cfg:
+                        stop_idx = active_photo_cfg.get("wp_stop", -1)
                         if (
-                            blue_cfg.get("start", -1)
-                            <= current_effective_index
-                            <= blue_cfg.get("stop", -1)
-                            and blue_cfg.get("start", -1) != -1
-                        ):
-                            is_in_photo_zone = True
-                            active_photo_cfg = blue_cfg
-                            active_photo_target = "kotak-biru"
-                        elif (
-                            green_cfg.get("start", -1)
-                            <= current_effective_index
-                            <= green_cfg.get("stop", -1)
-                            and green_cfg.get("start", -1) != -1
-                        ):
-                            is_in_photo_zone = True
-                            active_photo_cfg = green_cfg
-                            active_photo_target = "kotak-hijau"
-
-                        # Cek Stop & Wait (Loitering) & Reverse Maneuver
-                        if is_in_photo_zone and active_photo_cfg:
-                            stop_idx = active_photo_cfg.get("stop", -1)
-                            if (
-                                current_effective_index == stop_idx
-                                and nav_dist_to_wp < 3.0
-                            ):  # 3.0m toleransi
-                                if not self.current_state.is_loitering and not self.current_state.is_reversing:
-                                    self.current_state.is_loitering = True
-                                    self.current_state.loiter_start_time = time.time()
-                                    logging.info(
-                                        f"[AsvHandler] Mulai Loitering di WP {stop_idx} untuk foto {active_photo_target}."
-                                    )
+                            current_effective_index == stop_idx
+                            and nav_dist_to_wp < 3.0
+                        ):  # 3.0m toleransi
+                            if not self.current_state.is_loitering and not self.current_state.is_reversing:
+                                self.current_state.is_loitering = True
+                                self.current_state.loiter_start_time = time.time()
+                                logging.info(
+                                    f"[AsvHandler] Mulai Loitering di WP {stop_idx} untuk foto {active_photo_target}."
+                                )
 
                     if self.current_state.is_docking:
                         elapsed = time.time() - self.current_state.docking_start_time
@@ -707,7 +707,7 @@ class AsvHandler:
                     elif self.current_state.is_loitering:
                         elapsed = time.time() - self.current_state.loiter_start_time
                         delay_req = (
-                            active_photo_cfg.get("delay", 3.0)
+                            active_photo_cfg.get("stop_delay_sec", 3.0)
                             if active_photo_cfg
                             else 3.0
                         )
@@ -735,12 +735,12 @@ class AsvHandler:
                     elif self.current_state.is_reversing:
                         elapsed = time.time() - self.current_state.reverse_start_time
                         rev_delay_req = (
-                            active_photo_cfg.get("rev_delay", 2.0)
+                            active_photo_cfg.get("reverse_delay_sec", 2.0)
                             if active_photo_cfg
                             else 2.0
                         )
                         rev_pwm = (
-                            active_photo_cfg.get("rev_pwm", 1300)
+                            active_photo_cfg.get("reverse_speed_pwm", 1300)
                             if active_photo_cfg
                             else 1300
                         )
@@ -763,7 +763,7 @@ class AsvHandler:
 
                     # Jika dalam zona foto, override PWM (Speed limit) & apply Visual Servoing
                     elif is_in_photo_zone:
-                        target_pwm = active_photo_cfg.get("pwm", 1400)
+                        target_pwm = active_photo_cfg.get("speed_pwm", 1400)
 
                         # Cek apakah sedang melihat target foto
                         if (
@@ -949,13 +949,11 @@ class AsvHandler:
             "DEBUG_COMMAND": self._handle_debug_command,
             "INVERSE_SERVO": self._handle_inverse_servo,
             "SET_INVERSION": self._handle_set_inversion,
-            "SET_PHOTO_MISSION": self._handle_set_photo_mission,
             "UPDATE_INVERSION_TRIGGER": self._handle_update_inversion_trigger,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
             "MANUAL_CAPTURE": self._handle_manual_capture,
             "SWAP_CAMERAS": self._handle_swap_cameras,
-            "UPDATE_VISION_MISSION": self._handle_update_vision_mission,
-            "UPDATE_DOCKING_CONFIG": self._handle_update_docking_config,
+            "UPDATE_MISSION_CONFIG": self._handle_update_mission_config,
         }
         handler = command_handlers.get(command)
         if handler:
@@ -1181,66 +1179,64 @@ class AsvHandler:
         logging.info("[AsvHandler] Menerima perintah SWAP_CAMERAS.")
         self.vision_service.swap_cameras()
 
-    def _handle_update_vision_mission(self, payload):
-        """Memperbarui profil misi Bola dan Kotak dari GUI."""
-        bola = payload.get("bola", {})
-        kotak = payload.get("kotak", {})
-
-        with self.state_lock:
-            # Profil Bola
-            self.current_state.vision_mission_bola.update(
-                {k: int(v) for k, v in bola.items() if isinstance(v, (int, float, str))}
-            )
-
-            # Profil Kotak
-            self.current_state.vision_mission_kotak.update(
-                {
-                    k: int(v)
-                    for k, v in kotak.items()
-                    if isinstance(v, (int, float, str))
-                }
-            )
-
-        logging.info(
-            f"[AsvHandler] Profil Misi Updated -> "
-            f"Bola(WP {self.current_state.vision_mission_bola['wp_start']}-{self.current_state.vision_mission_bola['wp_end']}), "
-            f"Kotak(WP {self.current_state.vision_mission_kotak['wp_start']}-{self.current_state.vision_mission_kotak['wp_end']})"
-        )
-
-    def _handle_update_docking_config(self, payload):
+    def _handle_update_mission_config(self, payload):
+        """Menerima konfigurasi parsial/penuh auto_missions dari GUI, simpan ke file, dan update RAM."""
         try:
             with self.state_lock:
-                if "docking_mission" not in self.config:
-                    self.config["docking_mission"] = {}
-                self.config["docking_mission"].update(payload)
+                # Deep merge payload into self.mission_config
+                for key, value in payload.items():
+                    if key in self.mission_config and isinstance(value, dict) and isinstance(self.mission_config[key], dict):
+                        self.mission_config[key].update(value)
+                    else:
+                        self.mission_config[key] = value
+
+                self.config["auto_missions"] = self.mission_config
                 
-            logging.info(f"[AsvHandler] Konfigurasi Docking diperbarui secara real-time dari GUI.")
-            self.logger.log_event("Konfigurasi Docking di Hot-Reload.")
+                # Update requested photo qty if available
+                photo_cfg = self.mission_config.get("photography", {})
+                if "max_photo_per_target" in photo_cfg:
+                    self.current_state.photo_mission_qty_requested = int(photo_cfg["max_photo_per_target"])
+                
+                # Reset konter foto setiap kali save misi baru
+                self.current_state.photo_mission_qty_taken_blue_surface = 0
+                self.current_state.photo_mission_qty_taken_blue_underwater = 0
+                self.current_state.photo_mission_qty_taken_green_surface = 0
+                self.current_state.photo_mission_qty_taken_green_underwater = 0
+                
+            # Tulis ke file (aman karena hanya dijalankan saat user klik "Save" di GUI)
+            with open("config/config.json", "w") as f:
+                json.dump(self.config, f, indent=2)
+
+            logging.info("[AsvHandler] Konfigurasi Misi (auto_missions) diperbarui dan disimpan.")
+            self.logger.log_event("Konfigurasi Misi (auto_missions) di Hot-Reload.")
         except Exception as e:
-            logging.warning(f"[AsvHandler] Gagal hot-reload konfigurasi Docking: {e}")
+            logging.warning(f"[AsvHandler] Gagal hot-reload konfigurasi Misi: {e}")
 
     def _get_active_vision_profile(self):
         """Mengembalikan profil aktif (bola atau kotak) berdasarkan waypoint saat ini."""
         wp = self.current_state.current_waypoint_index
+        
+        bola_cfg = self.mission_config.get("vision_ball_red_green", {})
+        kotak_cfg = self.mission_config.get("vision_box_blue_green", {})
 
         # Cek apakah masuk profil kotak
         if (
-            self.current_state.vision_mission_kotak["wp_start"]
+            kotak_cfg.get("wp_start", 11)
             <= wp
-            <= self.current_state.vision_mission_kotak["wp_end"]
+            <= kotak_cfg.get("wp_end", 14)
         ):
-            kotak_profile = self.current_state.vision_mission_kotak.copy()
+            kotak_profile = kotak_cfg.copy()
             kotak_profile["profile_name"] = "kotak"
             kotak_profile["valid_classes"] = ["kotak-hijau", "kotak-biru"]
             return kotak_profile
 
         # Cek apakah masuk profil bola
         if (
-            self.current_state.vision_mission_bola["wp_start"]
+            bola_cfg.get("wp_start", 0)
             <= wp
-            <= self.current_state.vision_mission_bola["wp_end"]
+            <= bola_cfg.get("wp_end", 11)
         ):
-            bola_profile = self.current_state.vision_mission_bola.copy()
+            bola_profile = bola_cfg.copy()
             bola_profile["profile_name"] = "bola"
             bola_profile["valid_classes"] = ["bola-merah", "bola-hijau"]
             return bola_profile
@@ -1480,43 +1476,7 @@ class AsvHandler:
             self.current_state.control_mode = "AUTO"
         self.logger.log_event("Memulai Return to Home.")
 
-    def _handle_set_photo_mission(self, payload):
-        try:
-            with self.state_lock:
-                self.current_state.photo_mission_blue = {
-                    "start": int(payload.get("blue_start", -1)),
-                    "stop": int(payload.get("blue_stop", -1)),
-                    "pwm": int(payload.get("blue_pwm", 1400)),
-                    "delay": float(payload.get("blue_delay", 3.0)),
-                    "rev_pwm": int(payload.get("blue_rev_pwm", 1300)),
-                    "rev_delay": float(payload.get("blue_rev_delay", 2.0)),
-                }
-
-                self.current_state.photo_mission_green = {
-                    "start": int(payload.get("green_start", -1)),
-                    "stop": int(payload.get("green_stop", -1)),
-                    "pwm": int(payload.get("green_pwm", 1400)),
-                    "delay": float(payload.get("green_delay", 3.0)),
-                    "rev_pwm": int(payload.get("green_rev_pwm", 1300)),
-                    "rev_delay": float(payload.get("green_rev_delay", 2.0)),
-                }
-
-                count = int(payload.get("count", 0))
-                self.current_state.photo_mission_qty_requested = count
-                self.current_state.photo_mission_qty_taken_blue_surface = 0
-                self.current_state.photo_mission_qty_taken_blue_underwater = 0
-                self.current_state.photo_mission_qty_taken_green_surface = 0
-                self.current_state.photo_mission_qty_taken_green_underwater = 0
-
-            logging.info(
-                f"[AsvHandler] Misi Segmen Foto diatur (Blue/Green Box): Max={count} foto."
-            )
-            self.logger.log_event(f"Misi Foto: Max {count} foto per target.")
-
-        except Exception as e:
-            logging.warning(
-                f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}"
-            )
+    # _handle_set_photo_mission removed, merged into _handle_update_mission_config
 
     def stop(self):
         """Menghentikan handler, memutus serial, dan menutup logger."""

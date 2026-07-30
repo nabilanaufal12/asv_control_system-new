@@ -99,80 +99,64 @@ class DockingView(QWidget):
 
     def load_config(self):
         try:
-            # Karena dijalankan via root, akses "config/config.json"
-            config_path = "config/config.json"
-            if not os.path.exists(config_path):
-                # Fallback ke path absolut jika dijalankan berbeda
-                config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../config/config.json")
+            dock_cfg = self.config.get("auto_missions", {}).get("docking", {})
             
-            with open(config_path, "r") as f:
-                data = json.load(f)
-                dock_cfg = data.get("docking_mission", {})
-                
-                # Arena A
-                a = dock_cfg.get("Arena_A", {})
-                self.spin_a_servo.setValue(a.get("servo_angle", 45))
-                self.spin_a_dur.setValue(int(a.get("duration_sec", 20)))
-                self.spin_a_r_pwm.setValue(a.get("rear_pwm", 1100))
-                # Di config JSON versi awal belum ada rear_dir, gunakan fallback 2000
-                self.spin_a_r_dir.setValue(a.get("rear_dir", 2000)) 
-                self.spin_a_fl_pwm.setValue(a.get("front_left_pwm", 1200))
-                self.spin_a_fl_dir.setValue(a.get("front_left_dir", 2000))
-                self.spin_a_fr_pwm.setValue(a.get("front_right_pwm", 1200))
-                self.spin_a_fr_dir.setValue(a.get("front_right_dir", 1000))
+            # Arena A
+            a = dock_cfg.get("Arena_A", {})
+            self.spin_a_servo.setValue(a.get("servo_angle", 45))
+            self.spin_a_dur.setValue(int(a.get("duration_sec", 20)))
+            self.spin_a_r_pwm.setValue(a.get("rear_pwm", 1100))
+            # Di config JSON versi awal belum ada rear_dir, gunakan fallback 2000
+            self.spin_a_r_dir.setValue(a.get("rear_dir", 2000)) 
+            self.spin_a_fl_pwm.setValue(a.get("front_left_pwm", 1200))
+            self.spin_a_fl_dir.setValue(a.get("front_left_dir", 2000))
+            self.spin_a_fr_pwm.setValue(a.get("front_right_pwm", 1200))
+            self.spin_a_fr_dir.setValue(a.get("front_right_dir", 1000))
 
-                # Arena B
-                b = dock_cfg.get("Arena_B", {})
-                self.spin_b_servo.setValue(b.get("servo_angle", 135))
-                self.spin_b_dur.setValue(int(b.get("duration_sec", 20)))
-                self.spin_b_r_pwm.setValue(b.get("rear_pwm", 1100))
-                self.spin_b_r_dir.setValue(b.get("rear_dir", 2000))
-                self.spin_b_fl_pwm.setValue(b.get("front_left_pwm", 1200))
-                self.spin_b_fl_dir.setValue(b.get("front_left_dir", 1000))
-                self.spin_b_fr_pwm.setValue(b.get("front_right_pwm", 1200))
-                self.spin_b_fr_dir.setValue(b.get("front_right_dir", 2000))
+            # Arena B
+            b = dock_cfg.get("Arena_B", {})
+            self.spin_b_servo.setValue(b.get("servo_angle", 135))
+            self.spin_b_dur.setValue(int(b.get("duration_sec", 20)))
+            self.spin_b_r_pwm.setValue(b.get("rear_pwm", 1100))
+            self.spin_b_r_dir.setValue(b.get("rear_dir", 2000))
+            self.spin_b_fl_pwm.setValue(b.get("front_left_pwm", 1200))
+            self.spin_b_fl_dir.setValue(b.get("front_left_dir", 1000))
+            self.spin_b_fr_pwm.setValue(b.get("front_right_pwm", 1200))
+            self.spin_b_fr_dir.setValue(b.get("front_right_dir", 2000))
         except Exception as e:
             print("Error loading config:", e)
 
     def save_config(self):
         try:
-            config_path = "config/config.json"
-            if not os.path.exists(config_path):
-                config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../config/config.json")
-                
-            with open(config_path, "r") as f:
-                data = json.load(f)
-            
-            if "docking_mission" not in data:
-                data["docking_mission"] = {}
-                
-            data["docking_mission"]["Arena_A"] = {
-                "servo_angle": self.spin_a_servo.value(),
-                "duration_sec": float(self.spin_a_dur.value()),
-                "rear_pwm": self.spin_a_r_pwm.value(),
-                "rear_dir": self.spin_a_r_dir.value(),
-                "front_left_pwm": self.spin_a_fl_pwm.value(),
-                "front_left_dir": self.spin_a_fl_dir.value(),
-                "front_right_pwm": self.spin_a_fr_pwm.value(),
-                "front_right_dir": self.spin_a_fr_dir.value(),
+            payload = {
+                "docking": {
+                    "enabled": True,
+                    "trigger_wp_index": 17,
+                    "Arena_A": {
+                        "servo_angle": self.spin_a_servo.value(),
+                        "duration_sec": float(self.spin_a_dur.value()),
+                        "rear_pwm": self.spin_a_r_pwm.value(),
+                        "rear_dir": self.spin_a_r_dir.value(),
+                        "front_left_pwm": self.spin_a_fl_pwm.value(),
+                        "front_left_dir": self.spin_a_fl_dir.value(),
+                        "front_right_pwm": self.spin_a_fr_pwm.value(),
+                        "front_right_dir": self.spin_a_fr_dir.value(),
+                    },
+                    "Arena_B": {
+                        "servo_angle": self.spin_b_servo.value(),
+                        "duration_sec": float(self.spin_b_dur.value()),
+                        "rear_pwm": self.spin_b_r_pwm.value(),
+                        "rear_dir": self.spin_b_r_dir.value(),
+                        "front_left_pwm": self.spin_b_fl_pwm.value(),
+                        "front_left_dir": self.spin_b_fl_dir.value(),
+                        "front_right_pwm": self.spin_b_fr_pwm.value(),
+                        "front_right_dir": self.spin_b_fr_dir.value(),
+                    }
+                }
             }
-            
-            data["docking_mission"]["Arena_B"] = {
-                "servo_angle": self.spin_b_servo.value(),
-                "duration_sec": float(self.spin_b_dur.value()),
-                "rear_pwm": self.spin_b_r_pwm.value(),
-                "rear_dir": self.spin_b_r_dir.value(),
-                "front_left_pwm": self.spin_b_fl_pwm.value(),
-                "front_left_dir": self.spin_b_fl_dir.value(),
-                "front_right_pwm": self.spin_b_fr_pwm.value(),
-                "front_right_dir": self.spin_b_fr_dir.value(),
-            }
-            
-            with open(config_path, "w") as f:
-                json.dump(data, f, indent=2)
                 
-            self.docking_config_updated.emit(data["docking_mission"])
+            self.docking_config_updated.emit(payload)
                 
-            QMessageBox.information(self, "Success", "Docking Config Saved to config.json!")
+            QMessageBox.information(self, "Success", "Docking Config Sent to Backend!")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save config: {str(e)}")

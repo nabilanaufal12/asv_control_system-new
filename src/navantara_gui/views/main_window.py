@@ -408,10 +408,10 @@ class MainWindow(QMainWindow):
         # -----------------------------------
 
         self.settings_panel.vision_mission_updated.connect(
-            lambda p: self.api_client.send_command("UPDATE_VISION_MISSION", p)
+            lambda p: self.api_client.send_command("UPDATE_MISSION_CONFIG", p)
         )
         self.settings_panel.docking_config_updated.connect(
-            lambda p: self.api_client.send_command("UPDATE_DOCKING_CONFIG", p)
+            lambda p: self.api_client.send_command("UPDATE_MISSION_CONFIG", p)
         )
 
         self.control_panel.manual_button_clicked.connect(
@@ -437,7 +437,7 @@ class MainWindow(QMainWindow):
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
 
         self.waypoints_panel.send_photo_mission.connect(
-            lambda payload: self.api_client.send_command("SET_PHOTO_MISSION", payload)
+            lambda payload: self.api_client.send_command("UPDATE_MISSION_CONFIG", payload)
         )
 
         self.waypoints_panel.update_inversion_trigger.connect(

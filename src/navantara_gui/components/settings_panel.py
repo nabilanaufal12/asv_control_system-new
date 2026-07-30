@@ -39,6 +39,10 @@ class SettingsPanel(QGroupBox):
     def __init__(self, config, title="Settings"):
         super().__init__(title)
         self.config = config
+        auto_missions = self.config.get("auto_missions", {})
+        bola_cfg = auto_missions.get("vision_ball_red_green", {})
+        kotak_cfg = auto_missions.get("vision_box_blue_green", {})
+        
         main_layout = QVBoxLayout()
 
         # --- [BAGIAN KONTROL AI VISION & MISI] ---
@@ -52,19 +56,19 @@ class SettingsPanel(QGroupBox):
         bola_layout.addWidget(QLabel("WP Range:"), 0, 0)
         self.spin_bola_wp_start = QSpinBox()
         self.spin_bola_wp_start.setRange(0, 30)
-        self.spin_bola_wp_start.setValue(0)
+        self.spin_bola_wp_start.setValue(bola_cfg.get("wp_start", 0))
         self.spin_bola_wp_start.setPrefix("Start: ")
         bola_layout.addWidget(self.spin_bola_wp_start, 0, 1)
         self.spin_bola_wp_end = QSpinBox()
         self.spin_bola_wp_end.setRange(0, 30)
-        self.spin_bola_wp_end.setValue(11)
+        self.spin_bola_wp_end.setValue(bola_cfg.get("wp_end", 11))
         self.spin_bola_wp_end.setPrefix("End: ")
         bola_layout.addWidget(self.spin_bola_wp_end, 0, 2)
 
         bola_layout.addWidget(QLabel("Trigger Dist:"), 1, 0)
         self.spin_bola_dist = QSpinBox()
         self.spin_bola_dist.setRange(0, 500)
-        self.spin_bola_dist.setValue(165)
+        self.spin_bola_dist.setValue(bola_cfg.get("trigger_dist_cm", 165))
         self.spin_bola_dist.setSingleStep(10)
         self.spin_bola_dist.setSuffix(" cm")
         bola_layout.addWidget(self.spin_bola_dist, 1, 1, 1, 2)
@@ -72,13 +76,13 @@ class SettingsPanel(QGroupBox):
         bola_layout.addWidget(QLabel("Avoid Angle:"), 2, 0)
         self.spin_bola_left = QSpinBox()
         self.spin_bola_left.setRange(0, 90)
-        self.spin_bola_left.setValue(70)
+        self.spin_bola_left.setValue(bola_cfg.get("avoid_angle_left", 70))
         self.spin_bola_left.setPrefix("L: ")
         self.spin_bola_left.setSuffix("°")
         bola_layout.addWidget(self.spin_bola_left, 2, 1)
         self.spin_bola_right = QSpinBox()
         self.spin_bola_right.setRange(90, 180)
-        self.spin_bola_right.setValue(110)
+        self.spin_bola_right.setValue(bola_cfg.get("avoid_angle_right", 110))
         self.spin_bola_right.setPrefix("R: ")
         self.spin_bola_right.setSuffix("°")
         bola_layout.addWidget(self.spin_bola_right, 2, 2)
@@ -86,31 +90,31 @@ class SettingsPanel(QGroupBox):
         bola_layout.addWidget(QLabel("PWM Utama:"), 3, 0)
         self.slider_bola_pwm_utama = QSlider(Qt.Horizontal)
         self.slider_bola_pwm_utama.setRange(1000, 2000)
-        self.slider_bola_pwm_utama.setValue(1500)
+        self.slider_bola_pwm_utama.setValue(bola_cfg.get("pwm_utama", 1500))
         bola_layout.addWidget(self.slider_bola_pwm_utama, 3, 1)
         self.spin_bola_pwm_utama = QSpinBox()
         self.spin_bola_pwm_utama.setRange(1000, 2000)
-        self.spin_bola_pwm_utama.setValue(1500)
+        self.spin_bola_pwm_utama.setValue(bola_cfg.get("pwm_utama", 1500))
         bola_layout.addWidget(self.spin_bola_pwm_utama, 3, 2)
 
         bola_layout.addWidget(QLabel("PWM Depan Kiri:"), 4, 0)
         self.slider_bola_pwm_kiri = QSlider(Qt.Horizontal)
         self.slider_bola_pwm_kiri.setRange(1000, 2000)
-        self.slider_bola_pwm_kiri.setValue(1500)
+        self.slider_bola_pwm_kiri.setValue(bola_cfg.get("pwm_depan_kiri", 1500))
         bola_layout.addWidget(self.slider_bola_pwm_kiri, 4, 1)
         self.spin_bola_pwm_kiri = QSpinBox()
         self.spin_bola_pwm_kiri.setRange(1000, 2000)
-        self.spin_bola_pwm_kiri.setValue(1500)
+        self.spin_bola_pwm_kiri.setValue(bola_cfg.get("pwm_depan_kiri", 1500))
         bola_layout.addWidget(self.spin_bola_pwm_kiri, 4, 2)
 
         bola_layout.addWidget(QLabel("PWM Depan Kanan:"), 5, 0)
         self.slider_bola_pwm_kanan = QSlider(Qt.Horizontal)
         self.slider_bola_pwm_kanan.setRange(1000, 2000)
-        self.slider_bola_pwm_kanan.setValue(1500)
+        self.slider_bola_pwm_kanan.setValue(bola_cfg.get("pwm_depan_kanan", 1500))
         bola_layout.addWidget(self.slider_bola_pwm_kanan, 5, 1)
         self.spin_bola_pwm_kanan = QSpinBox()
         self.spin_bola_pwm_kanan.setRange(1000, 2000)
-        self.spin_bola_pwm_kanan.setValue(1500)
+        self.spin_bola_pwm_kanan.setValue(bola_cfg.get("pwm_depan_kanan", 1500))
         bola_layout.addWidget(self.spin_bola_pwm_kanan, 5, 2)
 
         bola_group.setLayout(bola_layout)
@@ -122,19 +126,19 @@ class SettingsPanel(QGroupBox):
         kotak_layout.addWidget(QLabel("WP Range:"), 0, 0)
         self.spin_kotak_wp_start = QSpinBox()
         self.spin_kotak_wp_start.setRange(0, 30)
-        self.spin_kotak_wp_start.setValue(11)
+        self.spin_kotak_wp_start.setValue(kotak_cfg.get("wp_start", 11))
         self.spin_kotak_wp_start.setPrefix("Start: ")
         kotak_layout.addWidget(self.spin_kotak_wp_start, 0, 1)
         self.spin_kotak_wp_end = QSpinBox()
         self.spin_kotak_wp_end.setRange(0, 30)
-        self.spin_kotak_wp_end.setValue(14)
+        self.spin_kotak_wp_end.setValue(kotak_cfg.get("wp_end", 14))
         self.spin_kotak_wp_end.setPrefix("End: ")
         kotak_layout.addWidget(self.spin_kotak_wp_end, 0, 2)
 
         kotak_layout.addWidget(QLabel("Trigger Dist:"), 1, 0)
         self.spin_kotak_dist = QSpinBox()
         self.spin_kotak_dist.setRange(0, 500)
-        self.spin_kotak_dist.setValue(165)
+        self.spin_kotak_dist.setValue(kotak_cfg.get("trigger_dist_cm", 165))
         self.spin_kotak_dist.setSingleStep(10)
         self.spin_kotak_dist.setSuffix(" cm")
         kotak_layout.addWidget(self.spin_kotak_dist, 1, 1, 1, 2)
@@ -142,13 +146,13 @@ class SettingsPanel(QGroupBox):
         kotak_layout.addWidget(QLabel("Avoid Angle:"), 2, 0)
         self.spin_kotak_left = QSpinBox()
         self.spin_kotak_left.setRange(0, 90)
-        self.spin_kotak_left.setValue(70)
+        self.spin_kotak_left.setValue(kotak_cfg.get("avoid_angle_left", 70))
         self.spin_kotak_left.setPrefix("L: ")
         self.spin_kotak_left.setSuffix("°")
         kotak_layout.addWidget(self.spin_kotak_left, 2, 1)
         self.spin_kotak_right = QSpinBox()
         self.spin_kotak_right.setRange(90, 180)
-        self.spin_kotak_right.setValue(110)
+        self.spin_kotak_right.setValue(kotak_cfg.get("avoid_angle_right", 110))
         self.spin_kotak_right.setPrefix("R: ")
         self.spin_kotak_right.setSuffix("°")
         kotak_layout.addWidget(self.spin_kotak_right, 2, 2)
@@ -156,31 +160,31 @@ class SettingsPanel(QGroupBox):
         kotak_layout.addWidget(QLabel("PWM Utama:"), 3, 0)
         self.slider_kotak_pwm_utama = QSlider(Qt.Horizontal)
         self.slider_kotak_pwm_utama.setRange(1000, 2000)
-        self.slider_kotak_pwm_utama.setValue(1500)
+        self.slider_kotak_pwm_utama.setValue(kotak_cfg.get("pwm_utama", 1500))
         kotak_layout.addWidget(self.slider_kotak_pwm_utama, 3, 1)
         self.spin_kotak_pwm_utama = QSpinBox()
         self.spin_kotak_pwm_utama.setRange(1000, 2000)
-        self.spin_kotak_pwm_utama.setValue(1500)
+        self.spin_kotak_pwm_utama.setValue(kotak_cfg.get("pwm_utama", 1500))
         kotak_layout.addWidget(self.spin_kotak_pwm_utama, 3, 2)
 
         kotak_layout.addWidget(QLabel("PWM Depan Kiri:"), 4, 0)
         self.slider_kotak_pwm_kiri = QSlider(Qt.Horizontal)
         self.slider_kotak_pwm_kiri.setRange(1000, 2000)
-        self.slider_kotak_pwm_kiri.setValue(1500)
+        self.slider_kotak_pwm_kiri.setValue(kotak_cfg.get("pwm_depan_kiri", 1500))
         kotak_layout.addWidget(self.slider_kotak_pwm_kiri, 4, 1)
         self.spin_kotak_pwm_kiri = QSpinBox()
         self.spin_kotak_pwm_kiri.setRange(1000, 2000)
-        self.spin_kotak_pwm_kiri.setValue(1500)
+        self.spin_kotak_pwm_kiri.setValue(kotak_cfg.get("pwm_depan_kiri", 1500))
         kotak_layout.addWidget(self.spin_kotak_pwm_kiri, 4, 2)
 
         kotak_layout.addWidget(QLabel("PWM Depan Kanan:"), 5, 0)
         self.slider_kotak_pwm_kanan = QSlider(Qt.Horizontal)
         self.slider_kotak_pwm_kanan.setRange(1000, 2000)
-        self.slider_kotak_pwm_kanan.setValue(1500)
+        self.slider_kotak_pwm_kanan.setValue(kotak_cfg.get("pwm_depan_kanan", 1500))
         kotak_layout.addWidget(self.slider_kotak_pwm_kanan, 5, 1)
         self.spin_kotak_pwm_kanan = QSpinBox()
         self.spin_kotak_pwm_kanan.setRange(1000, 2000)
-        self.spin_kotak_pwm_kanan.setValue(1500)
+        self.spin_kotak_pwm_kanan.setValue(kotak_cfg.get("pwm_depan_kanan", 1500))
         kotak_layout.addWidget(self.spin_kotak_pwm_kanan, 5, 2)
 
         kotak_group.setLayout(kotak_layout)
@@ -296,25 +300,25 @@ class SettingsPanel(QGroupBox):
     def _on_mission_profile_changed(self):
         """Kumpulkan semua data profil misi dan kirim ke backend."""
         payload = {
-            "bola": {
+            "vision_ball_red_green": {
                 "wp_start": self.spin_bola_wp_start.value(),
                 "wp_end": self.spin_bola_wp_end.value(),
-                "trigger_dist": self.spin_bola_dist.value(),
-                "angle_left": self.spin_bola_left.value(),
-                "angle_right": self.spin_bola_right.value(),
+                "trigger_dist_cm": self.spin_bola_dist.value(),
+                "avoid_angle_left": self.spin_bola_left.value(),
+                "avoid_angle_right": self.spin_bola_right.value(),
                 "pwm_utama": self.spin_bola_pwm_utama.value(),
-                "pwm_kiri": self.spin_bola_pwm_kiri.value(),
-                "pwm_kanan": self.spin_bola_pwm_kanan.value(),
+                "pwm_depan_kiri": self.spin_bola_pwm_kiri.value(),
+                "pwm_depan_kanan": self.spin_bola_pwm_kanan.value(),
             },
-            "kotak": {
+            "vision_box_blue_green": {
                 "wp_start": self.spin_kotak_wp_start.value(),
                 "wp_end": self.spin_kotak_wp_end.value(),
-                "trigger_dist": self.spin_kotak_dist.value(),
-                "angle_left": self.spin_kotak_left.value(),
-                "angle_right": self.spin_kotak_right.value(),
+                "trigger_dist_cm": self.spin_kotak_dist.value(),
+                "avoid_angle_left": self.spin_kotak_left.value(),
+                "avoid_angle_right": self.spin_kotak_right.value(),
                 "pwm_utama": self.spin_kotak_pwm_utama.value(),
-                "pwm_kiri": self.spin_kotak_pwm_kiri.value(),
-                "pwm_kanan": self.spin_kotak_pwm_kanan.value(),
+                "pwm_depan_kiri": self.spin_kotak_pwm_kiri.value(),
+                "pwm_depan_kanan": self.spin_kotak_pwm_kanan.value(),
             },
         }
         self.vision_mission_updated.emit(payload)

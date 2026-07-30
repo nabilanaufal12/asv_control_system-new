@@ -318,23 +318,29 @@ class WaypointsPanel(QGroupBox):
     def _on_set_photo_mission(self):
         """Handler untuk set misi foto (Kotak Biru & Hijau)."""
         payload = {
-            "blue_start": self.spin_blue_start.value(),
-            "blue_stop": self.spin_blue_stop.value(),
-            "blue_pwm": self.spin_blue_pwm.value(),
-            "blue_delay": self.spin_blue_delay.value(),
-            "blue_rev_pwm": self.spin_blue_rev_pwm.value(),
-            "blue_rev_delay": self.spin_blue_rev_delay.value(),
-            "green_start": self.spin_green_start.value(),
-            "green_stop": self.spin_green_stop.value(),
-            "green_pwm": self.spin_green_pwm.value(),
-            "green_delay": self.spin_green_delay.value(),
-            "green_rev_pwm": self.spin_green_rev_pwm.value(),
-            "green_rev_delay": self.spin_green_rev_delay.value(),
-            "count": self.spin_photo_max.value(),
+            "photography": {
+                "max_photo_per_target": self.spin_photo_max.value(),
+                "target_blue_box": {
+                    "wp_start": self.spin_blue_start.value(),
+                    "wp_stop": self.spin_blue_stop.value(),
+                    "speed_pwm": self.spin_blue_pwm.value(),
+                    "stop_delay_sec": self.spin_blue_delay.value(),
+                    "reverse_speed_pwm": self.spin_blue_rev_pwm.value(),
+                    "reverse_delay_sec": self.spin_blue_rev_delay.value(),
+                },
+                "target_green_box": {
+                    "wp_start": self.spin_green_start.value(),
+                    "wp_stop": self.spin_green_stop.value(),
+                    "speed_pwm": self.spin_green_pwm.value(),
+                    "stop_delay_sec": self.spin_green_delay.value(),
+                    "reverse_speed_pwm": self.spin_green_rev_pwm.value(),
+                    "reverse_delay_sec": self.spin_green_rev_delay.value(),
+                },
+            }
         }
 
         self.send_photo_mission.emit(payload)
-        print(f"[WaypointsPanel] Emit SET_PHOTO_MISSION: {payload}")
+        print(f"[WaypointsPanel] Emit SET_PHOTO_MISSION (now uses UPDATE_MISSION_CONFIG logic): {payload}")
 
     # --- [HANDLER BARU] ---
     @Slot()
