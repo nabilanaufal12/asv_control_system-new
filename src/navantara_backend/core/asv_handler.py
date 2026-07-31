@@ -102,14 +102,6 @@ class AsvState:
     photo_mission_qty_taken_green_surface: int = 0
     photo_mission_qty_taken_green_underwater: int = 0
 
-    # Konfigurasi Misi Segmen Foto (Blue & Green)
-    photo_mission_blue: dict = field(
-        default_factory=lambda: {"start": 11, "stop": 12, "pwm": 1400, "delay": 3.0, "rev_pwm": 1300, "rev_delay": 2.0}
-    )
-    photo_mission_green: dict = field(
-        default_factory=lambda: {"start": 13, "stop": 14, "pwm": 1400, "delay": 3.0, "rev_pwm": 1300, "rev_delay": 2.0}
-    )
-
     # Loitering State
     is_loitering: bool = False
     loiter_start_time: float = 0.0
@@ -126,32 +118,6 @@ class AsvState:
     # AI Photo Centering State
     is_photo_centering: bool = False
     photo_pixel_error: float = 0.0
-
-    # --- [BARU] Profil Misi Bola & Kotak ---
-    vision_mission_bola: dict = field(
-        default_factory=lambda: {
-            "wp_start": 0,
-            "wp_end": 11,
-            "trigger_dist": 165,
-            "angle_left": 70,
-            "angle_right": 110,
-            "pwm_utama": 1500,
-            "pwm_kiri": 1500,
-            "pwm_kanan": 1500,
-        }
-    )
-    vision_mission_kotak: dict = field(
-        default_factory=lambda: {
-            "wp_start": 11,
-            "wp_end": 14,
-            "trigger_dist": 165,
-            "angle_left": 70,
-            "angle_right": 110,
-            "pwm_utama": 1500,
-            "pwm_kiri": 1500,
-            "pwm_kanan": 1500,
-        }
-    )
 
 
 class AsvHandler:

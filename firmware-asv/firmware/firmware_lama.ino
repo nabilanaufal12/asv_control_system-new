@@ -1,31 +1,36 @@
-#include <Wire.h> 
-#include <SparkFun_Ublox_Arduino_Library.h> 
-#include <ESP32Servo.h> 
-#include <Preferences.h> 
-#include <ArduinoJson.h> 
+#include <Wire.h> // Library untuk komunikasi I2C (untuk CMPS12)
+#include <SparkFun_Ublox_Arduino_Library.h> // Library untuk GPS U-Blox
+#include <ESP32Servo.h> // Library untuk mengontrol Servo dan ESC
+#include <Preferences.h> // Library untuk menyimpan data di memori non-volatile (NVS/EEPROM)
+#include <ArduinoJson.h> // Library untuk memproses dan mengirim data JSON (telemetri)
 
-// ---------------- GPS (U-Blox 10Hz) ----------------
+// ---------------- GPS (Diganti ke U-Blox 10Hz) ----------------
 SFE_UBLOX_GPS myGPS;
-HardwareSerial gpsSerial(2); 
-#define GPS_BAUD_RATE 9600 
-#define GPS_RX_PIN 16 
-#define GPS_TX_PIN 17 
-#define LED_GPS 2 
+HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
+#define GPS_BAUD_RATE 9600 // Baud rate komunikasi ke modul GPS
+#define GPS_RX_PIN 16 // Pin RX untuk komunikasi GPS (default Serial 2 RX)
+#define GPS_TX_PIN 17 // Pin TX untuk komunikasi GPS (default Serial 2 TX)
+
+// ---------------- LED GPS FIX ----------------
+#define LED_GPS 2   // LED ESP32 (GPIO 2) untuk indikasi lock GPS
 
 // ---------------- CMPS12 ----------------
-#define CMPS12_ADDRESS 0x60 
-#define ANGLE_16BIT_REGISTER 2 
+#define CMPS12_ADDRESS 0x60 // Alamat I2C Kompas CMPS12
+#define ANGLE_16BIT_REGISTER 2 // Register untuk membaca heading 16-bit
 
 // ---------------- Konfigurasi Pin Aktuator ----------------
+// Pin Servo Kemudi
 #define PIN_SERVO_KIRI 32
 #define PIN_SERVO_KANAN 23
 
-// PIN ESC TERBARU
+// Pin ESC Motor
+// PIN ESC SESUAI TERBARU
 #define PIN_ESC_DEPAN_KIRI 26
 #define PIN_ESC_DEPAN_KANAN 33
 #define PIN_ESC_BAWAH_KIRI 27
 #define PIN_ESC_BAWAH_KANAN 25
 
+// Pin Arah (Maju/Mundur) menggunakan sinyal PWM
 #define DIR_DEPAN_KIRI 14
 #define DIR_DEPAN_KANAN 19
 #define DIR_BAWAH_KIRI 15
@@ -45,9 +50,12 @@ Servo dirBawahKiri;
 Servo dirBawahKanan;
 
 // ---------------- PID ----------------
-double Kp = 2.0, Ki = 0.0, Kd = 0.5; 
+double Kp = 2.0, Ki = 0.0, Kd = 0.5; // Konstanta PID
+
+// --- Waypoint Inversion Control for AI Mode ---
 const int AI_SERVO_INVERSION_INDEX = 7; 
-double error_val, lastError = 0, integral = 0;
+
+double error, lastError = 0, integral = 0;
 
 // ---------------- Waypoint ----------------
 #define MAX_DATA 20 
@@ -62,34 +70,16 @@ bool captureTriggered = false;
 bool wasInCaptureMode = false; 
 bool wasInSaveMode = false; 
 
-// --- [BARU] Parameter LOS (Line of Sight) ---
-double L_delta = 3.0;           // Lookahead distance dalam meter. (Bisa di-tuning, misal 2.0 - 5.0)
-double prev_wp_lat = 0.0;       // Latitude awal lintasan (Waypoint sebelumnya)
-double prev_wp_lon = 0.0;       // Longitude awal lintasan
-bool is_new_wp = true;          // Penanda untuk membuat garis lintasan baru
-double cross_track_error = 0.0; // Nilai simpangan kapal dari jalur lurus
-
-// --- KONTROL DARI JETSON ---
+// --- KONTROL DARI JETSON/KOMUNIKASI SERIAL ---
 char serialCommand = 'W'; 
 int ai_servo_val = 90; 
-int ai_dir_val = 1500;
-int ai_motor_val = 1500; 
-int ai_dir_depan_kiri_val = 1500;
-int ai_motor_depan_kiri_val = 1000;  
-int ai_dir_depan_kanan_val = 1500;
-int ai_motor_depan_kanan_val = 1000; 
+int ai_motor_val = 1500; // Untuk motor bawah
+int ai_motor_depan_kiri_val = 1000;  // Nilai dari serial Jetson untuk motor depan kiri
+int ai_motor_depan_kanan_val = 1000; // Nilai dari serial Jetson untuk motor depan kanan
 
 // --- Buffer JSON & Serial ---
 StaticJsonDocument<400> jsonDoc;
-char serialInputBuffer[128];
-int serialInputIndex = 0;
-
-// --- Variabel Global Telemetri ---
-float heading = 0.0;
-double lat = 0.0, lon = 0.0;
-double speed = 0.0; 
-int sats = 0;
-bool isManual = true;
+String serialInputBuffer = ""; 
 
 // ---------------- Haversine ----------------
 #define R 6371000.0
@@ -120,6 +110,7 @@ float readCompass() {
   Wire.beginTransmission(CMPS12_ADDRESS);
   Wire.write(ANGLE_16BIT_REGISTER);
   Wire.endTransmission();
+
   Wire.requestFrom(CMPS12_ADDRESS, 2); 
   if (Wire.available() == 2) {
     byte highByte = Wire.read();
@@ -132,24 +123,28 @@ float readCompass() {
 
 // ---------------- PID untuk servo ----------------
 int PID_servo(double setpoint, double input) {
-  error_val = input - setpoint; 
-  if (error_val > 180) error_val -= 360; 
-  if (error_val < -180) error_val += 360;
-  integral += error_val; 
-  double derivative = error_val - lastError; 
-  lastError = error_val; 
-  double output = Kp * error_val + Ki * integral + Kd * derivative; 
+  error = input - setpoint; 
+
+  if (error > 180) error -= 360; 
+  if (error < -180) error += 360;
+
+  integral += error; 
+  double derivative = error - lastError; 
+  lastError = error; 
+
+  double output = Kp * error + Ki * integral + Kd * derivative; 
   int servoPos = 90 + output; 
+
   if (servoPos > 180) servoPos = 180;
   if (servoPos < 0) servoPos = 0;
+
   return servoPos; 
 }
 
 // ---------------- PPM INPUT ----------------
 #define PPM_PIN 4 
 #define CHANNELS 10 
-volatile int ppm_temp[CHANNELS]; 
-volatile int ppm_valid[CHANNELS] = {1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500};
+volatile int ppm[CHANNELS]; 
 volatile byte ppmCounter = 0; 
 volatile unsigned long lastMicros = 0; 
 
@@ -158,39 +153,20 @@ void IRAM_ATTR ppmISR() {
   unsigned long diff = now - lastMicros;
   lastMicros = now;
 
-  if (diff > 5000) { 
-    if (ppmCounter >= 6) { 
-      for(int i=0; i<CHANNELS; i++) {
-        ppm_valid[i] = ppm_temp[i];
-      }
-    }
+  if (diff > 3000) { 
     ppmCounter = 0;
   } else {
     if (ppmCounter < CHANNELS) {
-      ppm_temp[ppmCounter] = diff; 
+      ppm[ppmCounter] = diff; 
       ppmCounter++;
     }
   }
 }
 
-bool rc_initialized = false;
-bool throttle_armed = false;
-int valid_frame_count = 0;
-
 int readChannel(byte ch, int minVal = 1000, int maxVal = 2000, int defaultVal = 1500) {
-  static float smoothedValid[CHANNELS] = {1500.0, 1500.0, 1500.0, 1500.0, 1500.0, 1500.0, 1500.0, 1500.0, 1500.0, 1500.0};
-  const float alpha = 0.4; 
-
   if (ch < CHANNELS) {
-    int val = ppm_valid[ch];
-    if (val >= 900 && val <= 2100) {
-      if (!rc_initialized) {
-        smoothedValid[ch] = val; 
-        return val;
-      }
-      smoothedValid[ch] = (alpha * val) + ((1.0 - alpha) * smoothedValid[ch]);
-      return (int)smoothedValid[ch];
-    }
+    int val = ppm[ch];
+    if (val >= 800 && val <= 2200) return val; 
   }
   return defaultVal; 
 }
@@ -228,48 +204,72 @@ void clearAllData() {
   preferences.clear();
   preferences.end();
   dataIndex = 0;
+  Serial.println("🗑 Semua data lama telah dihapus.");
 }
+
+void displayAllData() {
+  if (dataIndex > 0) {
+    Serial.println("📋 DATA KOORDINAT TERSIMPAN:");
+    Serial.println("==========================================");
+    for (int i = 0; i < dataIndex; i++) {
+      Serial.print("Titik ");
+      if (i < 9) Serial.print("0");
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.print(latitudes[i], 6);
+      Serial.print(", ");
+      Serial.println(longitudes[i], 6);
+    }
+    Serial.println("==========================================");
+    Serial.print("Total: ");
+    Serial.print(dataIndex);
+    Serial.print("/");
+    Serial.print(MAX_DATA);
+    Serial.println(" titik");
+  } else {
+    Serial.println("📋 Tidak ada data koordinat yang tersimpan.");
+  }
+}
+
+// ---------------- MODE FLAG ----------------
+bool isManual = true;
 
 // --- FUNGSI MEMBACA PERINTAH SERIAL ---
 void checkSerialInput() {
   while (Serial.available() > 0) {
     char incomingChar = Serial.read(); 
+    
     if (incomingChar == '\n') {
-      serialInputBuffer[serialInputIndex] = '\0';
-      if (serialInputIndex > 0) {
-        char cmd = serialInputBuffer[0];
-        if (cmd == 'A') {
-          int srv, r_dir, r_pwm, fl_dir, fl_pwm, fr_dir, fr_pwm;
-          if (sscanf(serialInputBuffer, "A,%d,%d,%d,%d,%d,%d,%d", &srv, &r_dir, &r_pwm, &fl_dir, &fl_pwm, &fr_dir, &fr_pwm) == 7) {
-            serialCommand = cmd;
-            ai_servo_val = srv;
-            ai_dir_val = r_dir;
-            ai_motor_val = r_pwm;
-            ai_dir_depan_kiri_val = fl_dir;
-            ai_motor_depan_kiri_val = fl_pwm;
-            ai_dir_depan_kanan_val = fr_dir;
-            ai_motor_depan_kanan_val = fr_pwm;
-          }
-        }
-        else if (cmd == 'W') {
-           serialCommand = cmd;
-        }
-        else if (cmd == 'M') {
-          if (strncmp(serialInputBuffer, "M,AUTO", 6) == 0) {
-            if (isManual) { 
-              isManual = false; 
-              counter = 0; 
-              is_new_wp = true; // --- [BARU] Reset jalur LOS saat beralih ke AUTO via Serial ---
-            }
-          } else if (strncmp(serialInputBuffer, "M,MANUAL", 8) == 0) {
-            if (!isManual) { isManual = true; }
+      serialInputBuffer.trim(); 
+      
+      if (serialInputBuffer.length() > 0) {
+        serialCommand = serialInputBuffer.charAt(0); 
+        
+        if (serialCommand == 'A') {
+          // FORMAT BARU: A,<servo>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>
+          int comma1 = serialInputBuffer.indexOf(',');
+          int comma2 = serialInputBuffer.indexOf(',', comma1 + 1);
+          int comma3 = serialInputBuffer.indexOf(',', comma2 + 1);
+          int comma4 = serialInputBuffer.indexOf(',', comma3 + 1);
+
+          // Cek apakah ada minimal 4 koma sebelum nilai diekstrak
+          if (comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0) {
+            String servoStr          = serialInputBuffer.substring(comma1 + 1, comma2);
+            String motorBwhStr       = serialInputBuffer.substring(comma2 + 1, comma3);
+            String motorDepanKiriStr = serialInputBuffer.substring(comma3 + 1, comma4);
+            String motorDepanKananStr= serialInputBuffer.substring(comma4 + 1);
+
+            ai_servo_val             = servoStr.toInt();
+            ai_motor_val             = motorBwhStr.toInt();
+            ai_motor_depan_kiri_val  = motorDepanKiriStr.toInt();
+            ai_motor_depan_kanan_val = motorDepanKananStr.toInt();
           }
         }
       }
-      serialInputIndex = 0;
-    } else if (incomingChar != '\r') {
-      if (serialInputIndex < sizeof(serialInputBuffer) - 1) { 
-        serialInputBuffer[serialInputIndex++] = incomingChar;
+      serialInputBuffer = "";
+    } else {
+      if (serialInputBuffer.length() < 128) { 
+        serialInputBuffer += incomingChar;
       }
     }
   }
@@ -278,41 +278,79 @@ void checkSerialInput() {
 void setup() {
   Serial.begin(230400); 
 
+  // ========================================================
+  // 1. INISIALISASI AKTUATOR TERLEBIH DAHULU (ESC & MAJU/MUNDUR)
+  // ========================================================
+  Serial.println("Menginisialisasi ESC, Pin Arah, dan Servo...");
+  
+  // --- Inisialisasi ESC Motor ---
   escDepanKiri.attach(PIN_ESC_DEPAN_KIRI);
   escDepanKanan.attach(PIN_ESC_DEPAN_KANAN);
   escBawahKiri.attach(PIN_ESC_BAWAH_KIRI);
   escBawahKanan.attach(PIN_ESC_BAWAH_KANAN);
 
+  // --- Inisialisasi Pin Arah (Sebagai Servo/PWM) ---
   dirDepanKiri.attach(DIR_DEPAN_KIRI);
   dirDepanKanan.attach(DIR_DEPAN_KANAN);
   dirBawahKiri.attach(DIR_BAWAH_KIRI);
   dirBawahKanan.attach(DIR_BAWAH_KANAN);
 
+  // --- Inisialisasi Servo Kemudi ---
   servoKiri.attach(PIN_SERVO_KIRI);
   servoKanan.attach(PIN_SERVO_KANAN);
 
+  // ========================================================
+  // 2. INISIALISASI SENSOR & SISTEM LAINNYA
+  // ========================================================
+  // --- LED GPS FIX ---
   pinMode(LED_GPS, OUTPUT);
   digitalWrite(LED_GPS, LOW); 
 
+  Serial.println("Mencoba koneksi ke GPS U-Blox...");
   gpsSerial.begin(GPS_BAUD_RATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN); 
-  myGPS.begin(gpsSerial);
+
+  if (myGPS.begin(gpsSerial)) {
+    Serial.println("Koneksi GPS berhasil!");
+  } else {
+    Serial.println("Gagal koneksi ke GPS. Cek kabel & baud rate.");
+  }
+
   myGPS.setUART1Output(COM_TYPE_UBX); 
   myGPS.setNavigationFrequency(10); 
   myGPS.setAutoPVT(true); 
 
   Wire.begin(21, 22); 
 
+  // Inisialisasi PPM
   pinMode(PPM_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(PPM_PIN), ppmISR, RISING);
 
   loadDataFromMemory(); 
+
+  Serial.println("");
+  Serial.println("🌍 GPS + WAYPOINT SYSTEM (INTEGRATED)");
+  Serial.println("================================");
+  Serial.print("Data tersimpan: ");
+  Serial.print(dataIndex);
+  Serial.print("/");
+  Serial.print(MAX_DATA);
+  Serial.println(" titik");
+  Serial.println("================================");
 }
 
+// --- Variabel Global Telemetri ---
+float heading = 0.0;
+double lat = 0.0, lon = 0.0;
+double speed = 0.0; 
+int sats = 0;
+// ---------------------------------
+
 void loop() {
+
   // --- 1. Baca Sensor GPS ---
-  bool gotGPS = myGPS.getPVT();
-  if (gotGPS) { 
+  if (myGPS.getPVT()) { 
     uint8_t fixType = myGPS.getFixType(); 
+
     if (fixType > 0) digitalWrite(LED_GPS, HIGH);
     else digitalWrite(LED_GPS, LOW);
 
@@ -322,65 +360,31 @@ void loop() {
         speed = myGPS.getGroundSpeed() / 1000.0 * 3.6; 
         sats = myGPS.getSIV(); 
     } else { 
-        lat = 0.0; lon = 0.0; speed = 0.0; sats = 0;
+        lat = 0.0;
+        lon = 0.0;
+        speed = 0.0;
+        sats = 0;
     }
   }
   
   checkSerialInput(); 
   
-  float temp_heading = readCompass();
-  if (temp_heading != -1) { heading = temp_heading; } 
-
-  // --- RC INIT ---
-  if (!rc_initialized) {
-    if (ppm_valid[0] >= 900 && ppm_valid[0] <= 2100) { 
-      valid_frame_count++;
-      if (valid_frame_count > 10) rc_initialized = true; 
-    }
-  }
+  heading = readCompass();
+  if (heading == -1) { heading = 0.0; } 
 
   // Baca Channel Radio (PPM)
   int ch5 = readChannel(4); 
   int ch6 = readChannel(5); 
 
-  // Debounce for isManual
-  bool rc_wants_manual = (ch5 < 1500);
-  static int debounce_counter = 0;
-  static bool pending_mode = rc_wants_manual;
-  
-  if (rc_wants_manual != isManual) {
-    if (rc_wants_manual == pending_mode) {
-      debounce_counter++;
-      if (debounce_counter >= 3) { 
-        isManual = rc_wants_manual;
-        debounce_counter = 0;
-        if (isManual) {
-          wasInCaptureMode = false;
-          wasInSaveMode = false;
-        } else {
-          // --- [BARU] Reset jalur saat beralih ke AUTO via Remote ---
-          counter = 0;          // Kembali ke Waypoint pertama
-          is_new_wp = true;     // Buat lintasan baru dari titik saat ini
-        }
-      }
-    } else {
-      pending_mode = rc_wants_manual;
-      debounce_counter = 1;
-    }
-  } else {
-    debounce_counter = 0;
-  }
-
   String mode = "MANUAL";
   String status = "ACTIVE";
   
+  // Variabel penampung output aktuator di cycle ini
   int finalServo = 90;
   int finalMotor = 1500;           
-  int finalMotorDepanKiri = 1000;  
-  int finalMotorDepanKanan = 1000; 
+  int finalMotorDepanKiri = 1000;  // Pastikan default 1000 (mati)
+  int finalMotorDepanKanan = 1000; // Pastikan default 1000 (mati)
   int finalDir = 1500;             
-  int finalDirDepanKiri = 1500;
-  int finalDirDepanKanan = 1500;
   
   int wp_target_idx = 0;
   double wp_dist_m = 0.0;
@@ -388,27 +392,31 @@ void loop() {
   double wp_error_hdg = 0.0;
 
   // ----------------- MANUAL MODE -----------------
-  if (isManual) { 
+  if (ch5 < 1500) { 
+    if (!isManual) {
+      Serial.println("Switching to MANUAL...");
+      isManual = true;
+      wasInCaptureMode = false;
+      wasInSaveMode = false;
+    }
+
     mode = "MANUAL";
+
     int ch1 = readChannel(0); 
     finalServo = map(ch1, 1000, 2000, 0, 180); 
 
     int ch3 = readChannel(2); 
-    if (!throttle_armed) {
-        if (ch3 <= 1050) throttle_armed = true;
-        else ch3 = 1000; 
-    }
     finalMotor = ch3;
+
     finalMotorDepanKiri = 1000;
     finalMotorDepanKanan = 1000;
 
     int ch8 = readChannel(7);
     finalDir = ch8;
-    finalDirDepanKiri = ch8;
-    finalDirDepanKanan = ch8;
 
     if (ch6 >= 1400 && ch6 <= 1600) { 
       if (!wasInCaptureMode) {
+        Serial.println("🟡 MODE REKAM: Siap merekam waypoint baru.");
         wasInCaptureMode = true;
         captureTriggered = false;
       }
@@ -418,12 +426,17 @@ void loop() {
           clearAllData();
           wasInSaveMode = false;
         }
-        if (dataIndex < MAX_DATA) {
-          if (sats > 0) { 
+        if (dataIndex >= MAX_DATA) {
+          Serial.println("⚠ Memori penuh. Tidak bisa menambah titik lagi.");
+        } else {
+          if (myGPS.getFixType() > 0) { 
             latitudes[dataIndex] = lat;
             longitudes[dataIndex] = lon;
             dataIndex++;
             saveDataToMemory();
+            Serial.println("📍 Titik ke-" + String(dataIndex) + " direkam.");
+          } else {
+            Serial.println("❌ GPS belum lock. Tidak dapat menambah data.");
           }
         }
         captureTriggered = true;
@@ -432,95 +445,82 @@ void loop() {
     } else if (ch6 < 1100) { 
       if (!wasInSaveMode) {
         saveDataToMemory();
+        Serial.println("✅ Semua waypoint tersimpan.");
+        displayAllData();
         wasInSaveMode = true;
       }
       wasInCaptureMode = false;
     }
   }
+
   // ----------------- AUTO MODE -----------------
   else { 
+    if (isManual) {
+      Serial.println("Switching to AUTO...");
+      isManual = false;
+      counter = 0; 
+    }
+
     mode = "AUTO";
+    finalDir = 1500; 
 
     if (serialCommand == 'A') {
       int calculatedServoVal = ai_servo_val;
+      
       if (counter >= AI_SERVO_INVERSION_INDEX) {
         calculatedServoVal = 180 - ai_servo_val; 
+        
         if (calculatedServoVal > 180) calculatedServoVal = 180;
         if (calculatedServoVal < 0) calculatedServoVal = 0;
+        
         status = "AI_INVERTED"; 
       } else {
         status = "AI_ACTIVE";
       }
 
+      // Terapkan semua nilai yang diterima dari Serial Jetson
       finalServo           = calculatedServoVal;
       finalMotor           = ai_motor_val; 
       finalMotorDepanKiri  = ai_motor_depan_kiri_val;
       finalMotorDepanKanan = ai_motor_depan_kanan_val;
-      finalDir             = ai_dir_val;
-      finalDirDepanKiri    = ai_dir_depan_kiri_val;
-      finalDirDepanKanan   = ai_dir_depan_kanan_val;
       
     } 
     else if (serialCommand == 'W') {
-       status = "WAYPOINT";
-       finalDir = 1500;
-       finalDirDepanKiri = 1500;
-       finalDirDepanKanan = 1500;
-
-       if (dataIndex > 0 && lat != 0.0 && lon != 0.0) { 
+      status = "WAYPOINT";
+      
+      if (dataIndex > 0 && myGPS.getFixType() > 0) { 
+        
         if (counter >= dataIndex) { 
           finalServo = 90;
           finalMotor = 1000; 
-          finalMotorDepanKiri = 1000;  
-          finalMotorDepanKanan = 1000; 
+          finalMotorDepanKiri = 1000;  // Paksa mati di Mode W
+          finalMotorDepanKanan = 1000; // Paksa mati di Mode W
           status = "WP_COMPLETE";
           wp_target_idx = dataIndex; 
         } else { 
           double targetLat = latitudes[counter];
           double targetLon = longitudes[counter];
-          
-          // --- [BARU] 1. Tentukan Titik Awal Garis (P_k-1) ---
-          if (is_new_wp) {
-            if (counter == 0) {
-              // Jika ini Waypoint Pertama, garis mulai dari posisi aktual kapal
-              prev_wp_lat = lat; 
-              prev_wp_lon = lon;
-            } else {
-              // Jika WP selanjutnya, garis mulai dari WP sebelumnya
-              prev_wp_lat = latitudes[counter - 1]; 
-              prev_wp_lon = longitudes[counter - 1];
-            }
-            is_new_wp = false;
-          }
-
-          // --- [BARU] 2. Hitung Jarak dan Sudut untuk LOS ---
           double dist = haversine(lat, lon, targetLat, targetLon); 
-          double path_angle = bearing(prev_wp_lat, prev_wp_lon, targetLat, targetLon);
-          double dist_from_prev = haversine(prev_wp_lat, prev_wp_lon, lat, lon);
-          double bearing_from_prev = bearing(prev_wp_lat, prev_wp_lon, lat, lon);
-
-          // Hitung simpangan dari garis (Cross-Track Error)
-          cross_track_error = dist_from_prev * sin(radians(bearing_from_prev - path_angle));
-
-          // Hitung sudut koreksi LOS dan Target Bearing
-          double los_correction = degrees(atan2(-cross_track_error, L_delta));
-          double targetBearing = path_angle + los_correction;
-          targetBearing = fmod((targetBearing + 360.0), 360.0); 
-
-          // --- [BARU] 3. Eksekusi Kontrol PID ---
+          double targetBearing = bearing(lat, lon, targetLat, targetLon); 
+          
           double errorHeading = targetBearing - heading;
           if (errorHeading > 180) errorHeading -= 360;
           if (errorHeading < -180) errorHeading += 360;
           
-          finalServo = PID_servo(targetBearing, heading);
-          finalMotor = readChannel(6);          
-          finalMotorDepanKiri = 1000;        
-          finalMotorDepanKanan = 1000;       
+          int servoPos = PID_servo(targetBearing, heading);
+          finalServo = servoPos;
 
-          // Pindah ke WP berikutnya jika sudah masuk radius
+          int motorSpeed = readChannel(6);  
+          finalMotor = motorSpeed;          
+          
+          finalMotorDepanKiri = 1000;       // Paksa mati di Mode W
+          finalMotorDepanKanan = 1000;      // Paksa mati di Mode W
+
           if (dist < 1.75) {
             counter++; 
-            is_new_wp = true; // --- [BARU] Trigger garis jalur baru untuk WP selanjutnya ---
+            Serial.print("✅ WP #");
+            Serial.print(counter);
+            Serial.println(" tercapai. Menuju WP berikutnya.");
           }
 
           wp_target_idx = counter + 1; 
@@ -528,11 +528,12 @@ void loop() {
           wp_target_brg = targetBearing;
           wp_error_hdg = errorHeading;
         }
+        
       } else {
         finalServo = 90;
         finalMotor = 1000; 
-        finalMotorDepanKiri = 1000;   
-        finalMotorDepanKanan = 1000;  
+        finalMotorDepanKiri = 1000;   // Paksa mati di Mode W
+        finalMotorDepanKanan = 1000;  // Paksa mati di Mode W
         if (dataIndex == 0) status = "NO_WAYPOINTS";
         else status = "GPS_INVALID";
       }
@@ -542,35 +543,36 @@ void loop() {
   // ========================================
   // --- 3. Kontrol Aktuator Lanjutan ---
   // ========================================
-  static int last_srv = -1;
-  static int last_mtr = -1;
-  static int last_mdk = -1;
-  static int last_mdk_r = -1;
-  static int last_dir = -1;
-  static int last_ddk = -1;
-  static int last_ddk_r = -1;
 
-  if (finalServo != last_srv) { servoKiri.write(finalServo); servoKanan.write(finalServo); last_srv = finalServo; }
+  servoKiri.write(finalServo); 
+  servoKanan.write(finalServo); 
+
+  dirDepanKiri.writeMicroseconds(finalDir);
+  dirDepanKanan.writeMicroseconds(finalDir);
+  dirBawahKiri.writeMicroseconds(finalDir);
+  dirBawahKanan.writeMicroseconds(finalDir);
+
+  escDepanKiri.writeMicroseconds(finalMotorDepanKiri);
+  escDepanKanan.writeMicroseconds(finalMotorDepanKanan);
   
-  if (finalDirDepanKiri != last_ddk) { dirDepanKiri.writeMicroseconds(finalDirDepanKiri); last_ddk = finalDirDepanKiri; }
-  if (finalDirDepanKanan != last_ddk_r) { dirDepanKanan.writeMicroseconds(finalDirDepanKanan); last_ddk_r = finalDirDepanKanan; }
-  if (finalDir != last_dir) { dirBawahKiri.writeMicroseconds(finalDir); dirBawahKanan.writeMicroseconds(finalDir); last_dir = finalDir; }
-  
-  if (finalMotorDepanKiri != last_mdk) { escDepanKiri.writeMicroseconds(finalMotorDepanKiri); last_mdk = finalMotorDepanKiri; }
-  if (finalMotorDepanKanan != last_mdk_r) { escDepanKanan.writeMicroseconds(finalMotorDepanKanan); last_mdk_r = finalMotorDepanKanan; }
-  if (finalMotor != last_mtr) { escBawahKiri.writeMicroseconds(finalMotor); escBawahKanan.writeMicroseconds(finalMotor); last_mtr = finalMotor; }
+  escBawahKiri.writeMicroseconds(finalMotor);
+  escBawahKanan.writeMicroseconds(finalMotor);
 
   // ========================================
   // --- 4. BLOK TELEMETRI JSON ---
   // ========================================
+  
   jsonDoc.clear(); 
+
   jsonDoc["mode"] = mode;
   jsonDoc["status"] = status;
+
   jsonDoc["heading"] = (float)round(heading * 100) / 100;
   jsonDoc["lat"] = lat;
   jsonDoc["lon"] = lon;
   jsonDoc["speed_kmh"] = (float)round(speed * 100) / 100;
   jsonDoc["sats"] = sats;
+
   jsonDoc["servo_out"] = finalServo;
   jsonDoc["motor_bwh_out"] = finalMotor;
   jsonDoc["motor_d_kiri_out"] = finalMotorDepanKiri;
@@ -584,21 +586,20 @@ void loop() {
 
   if (mode == "AUTO" && serialCommand == 'W') { 
     jsonDoc["wp_target_idx"] = wp_target_idx;
+    
     if (status == "WP_COMPLETE") {
       jsonDoc["wp_dist_m"] = 0.0;
       jsonDoc["wp_target_brg"] = 0.0;
       jsonDoc["wp_error_hdg"] = 0.0;
-      jsonDoc["xte_m"] = 0.0; // --- [BARU] XTE menjadi 0 saat tiba ---
     } else {
       jsonDoc["wp_dist_m"] = (float)round(wp_dist_m * 100) / 100;
       jsonDoc["wp_target_brg"] = (float)round(wp_target_brg * 100) / 100;
       jsonDoc["wp_error_hdg"] = (float)round(wp_error_hdg * 100) / 100;
-      jsonDoc["xte_m"] = (float)round(cross_track_error * 100) / 100; // --- [BARU] XTE dikirim ke Telemetri ---
     }
   }
 
   serializeJson(jsonDoc, Serial);
   Serial.println(); 
-  
-  delay(50); // Sekitar ~20Hz
+
+  delay(80); 
 }
