@@ -32,6 +32,7 @@ TELEMETRY_KEY_MAP = {
     "nav_target_wp_index": "wp_idx",
     "nav_dist_to_wp": "wp_dst",
     "nav_heading_error": "err_hdg",
+    "nav_cross_track_error": "xte",
     "nav_target_bearing": "tgt_brg",
     "nav_gps_sats": "sat",
     # Actuators
@@ -75,6 +76,7 @@ class AsvState:
     nav_dist_to_wp: float = 0.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
+    nav_cross_track_error: float = 0.0
     nav_servo_cmd: int = 90
     nav_motor_cmd: int = 1500
     nav_gps_sats: int = 0
@@ -423,6 +425,9 @@ class AsvHandler:
                     self.current_state.nav_heading_error = data.get(
                         "wp_error_hdg", self.current_state.nav_heading_error
                     )
+                    self.current_state.nav_cross_track_error = data.get(
+                        "xte_m", self.current_state.nav_cross_track_error
+                    )
                     self.current_state.nav_servo_cmd = data.get(
                         "servo_out", self.current_state.nav_servo_cmd
                     )
@@ -518,7 +523,7 @@ class AsvHandler:
                 # -----------------------------------------------------------
 
                 ENABLE_WP_INVERSION_2025 = False
-                
+
                 # Tentukan Index Waypoint Efektif (digunakan secara global oleh Misi Foto dll)
                 # [FIX RED-01] Gunakan variabel lokal, bukan self.current_state
                 if use_dummy_counter:
@@ -592,13 +597,19 @@ class AsvHandler:
                     # --- [BARU] DOCKING MISSION LOGIC ---
                     dock_cfg = self.mission_config.get("docking", {})
                     trigger_wp = dock_cfg.get("trigger_wp_index", 17)
-                    if dock_cfg.get("enabled", False) and current_effective_index >= trigger_wp and nav_dist_to_wp < 3.0:
+                    if (
+                        dock_cfg.get("enabled", False)
+                        and current_effective_index >= trigger_wp
+                        and nav_dist_to_wp < 3.0
+                    ):
                         if not self.current_state.is_docking_completed:
                             if not self.current_state.is_docking:
                                 with self.state_lock:
                                     self.current_state.is_docking = True
                                     self.current_state.docking_start_time = time.time()
-                                logging.info(f"[AsvHandler] DOCKING MISSION TERPICU (WP {current_effective_index}, Dist: {nav_dist_to_wp:.2f}m)")
+                                logging.info(
+                                    f"[AsvHandler] DOCKING MISSION TERPICU (WP {current_effective_index}, Dist: {nav_dist_to_wp:.2f}m)"
+                                )
 
                     # --- [BARU] FOTOGRAFI, LOITERING, & VISUAL SERVOING ---
                     is_in_photo_zone = False
@@ -631,10 +642,12 @@ class AsvHandler:
                     if is_in_photo_zone and active_photo_cfg:
                         stop_idx = active_photo_cfg.get("wp_stop", -1)
                         if (
-                            current_effective_index == stop_idx
-                            and nav_dist_to_wp < 3.0
+                            current_effective_index == stop_idx and nav_dist_to_wp < 3.0
                         ):  # 3.0m toleransi
-                            if not self.current_state.is_loitering and not self.current_state.is_reversing:
+                            if (
+                                not self.current_state.is_loitering
+                                and not self.current_state.is_reversing
+                            ):
                                 self.current_state.is_loitering = True
                                 self.current_state.loiter_start_time = time.time()
                                 logging.info(
@@ -644,9 +657,11 @@ class AsvHandler:
                     if self.current_state.is_docking:
                         elapsed = time.time() - self.current_state.docking_start_time
                         arena_id = self.current_state.active_arena
-                        active_dock_cfg = dock_cfg.get(arena_id, dock_cfg.get("Arena_A", {}))
+                        active_dock_cfg = dock_cfg.get(
+                            arena_id, dock_cfg.get("Arena_A", {})
+                        )
                         duration = active_dock_cfg.get("duration_sec", 20.0)
-                        
+
                         if elapsed < duration:
                             s_ang = active_dock_cfg.get("servo_angle", 90)
                             r_pwm = active_dock_cfg.get("rear_pwm", 1000)
@@ -662,13 +677,15 @@ class AsvHandler:
                                 self.current_state.control_mode = "MANUAL"
                                 self.current_state.manual_servo_cmd = 90
                                 self.current_state.manual_motor_cmd = 1000
-                            
+
                             # Beritahu ESP32 bahwa kita pindah ke MANUAL agar ESP tidak meng-override balik ke AUTO
                             if self.serial_handler and self.serial_handler.is_connected:
                                 self.serial_handler.send_command("M,MANUAL\n")
-                                
-                            logging.info("[AsvHandler] DOCKING SELESAI. Motor Dimatikan. Beralih ke mode MANUAL (STOP).")
-                            command_to_send = f"A,90,2000,1000,2000,1000,2000,1000\n"
+
+                            logging.info(
+                                "[AsvHandler] DOCKING SELESAI. Motor Dimatikan. Beralih ke mode MANUAL (STOP)."
+                            )
+                            command_to_send = "A,90,2000,1000,2000,1000,2000,1000\n"
 
                     elif self.current_state.is_loitering:
                         elapsed = time.time() - self.current_state.loiter_start_time
@@ -679,9 +696,7 @@ class AsvHandler:
                         )
                         if elapsed < delay_req:
                             # Tahan motor (1000), kemudi netral (90), dir forward (2000)
-                            command_to_send = (
-                                f"A,90,2000,1000,2000,1000,2000,1000\n"
-                            )
+                            command_to_send = "A,90,2000,1000,2000,1000,2000,1000\n"
                         else:
                             with self.state_lock:
                                 self.current_state.is_loitering = False
@@ -713,9 +728,7 @@ class AsvHandler:
 
                         if elapsed < rev_delay_req:
                             # Mundur: Dir=1000, Speed=rev_pwm
-                            command_to_send = (
-                                f"A,90,1000,{int(rev_pwm)},1000,{int(rev_pwm)},1000,{int(rev_pwm)}\n"
-                            )
+                            command_to_send = f"A,90,1000,{int(rev_pwm)},1000,{int(rev_pwm)},1000,{int(rev_pwm)}\n"
                         else:
                             with self.state_lock:
                                 self.current_state.is_reversing = False
@@ -1024,16 +1037,18 @@ class AsvHandler:
             if "set_wp_index" in payload:
                 wp_idx = int(payload["set_wp_index"])
                 self.current_state.current_waypoint_index = wp_idx
-                self.current_state.debug_waypoint_counter = wp_idx  # Fix: sinkronkan counter dummy ke state
+                self.current_state.debug_waypoint_counter = (
+                    wp_idx  # Fix: sinkronkan counter dummy ke state
+                )
                 # Sinkronkan juga nav_target_wp_index agar web monitoring ter-update
                 self.current_state.nav_target_wp_index = wp_idx
-                
+
                 # Reset status misi khusus agar tidak "bocor" antar waypoint saat ditest ulang di mode debug
                 self.current_state.is_docking = False
                 self.current_state.is_docking_completed = False
                 self.current_state.is_loitering = False
                 self.current_state.is_reversing = False
-                
+
                 logging.info(f"[AsvHandler] [SIM] WP Index disetel ke: {wp_idx}")
 
                 # Sinkronisasi koordinat dengan waypoint yang dimuat
@@ -1151,29 +1166,37 @@ class AsvHandler:
             with self.state_lock:
                 # Deep merge payload into self.mission_config
                 for key, value in payload.items():
-                    if key in self.mission_config and isinstance(value, dict) and isinstance(self.mission_config[key], dict):
+                    if (
+                        key in self.mission_config
+                        and isinstance(value, dict)
+                        and isinstance(self.mission_config[key], dict)
+                    ):
                         self.mission_config[key].update(value)
                     else:
                         self.mission_config[key] = value
 
                 self.config["auto_missions"] = self.mission_config
-                
+
                 # Update requested photo qty if available
                 photo_cfg = self.mission_config.get("photography", {})
                 if "max_photo_per_target" in photo_cfg:
-                    self.current_state.photo_mission_qty_requested = int(photo_cfg["max_photo_per_target"])
-                
+                    self.current_state.photo_mission_qty_requested = int(
+                        photo_cfg["max_photo_per_target"]
+                    )
+
                 # Reset konter foto setiap kali save misi baru
                 self.current_state.photo_mission_qty_taken_blue_surface = 0
                 self.current_state.photo_mission_qty_taken_blue_underwater = 0
                 self.current_state.photo_mission_qty_taken_green_surface = 0
                 self.current_state.photo_mission_qty_taken_green_underwater = 0
-                
+
             # Tulis ke file (aman karena hanya dijalankan saat user klik "Save" di GUI)
             with open("config/config.json", "w") as f:
                 json.dump(self.config, f, indent=2)
 
-            logging.info("[AsvHandler] Konfigurasi Misi (auto_missions) diperbarui dan disimpan.")
+            logging.info(
+                "[AsvHandler] Konfigurasi Misi (auto_missions) diperbarui dan disimpan."
+            )
             self.logger.log_event("Konfigurasi Misi (auto_missions) di Hot-Reload.")
         except Exception as e:
             logging.warning(f"[AsvHandler] Gagal hot-reload konfigurasi Misi: {e}")
@@ -1181,32 +1204,24 @@ class AsvHandler:
     def _get_active_vision_profile(self):
         """Mengembalikan profil aktif (bola atau kotak) berdasarkan waypoint saat ini."""
         wp = self.current_state.current_waypoint_index
-        
+
         bola_cfg = self.mission_config.get("vision_ball_red_green", {})
         kotak_cfg = self.mission_config.get("vision_box_blue_green", {})
 
         # Cek apakah masuk profil kotak
-        if (
-            kotak_cfg.get("wp_start", 11)
-            <= wp
-            <= kotak_cfg.get("wp_end", 14)
-        ):
+        if kotak_cfg.get("wp_start", 11) <= wp <= kotak_cfg.get("wp_end", 14):
             kotak_profile = kotak_cfg.copy()
             kotak_profile["profile_name"] = "kotak"
             kotak_profile["valid_classes"] = ["kotak-hijau", "kotak-biru"]
             return kotak_profile
 
         # Cek apakah masuk profil bola
-        if (
-            bola_cfg.get("wp_start", 0)
-            <= wp
-            <= bola_cfg.get("wp_end", 11)
-        ):
+        if bola_cfg.get("wp_start", 0) <= wp <= bola_cfg.get("wp_end", 11):
             bola_profile = bola_cfg.copy()
             bola_profile["profile_name"] = "bola"
             bola_profile["valid_classes"] = ["bola-merah", "bola-hijau"]
             return bola_profile
-            
+
         # Di luar rentang misi vision, matikan deteksi
         return {"profile_name": "none", "valid_classes": []}
 
@@ -1423,11 +1438,11 @@ class AsvHandler:
         with self.state_lock:
             if not self.current_state.waypoints:
                 return
-            
+
             # Jika user memulai misi auto kembali, reset status docking
             self.current_state.is_docking_completed = False
             self.current_state.is_docking = False
-            
+
             self.current_state.control_mode = "AUTO"
             self.current_state.current_waypoint_index = 0
             self.current_state.use_dummy_counter = False

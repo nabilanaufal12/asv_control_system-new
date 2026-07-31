@@ -1,11 +1,15 @@
-import sys, os
-sys.path.insert(0, os.path.abspath('src'))
-from navantara_backend.core.asv_handler import AsvHandler, AsvState
-from flask_socketio import SocketIO
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath("src"))
+from navantara_backend.core.asv_handler import AsvHandler  # noqa: E402
+from flask_socketio import SocketIO  # noqa: E402
+
 
 class DummyApp:
     config = {"ASV_CONFIG": {}}
-    
+
+
 app = DummyApp()
 handler = AsvHandler(app.config["ASV_CONFIG"], SocketIO())
 handler.current_state.debug_mode_enabled = True

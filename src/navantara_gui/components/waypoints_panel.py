@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtGui import QDoubleValidator, QIntValidator
+from PySide6.QtGui import QDoubleValidator
 
 
 class WaypointsPanel(QGroupBox):
@@ -340,7 +340,9 @@ class WaypointsPanel(QGroupBox):
         }
 
         self.send_photo_mission.emit(payload)
-        print(f"[WaypointsPanel] Emit SET_PHOTO_MISSION (now uses UPDATE_MISSION_CONFIG logic): {payload}")
+        print(
+            f"[WaypointsPanel] Emit SET_PHOTO_MISSION (now uses UPDATE_MISSION_CONFIG logic): {payload}"
+        )
 
     # --- [HANDLER BARU] ---
     @Slot()

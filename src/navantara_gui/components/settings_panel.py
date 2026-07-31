@@ -42,7 +42,7 @@ class SettingsPanel(QGroupBox):
         auto_missions = self.config.get("auto_missions", {})
         bola_cfg = auto_missions.get("vision_ball_red_green", {})
         kotak_cfg = auto_missions.get("vision_box_blue_green", {})
-        
+
         main_layout = QVBoxLayout()
 
         # --- [BAGIAN KONTROL AI VISION & MISI] ---
@@ -221,7 +221,7 @@ class SettingsPanel(QGroupBox):
             idx_thruster, "(Set absolute ESC hardware limits)"
         )
         self.docking_view = DockingView(config=self.config)
-        
+
         self.tab_widget.addTab(self.connection_tab, "Connection")
         self.tab_widget.addTab(self.debug_tab, "Debug")
 
@@ -234,7 +234,9 @@ class SettingsPanel(QGroupBox):
         self.connection_tab.connect_requested.connect(self.connect_requested.emit)
         self.debug_tab.debug_command_sent.connect(self.debug_command_sent.emit)
         self.thruster_tab.speed_changed.connect(self.manual_speed_changed.emit)
-        self.docking_view.docking_config_updated.connect(self.docking_config_updated.emit)
+        self.docking_view.docking_config_updated.connect(
+            self.docking_config_updated.emit
+        )
 
         # --- [BARU] Koneksi Profil Misi Bola & Kotak ---
         self.slider_bola_pwm_utama.valueChanged.connect(

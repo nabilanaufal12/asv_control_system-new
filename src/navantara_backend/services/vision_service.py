@@ -30,14 +30,18 @@ class ThreadedCamera:
         # [MODIFIKASI] Log source untuk debugging
         print(f"[ThreadedCamera] Membuka source: {self.src}")
 
-        device_path = f"/dev/video{self.src}" if isinstance(self.src, int) or str(self.src).isdigit() else self.src
+        device_path = (
+            f"/dev/video{self.src}"
+            if isinstance(self.src, int) or str(self.src).isdigit()
+            else self.src
+        )
         gstreamer_pipeline = (
             f"v4l2src device={device_path} ! "
             "video/x-raw, width=640, height=480, framerate=30/1 ! "
             "videoconvert ! video/x-raw, format=BGR ! appsink drop=1"
         )
         self.capture = cv2.VideoCapture(gstreamer_pipeline, cv2.CAP_GSTREAMER)
-        
+
         # Add a fallback just in case GStreamer fails
         if not self.capture.isOpened():
             self.capture = cv2.VideoCapture(self.src)
@@ -433,17 +437,21 @@ class VisionService:
         def init_camera(source):
             try:
                 # Coba buka sebentar untuk tes
-                device_path = f"/dev/video{source}" if isinstance(source, int) or str(source).isdigit() else source
+                device_path = (
+                    f"/dev/video{source}"
+                    if isinstance(source, int) or str(source).isdigit()
+                    else source
+                )
                 gstreamer_pipeline = (
                     f"v4l2src device={device_path} ! "
                     "video/x-raw, width=640, height=480, framerate=30/1 ! "
                     "videoconvert ! video/x-raw, format=BGR ! appsink drop=1"
                 )
                 temp = cv2.VideoCapture(gstreamer_pipeline, cv2.CAP_GSTREAMER)
-                
+
                 if not temp.isOpened():
                     temp = cv2.VideoCapture(source)
-                    
+
                 if not temp.isOpened():
                     print(f"[{cam_id_log}] Gagal membuka device {source} (Not Opened).")
                     return None
@@ -778,15 +786,20 @@ class VisionService:
 
                     # --- FILTER VISI SESUAI MISI WP ---
                     active_profile = {}
-                    if hasattr(self, "asv_handler") and hasattr(self.asv_handler, "_get_active_vision_profile"):
+                    if hasattr(self, "asv_handler") and hasattr(
+                        self.asv_handler, "_get_active_vision_profile"
+                    ):
                         active_profile = self.asv_handler._get_active_vision_profile()
-                        
-                    valid_classes = active_profile.get("valid_classes", ["bola-merah", "bola-hijau", "kotak-hijau", "kotak-biru"])
-                    
+
+                    valid_classes = active_profile.get(
+                        "valid_classes",
+                        ["bola-merah", "bola-hijau", "kotak-hijau", "kotak-biru"],
+                    )
+
                     # 1. Matikan fungsi bola biru secara permanen untuk misi ini
                     if final_cls_name == "bola-biru":
                         continue
-                        
+
                     # 2. Saring kelas agar hanya mendeteksi sesuai misi WP saat ini
                     if final_cls_name not in valid_classes:
                         continue
@@ -880,8 +893,27 @@ class VisionService:
             current_wp = self.asv_handler.current_state.nav_target_wp_index
 
             # Ambil Konfigurasi Segmen & Kuota
-            blue_cfg = self.asv_handler.current_state.photo_mission_blue
-            green_cfg = self.asv_handler.current_state.photo_mission_green
+            photo_cfg = self.asv_handler.mission_config.get("photography", {})
+
+            raw_blue = photo_cfg.get("target_blue_box", {})
+            blue_cfg = {
+                "start": raw_blue.get("wp_start", -1),
+                "stop": raw_blue.get("wp_stop", -1),
+                "pwm": raw_blue.get("speed_pwm", 1400),
+                "delay": raw_blue.get("stop_delay_sec", 3.0),
+                "rev_pwm": raw_blue.get("reverse_speed_pwm", 1300),
+                "rev_delay": raw_blue.get("reverse_delay_sec", 2.0),
+            }
+
+            raw_green = photo_cfg.get("target_green_box", {})
+            green_cfg = {
+                "start": raw_green.get("wp_start", -1),
+                "stop": raw_green.get("wp_stop", -1),
+                "pwm": raw_green.get("speed_pwm", 1400),
+                "delay": raw_green.get("stop_delay_sec", 3.0),
+                "rev_pwm": raw_green.get("reverse_speed_pwm", 1300),
+                "rev_delay": raw_green.get("reverse_delay_sec", 2.0),
+            }
             qty_req = self.asv_handler.current_state.photo_mission_qty_requested
 
             # Kondisi Dasar: Misi Aktif & Dalam Segmen
@@ -895,13 +927,21 @@ class VisionService:
             )
             in_segment = in_blue or in_green
             mission_active = qty_req > 0
-            
+
             if in_blue:
-                taken_1 = self.asv_handler.current_state.photo_mission_qty_taken_blue_surface
-                taken_2 = self.asv_handler.current_state.photo_mission_qty_taken_blue_underwater
+                taken_1 = (
+                    self.asv_handler.current_state.photo_mission_qty_taken_blue_surface
+                )
+                taken_2 = (
+                    self.asv_handler.current_state.photo_mission_qty_taken_blue_underwater
+                )
             elif in_green:
-                taken_1 = self.asv_handler.current_state.photo_mission_qty_taken_green_surface
-                taken_2 = self.asv_handler.current_state.photo_mission_qty_taken_green_underwater
+                taken_1 = (
+                    self.asv_handler.current_state.photo_mission_qty_taken_green_surface
+                )
+                taken_2 = (
+                    self.asv_handler.current_state.photo_mission_qty_taken_green_underwater
+                )
             else:
                 taken_1 = 999
                 taken_2 = 999
@@ -922,9 +962,13 @@ class VisionService:
                 # Update State
                 with self.asv_handler.state_lock:
                     if in_blue:
-                        self.asv_handler.current_state.photo_mission_qty_taken_blue_surface += 1
+                        self.asv_handler.current_state.photo_mission_qty_taken_blue_surface += (
+                            1
+                        )
                     elif in_green:
-                        self.asv_handler.current_state.photo_mission_qty_taken_green_surface += 1
+                        self.asv_handler.current_state.photo_mission_qty_taken_green_surface += (
+                            1
+                        )
 
                 self.last_auto_photo_time_surface = current_time
                 print(
@@ -945,9 +989,13 @@ class VisionService:
                 # Update State
                 with self.asv_handler.state_lock:
                     if in_blue:
-                        self.asv_handler.current_state.photo_mission_qty_taken_blue_underwater += 1
+                        self.asv_handler.current_state.photo_mission_qty_taken_blue_underwater += (
+                            1
+                        )
                     elif in_green:
-                        self.asv_handler.current_state.photo_mission_qty_taken_green_underwater += 1
+                        self.asv_handler.current_state.photo_mission_qty_taken_green_underwater += (
+                            1
+                        )
 
                 self.last_auto_photo_time_underwater = current_time
                 print(
@@ -989,8 +1037,17 @@ class VisionService:
 
             # --- [BARU] CEK PHOTO MISSION ZONE ---
             current_wp = self.asv_handler.current_state.current_waypoint_index
-            blue_cfg = self.asv_handler.current_state.photo_mission_blue
-            green_cfg = self.asv_handler.current_state.photo_mission_green
+            photo_cfg = self.asv_handler.mission_config.get("photography", {})
+            raw_blue = photo_cfg.get("target_blue_box", {})
+            blue_cfg = {
+                "start": raw_blue.get("wp_start", -1),
+                "stop": raw_blue.get("wp_stop", -1),
+            }
+            raw_green = photo_cfg.get("target_green_box", {})
+            green_cfg = {
+                "start": raw_green.get("wp_start", -1),
+                "stop": raw_green.get("wp_stop", -1),
+            }
 
             in_blue_zone = (
                 blue_cfg.get("start", -1) <= current_wp <= blue_cfg.get("stop", -1)

@@ -437,7 +437,9 @@ class MainWindow(QMainWindow):
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
 
         self.waypoints_panel.send_photo_mission.connect(
-            lambda payload: self.api_client.send_command("UPDATE_MISSION_CONFIG", payload)
+            lambda payload: self.api_client.send_command(
+                "UPDATE_MISSION_CONFIG", payload
+            )
         )
 
         self.waypoints_panel.update_inversion_trigger.connect(

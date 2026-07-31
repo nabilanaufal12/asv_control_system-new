@@ -59,6 +59,12 @@ class NavigationStatusMonitor(QGroupBox):
         self.val_vision = QLabel("OFF")
         self.val_vision.setStyleSheet("color: gray;")
 
+        # --- Baris 4 ---
+        # Kiri: XTE (m)
+        self.lbl_xte = QLabel("XTE (m):")
+        self.val_xte = QLabel("0.0")
+        self.val_xte.setStyleSheet("font-weight: bold; color: #f39c12;")
+
         # Menambahkan ke Layout Grid (row, col)
         # Kolom Kiri (0, 1)
         self.layout.addWidget(self.lbl_mode, 0, 0)
@@ -70,11 +76,14 @@ class NavigationStatusMonitor(QGroupBox):
         self.layout.addWidget(self.lbl_err_hdg, 2, 0)
         self.layout.addWidget(self.val_err_hdg, 2, 1)
 
+        self.layout.addWidget(self.lbl_xte, 3, 0)
+        self.layout.addWidget(self.val_xte, 3, 1)
+
         # Separator vertikal
         line = QFrame()
         line.setFrameShape(QFrame.VLine)
         line.setFrameShadow(QFrame.Sunken)
-        self.layout.addWidget(line, 0, 2, 3, 1)  # Span 3 baris
+        self.layout.addWidget(line, 0, 2, 4, 1)  # Span 4 baris
 
         # Kolom Kanan (3, 4) -- index 2 dipakai separator
         self.layout.addWidget(self.lbl_sats, 0, 3)
@@ -95,11 +104,11 @@ class NavigationStatusMonitor(QGroupBox):
         # 1. MODE KENDALI
         mode = data.get("control_mode", data.get("mode", "MANUAL"))
         is_docking = data.get("is_docking", data.get("dock", False))
-        
+
         if is_docking:
             self.val_mode.setText("DOCKING")
             self.val_mode.setStyleSheet(
-                "color: #9c27b0; font-weight: bold; font-size: 14px;" # Purple
+                "color: #9c27b0; font-weight: bold; font-size: 14px;"  # Purple
             )
         else:
             self.val_mode.setText(str(mode).upper())
@@ -140,6 +149,18 @@ class NavigationStatusMonitor(QGroupBox):
             self.val_err_hdg.setStyleSheet("font-weight: bold; color: #e74c3c;")
         else:
             self.val_err_hdg.setStyleSheet("font-weight: bold; color: #3498db;")
+
+        # XTE (m)
+        xte = data.get("nav_cross_track_error", data.get("xte", 0.0))
+        self.val_xte.setText(f"{float(xte):.2f}")
+        if abs(float(xte)) > 1.5:
+            self.val_xte.setStyleSheet(
+                "font-weight: bold; color: #e74c3c;"
+            )  # Merah jika simpangan jauh
+        else:
+            self.val_xte.setStyleSheet(
+                "font-weight: bold; color: #f39c12;"
+            )  # Kuning/Normal
 
         # 6. VISION ACTIVE
         vis_data = data.get("vision_target", data.get("vis", {}))
