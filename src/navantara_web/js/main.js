@@ -1,7 +1,7 @@
 // js/main.js
 
 // --- KONFIGURASI IP ---
-const SERVER_IP = "http://192.168.1.20:5000";
+const SERVER_IP = "http://192.168.2.174:5000";
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -632,25 +632,7 @@ function setupLocalSocketIO(elements, icons) {
           : "N/A";
     }
 
-    // --- [FIX] Sinkronisasi Mode dari SSE ke UI ---
-    if (data.control_mode) {
-      const btnManual = document.getElementById("btn-mode-manual");
-      const btnAuto = document.getElementById("btn-mode-auto");
-
-      if (btnManual && btnAuto) {
-        if (data.control_mode === "MANUAL") {
-          btnManual.style.background = "#e67e22";
-          btnManual.style.color = "white";
-          btnAuto.style.background = "transparent";
-          btnAuto.style.color = "#2ecc71";
-        } else if (data.control_mode === "AUTO") {
-          btnAuto.style.background = "#2ecc71";
-          btnAuto.style.color = "white";
-          btnManual.style.background = "transparent";
-          btnManual.style.color = "#e67e22";
-        }
-      }
-    }
+    // --- [FIX] Sinkronisasi Mode dari SSE ke UI dihapus atas permintaan user ---
     // ----------------------------------------------
 
     updateDateTime(elements);

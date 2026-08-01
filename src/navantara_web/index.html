@@ -72,9 +72,11 @@
         <h2>Universitas Maritim Raja Ali Haji</h2>
       </div>
       <div class="header-logos">
-        <button id="theme-toggle-btn" class="theme-btn" aria-label="Toggle Theme" title="Toggle Theme" style="margin-right: 15px;">
+        <button id="theme-toggle-btn" class="theme-btn" aria-label="Toggle Theme" title="Toggle Theme"
+          style="margin-right: 15px;">
           <!-- Sun Icon (Visible in Dark Mode to switch to Light) -->
-          <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
             <line x1="12" y1="21" x2="12" y2="23"></line>
@@ -86,7 +88,9 @@
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
           </svg>
           <!-- Moon Icon (Visible in Light Mode to switch to Dark) -->
-          <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+          <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="display: none;">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
           </svg>
         </button>
@@ -135,13 +139,13 @@
           <div class="camera-feed">
             <h3>SURFACE CAM</h3>
             <div class="camera-container" id="cam1-container">
-              <img src="http://192.168.1.20:5000/live_video_feed" alt="Camera 1 Feed" crossorigin="anonymous" />
+              <img src="http://192.168.2.174:5000/live_video_feed" alt="Camera 1 Feed" crossorigin="anonymous" />
             </div>
           </div>
           <div class="camera-feed">
             <h3>UNDERWATER CAM</h3>
             <div class="camera-container" id="cam2-container">
-              <img src="http://192.168.1.20:5000/live_video_feed_cam2" alt="Camera 2 Feed" crossorigin="anonymous" />
+              <img src="http://192.168.2.174:5000/live_video_feed_cam2" alt="Camera 2 Feed" crossorigin="anonymous" />
             </div>
           </div>
         </section>
@@ -171,21 +175,7 @@
             </div>
           </div>
 
-          <!-- [FIX] Vehicle Control Mode Indicators (Read-Only) -->
-          <div style="margin-top: 12px;">
-            <h4 style="margin: 0 0 8px 0; color: var(--orange); font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; letter-spacing: 0.05em;">VEHICLE CONTROL</h4>
-            <div style="display: flex; gap: 8px;">
-              <div id="btn-mode-manual"
-                style="flex: 1; padding: 8px 12px; border: 2px solid #e67e22; background: transparent; color: #e67e22; font-weight: bold; font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; border-radius: 6px; text-align: center; pointer-events: none; cursor: default; transition: all 0.3s ease;">
-                MANUAL
-              </div>
-              <div id="btn-mode-auto"
-                style="flex: 1; padding: 8px 12px; border: 2px solid #2ecc71; background: #2ecc71; color: white; font-weight: bold; font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; border-radius: 6px; text-align: center; pointer-events: none; cursor: default; transition: all 0.3s ease;">
-                AUTO
-              </div>
-            </div>
-          </div>
-          <!-- [AKHIR Vehicle Control] -->
+          <!-- [Vehicle Control Removed] -->
 
         </section>
 
@@ -268,13 +258,13 @@
         themeToggleBtn.addEventListener("click", () => {
           document.body.classList.toggle("dark-theme");
           drawBackground(); // redraw background to update fallback color
-          
+
           const isDark = document.body.classList.contains("dark-theme");
           localStorage.setItem('theme', isDark ? 'dark' : 'light');
 
           const sunIcon = document.getElementById("theme-icon-sun");
           const moonIcon = document.getElementById("theme-icon-moon");
-          
+
           if (sunIcon && moonIcon) {
             if (isDark) {
               sunIcon.style.display = "block";

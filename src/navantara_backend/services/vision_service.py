@@ -1087,7 +1087,7 @@ class VisionService:
                 distance_to_closest = float("inf")
 
             # Jika objek berada dalam jarak aktivasi penghindaran (dari profil)
-            if distance_to_closest < active_profile["trigger_dist"]:
+            if distance_to_closest < active_profile.get("trigger_dist_cm", 165):
                 self.last_buoy_seen_time = time.time()
 
                 payload_obs = {

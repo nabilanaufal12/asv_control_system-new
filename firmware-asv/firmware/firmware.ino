@@ -69,6 +69,16 @@ double prev_wp_lon = 0.0;       // Longitude awal lintasan
 bool is_new_wp = true;          // Penanda untuk membuat garis lintasan baru
 double cross_track_error = 0.0; // Nilai simpangan kapal dari jalur lurus
 
+// --- [BARU] State Machine Misi Khusus ---
+enum MissionState {
+  STATE_NORMAL_NAV,
+  STATE_PHOTO_LOITER,
+  STATE_PHOTO_REVERSE,
+  STATE_DOCKING
+};
+MissionState currentMissionState = STATE_NORMAL_NAV;
+unsigned long missionStateStartTime = 0;
+
 // --- KONTROL DARI JETSON ---
 char serialCommand = 'W'; 
 int ai_servo_val = 90; 
@@ -441,101 +451,145 @@ void loop() {
   else { 
     mode = "AUTO";
 
-    if (serialCommand == 'A') {
-      int calculatedServoVal = ai_servo_val;
-      if (counter >= AI_SERVO_INVERSION_INDEX) {
-        calculatedServoVal = 180 - ai_servo_val; 
-        if (calculatedServoVal > 180) calculatedServoVal = 180;
-        if (calculatedServoVal < 0) calculatedServoVal = 0;
-        status = "AI_INVERTED"; 
-      } else {
-        status = "AI_ACTIVE";
-      }
-
-      finalServo           = calculatedServoVal;
-      finalMotor           = ai_motor_val; 
-      finalMotorDepanKiri  = ai_motor_depan_kiri_val;
-      finalMotorDepanKanan = ai_motor_depan_kanan_val;
-      finalDir             = ai_dir_val;
-      finalDirDepanKiri    = ai_dir_depan_kiri_val;
-      finalDirDepanKanan   = ai_dir_depan_kanan_val;
-      
-    } 
-    else if (serialCommand == 'W') {
-       status = "WAYPOINT";
-       finalDir = 1500;
-       finalDirDepanKiri = 1500;
-       finalDirDepanKanan = 1500;
-
-       if (dataIndex > 0 && lat != 0.0 && lon != 0.0) { 
-        if (counter >= dataIndex) { 
-          finalServo = 90;
-          finalMotor = 1000; 
-          finalMotorDepanKiri = 1000;  
-          finalMotorDepanKanan = 1000; 
-          status = "WP_COMPLETE";
-          wp_target_idx = dataIndex; 
-        } else { 
-          double targetLat = latitudes[counter];
-          double targetLon = longitudes[counter];
-          
-          // --- [BARU] 1. Tentukan Titik Awal Garis (P_k-1) ---
-          if (is_new_wp) {
-            if (counter == 0) {
-              // Jika ini Waypoint Pertama, garis mulai dari posisi aktual kapal
-              prev_wp_lat = lat; 
-              prev_wp_lon = lon;
-            } else {
-              // Jika WP selanjutnya, garis mulai dari WP sebelumnya
-              prev_wp_lat = latitudes[counter - 1]; 
-              prev_wp_lon = longitudes[counter - 1];
-            }
-            is_new_wp = false;
+    // --- 1. SELALU UPDATE JARAK DAN WAYPOINT ---
+    if (dataIndex > 0 && lat != 0.0 && lon != 0.0) { 
+      if (counter >= dataIndex) { 
+        status = "WP_COMPLETE";
+        wp_target_idx = dataIndex; 
+      } else { 
+        double targetLat = latitudes[counter];
+        double targetLon = longitudes[counter];
+        
+        if (is_new_wp) {
+          if (counter == 0) {
+            prev_wp_lat = lat; 
+            prev_wp_lon = lon;
+          } else {
+            prev_wp_lat = latitudes[counter - 1]; 
+            prev_wp_lon = longitudes[counter - 1];
           }
-
-          // --- [BARU] 2. Hitung Jarak dan Sudut untuk LOS ---
-          double dist = haversine(lat, lon, targetLat, targetLon); 
-          double path_angle = bearing(prev_wp_lat, prev_wp_lon, targetLat, targetLon);
-          double dist_from_prev = haversine(prev_wp_lat, prev_wp_lon, lat, lon);
-          double bearing_from_prev = bearing(prev_wp_lat, prev_wp_lon, lat, lon);
-
-          // Hitung simpangan dari garis (Cross-Track Error)
-          cross_track_error = dist_from_prev * sin(radians(bearing_from_prev - path_angle));
-
-          // Hitung sudut koreksi LOS dan Target Bearing
-          double los_correction = degrees(atan2(-cross_track_error, L_delta));
-          double targetBearing = path_angle + los_correction;
-          targetBearing = fmod((targetBearing + 360.0), 360.0); 
-
-          // --- [BARU] 3. Eksekusi Kontrol PID ---
-          double errorHeading = targetBearing - heading;
-          if (errorHeading > 180) errorHeading -= 360;
-          if (errorHeading < -180) errorHeading += 360;
-          
-          finalServo = PID_servo(targetBearing, heading);
-          finalMotor = readChannel(6);          
-          finalMotorDepanKiri = 1000;        
-          finalMotorDepanKanan = 1000;       
-
-          // Pindah ke WP berikutnya jika sudah masuk radius
-          if (dist < 1.75) {
-            counter++; 
-            is_new_wp = true; // --- [BARU] Trigger garis jalur baru untuk WP selanjutnya ---
-          }
-
-          wp_target_idx = counter + 1; 
-          wp_dist_m = dist;
-          wp_target_brg = targetBearing;
-          wp_error_hdg = errorHeading;
+          is_new_wp = false;
         }
-      } else {
-        finalServo = 90;
-        finalMotor = 1000; 
-        finalMotorDepanKiri = 1000;   
-        finalMotorDepanKanan = 1000;  
-        if (dataIndex == 0) status = "NO_WAYPOINTS";
-        else status = "GPS_INVALID";
+
+        double dist = haversine(lat, lon, targetLat, targetLon); 
+        double path_angle = bearing(prev_wp_lat, prev_wp_lon, targetLat, targetLon);
+        double dist_from_prev = haversine(prev_wp_lat, prev_wp_lon, lat, lon);
+        double bearing_from_prev = bearing(prev_wp_lat, prev_wp_lon, lat, lon);
+
+        cross_track_error = dist_from_prev * sin(radians(bearing_from_prev - path_angle));
+        double los_correction = degrees(atan2(-cross_track_error, L_delta));
+        double targetBearing = path_angle + los_correction;
+        targetBearing = fmod((targetBearing + 360.0), 360.0); 
+
+        double errorHeading = targetBearing - heading;
+        if (errorHeading > 180) errorHeading -= 360;
+        if (errorHeading < -180) errorHeading += 360;
+        
+        wp_target_idx = counter + 1; 
+        wp_dist_m = dist;
+        wp_target_brg = targetBearing;
+        wp_error_hdg = errorHeading;
+
+        // Cek apakah mencapai waypoint JIKA kita dalam mode Normal Nav
+        if (currentMissionState == STATE_NORMAL_NAV && dist < 1.75) {
+          int reached_wp = counter + 1; 
+          if (reached_wp == 12 || reached_wp == 14) {
+            currentMissionState = STATE_PHOTO_LOITER;
+            missionStateStartTime = millis();
+          } else if (reached_wp == 17) {
+            currentMissionState = STATE_DOCKING;
+            missionStateStartTime = millis();
+          } else {
+            counter++; 
+            is_new_wp = true; 
+          }
+        }
       }
+    } else {
+      if (dataIndex == 0) status = "NO_WAYPOINTS";
+      else status = "GPS_INVALID";
+    }
+
+    // --- 2. TERAPKAN AKTUATOR ---
+    if (currentMissionState != STATE_NORMAL_NAV) {
+        unsigned long elapsed = millis() - missionStateStartTime;
+        if (currentMissionState == STATE_PHOTO_LOITER) {
+            status = "PHOTO_MANEUVER";
+            finalServo = 90;
+            finalMotor = 1000;
+            finalDir = 1500;
+            finalMotorDepanKiri = 1000;
+            finalMotorDepanKanan = 1000;
+            if (elapsed >= 3000) {
+                currentMissionState = STATE_PHOTO_REVERSE;
+                missionStateStartTime = millis();
+            }
+        } else if (currentMissionState == STATE_PHOTO_REVERSE) {
+            status = "PHOTO_MANEUVER";
+            finalServo = 90;
+            finalMotor = 1300; 
+            finalDir = 1000; // Mundur
+            finalMotorDepanKiri = 1000;
+            finalMotorDepanKanan = 1000;
+            if (elapsed >= 2000) {
+                currentMissionState = STATE_NORMAL_NAV;
+                counter++; 
+                is_new_wp = true;
+            }
+        } else if (currentMissionState == STATE_DOCKING) {
+            status = "DOCKING";
+            finalServo = 45;
+            finalMotor = 1100;
+            finalDir = 2000; // Maju
+            finalMotorDepanKiri = 1200;
+            finalDirDepanKiri = 2000;
+            finalMotorDepanKanan = 1200;
+            finalDirDepanKanan = 1000; // Asumsikan konfigurasi putar
+            if (elapsed >= 20000) {
+                finalMotor = 1000;
+                finalMotorDepanKiri = 1000;
+                finalMotorDepanKanan = 1000;
+            }
+        }
+    } else {
+        // STATE_NORMAL_NAV
+        if (status == "WP_COMPLETE" || status == "NO_WAYPOINTS" || status == "GPS_INVALID") {
+            finalServo = 90;
+            finalMotor = 1000;
+            finalMotorDepanKiri = 1000;
+            finalMotorDepanKanan = 1000;
+            finalDir = 1500;
+            finalDirDepanKiri = 1500;
+            finalDirDepanKanan = 1500;
+        } else {
+            if (serialCommand == 'A') {
+                int calculatedServoVal = ai_servo_val;
+                if (counter >= AI_SERVO_INVERSION_INDEX) {
+                    calculatedServoVal = 180 - ai_servo_val; 
+                    if (calculatedServoVal > 180) calculatedServoVal = 180;
+                    if (calculatedServoVal < 0) calculatedServoVal = 0;
+                    status = "AI_INVERTED"; 
+                } else {
+                    status = "AI_ACTIVE";
+                }
+                finalServo           = calculatedServoVal;
+                finalMotor           = ai_motor_val; 
+                finalMotorDepanKiri  = ai_motor_depan_kiri_val;
+                finalMotorDepanKanan = ai_motor_depan_kanan_val;
+                finalDir             = ai_dir_val;
+                finalDirDepanKiri    = ai_dir_depan_kiri_val;
+                finalDirDepanKanan   = ai_dir_depan_kanan_val;
+            } else if (serialCommand == 'W') {
+                status = "WAYPOINT";
+                finalDir = 1500;
+                finalDirDepanKiri = 1500;
+                finalDirDepanKanan = 1500;
+                finalServo = PID_servo(wp_target_brg, heading);
+                finalMotor = readChannel(6);          
+                finalMotorDepanKiri = 1000;        
+                finalMotorDepanKanan = 1000;  
+            }
+        }
     }
   }
 
@@ -600,5 +654,5 @@ void loop() {
   serializeJson(jsonDoc, Serial);
   Serial.println(); 
   
-  delay(50); // Sekitar ~20Hz
+  delay(80); // Sekitar ~20Hz
 }

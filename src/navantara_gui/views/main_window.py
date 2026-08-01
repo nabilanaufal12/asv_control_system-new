@@ -128,17 +128,7 @@ class MainWindow(QMainWindow):
         layout_sidebar_kiri.setContentsMargins(4, 4, 4, 4)
         layout_sidebar_kiri.setSpacing(6)
 
-        # --- ALWAYS VISIBLE: Vehicle Control (MANUAL / AUTO) ---
-        # Extract the mode group from ControlPanel (it was added to its layout)
-        # We reparent it here so it stays always visible above the tabs.
         from PySide6.QtWidgets import QGroupBox, QHBoxLayout, QTabWidget
-
-        mode_group = QGroupBox("Vehicle Control")
-        mode_layout = QHBoxLayout()
-        mode_layout.addWidget(self.control_panel.manual_mode_btn)
-        mode_layout.addWidget(self.control_panel.auto_mode_btn)
-        mode_group.setLayout(mode_layout)
-        layout_sidebar_kiri.addWidget(mode_group)
 
         # --- ALWAYS VISIBLE: Start Stream button ---
         stream_group = QGroupBox("Camera Stream")
@@ -159,23 +149,7 @@ class MainWindow(QMainWindow):
         tab_manual_layout = QVBoxLayout(tab_manual)
         tab_manual_layout.setContentsMargins(4, 8, 4, 4)
 
-        # WASD Controls - reparent from control_panel
         from PySide6.QtWidgets import QGridLayout
-
-        wasd_group = QGroupBox("WASD Controls")
-        wasd_layout = QVBoxLayout()
-        row_w = QHBoxLayout()
-        row_w.addStretch()
-        row_w.addWidget(self.control_panel.btn_w)
-        row_w.addStretch()
-        row_asd = QHBoxLayout()
-        row_asd.addWidget(self.control_panel.btn_a)
-        row_asd.addWidget(self.control_panel.btn_s)
-        row_asd.addWidget(self.control_panel.btn_d)
-        wasd_layout.addLayout(row_w)
-        wasd_layout.addLayout(row_asd)
-        wasd_group.setLayout(wasd_layout)
-        tab_manual_layout.addWidget(wasd_group)
 
         # Camera Capture - reparent from control_panel
         from PySide6.QtWidgets import QLabel
@@ -199,14 +173,7 @@ class MainWindow(QMainWindow):
         tab_auto_layout = QVBoxLayout(tab_auto)
         tab_auto_layout.setContentsMargins(4, 8, 4, 4)
 
-        # Mission Control - reparent from control_panel
-        mission_group = QGroupBox("Mission Control")
-        mission_layout = QVBoxLayout()
-        mission_layout.addWidget(self.control_panel.start_mission_btn)
-        mission_layout.addWidget(self.control_panel.pause_mission_btn)
-        mission_layout.addWidget(self.control_panel.return_home_btn)
-        mission_group.setLayout(mission_layout)
-        tab_auto_layout.addWidget(mission_group)
+
 
         ai_group = QGroupBox("AI Vision Mission Control")
         ai_layout = QVBoxLayout()
@@ -414,11 +381,6 @@ class MainWindow(QMainWindow):
             lambda p: self.api_client.send_command("UPDATE_MISSION_CONFIG", p)
         )
 
-        self.control_panel.manual_button_clicked.connect(
-            lambda: self.set_mode("MANUAL")
-        )
-        self.control_panel.auto_button_clicked.connect(lambda: self.set_mode("AUTO"))
-
         self.settings_panel.connect_requested.connect(
             lambda details: self.api_client.send_command("CONFIGURE_SERIAL", details)
         )
@@ -472,37 +434,8 @@ class MainWindow(QMainWindow):
             )
         )
 
-    @Slot(str)
-    def set_mode(self, mode):
-        """Fungsi terpusat untuk mengubah mode operasi."""
-        self.current_control_mode = mode
-        self.api_client.send_command("CHANGE_MODE", {"mode": mode})
-
-        is_manual = mode == "MANUAL"
-
-        self.control_panel.manual_mode_btn.setChecked(is_manual)
-        self.control_panel.auto_mode_btn.setChecked(not is_manual)
-        self.update_button_states()
-        self.setFocus()
-
     def update_button_states(self):
-        is_manual = self.current_control_mode == "MANUAL"
-
-        self.control_panel.manual_mode_btn.setEnabled(not self.is_rc_override)
-        self.control_panel.auto_mode_btn.setEnabled(not self.is_rc_override)
-
-        self.control_panel.start_mission_btn.setEnabled(
-            not is_manual and not self.is_rc_override
-        )
-        self.control_panel.pause_mission_btn.setEnabled(
-            not is_manual and not self.is_rc_override
-        )
-        self.control_panel.return_home_btn.setEnabled(
-            not is_manual and not self.is_rc_override
-        )
-
-        for button in self.control_panel.key_buttons.values():
-            button.setEnabled(is_manual and not self.is_rc_override)
+        pass
 
     @Slot(dict)
     def on_data_updated(self, data):
@@ -522,9 +455,6 @@ class MainWindow(QMainWindow):
                     f"[GUI] Mode sync dari ESP: {self.current_control_mode} -> {esp_reported_mode}"
                 )
                 self.current_control_mode = esp_reported_mode
-                is_manual = esp_reported_mode == "MANUAL"
-                self.control_panel.manual_mode_btn.setChecked(is_manual)
-                self.control_panel.auto_mode_btn.setChecked(not is_manual)
 
         # Perbarui semua panel
         self.system_status_panel.update_data(data)
@@ -594,32 +524,3 @@ class MainWindow(QMainWindow):
             else:
                 logging.error(f"Gagal memuat misi {mission_id}: format data salah.")
 
-    def handle_manual_keys(self):
-        self.api_client.send_command("MANUAL_CONTROL", list(self.active_manual_keys))
-
-    def keyPressEvent(self, event):
-        if self.current_control_mode != "MANUAL" or self.is_rc_override:
-            return
-
-        if event.isAutoRepeat():
-            return
-        key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
-        if event.key() in key_map:
-            key_char = key_map[event.key()]
-            if key_char not in self.active_manual_keys:
-                self.active_manual_keys.add(key_char)
-                self.control_panel.update_key_press_status(key_char, True)
-                self.handle_manual_keys()
-
-    def keyReleaseEvent(self, event):
-        if self.current_control_mode != "MANUAL" or self.is_rc_override:
-            return
-
-        if event.isAutoRepeat():
-            return
-        key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
-        if event.key() in key_map:
-            key_char = key_map[event.key()]
-            self.active_manual_keys.discard(key_char)
-            self.control_panel.update_key_press_status(key_char, False)
-            self.handle_manual_keys()

@@ -85,7 +85,7 @@
       "trigger_dist_cm": 165,
       "avoid_angle_left": 70,
       "avoid_angle_right": 110,
-      "pwm_utama": 1500,
+      "pwm_utama": 1000,
       "pwm_depan_kiri": 1500,
       "pwm_depan_kanan": 1500
     },
@@ -95,51 +95,51 @@
       "trigger_dist_cm": 165,
       "avoid_angle_left": 70,
       "avoid_angle_right": 110,
-      "pwm_utama": 1500,
-      "pwm_depan_kiri": 1500,
+      "pwm_utama": 1000,
+      "pwm_depan_kiri": 1464,
       "pwm_depan_kanan": 1500
     },
     "photography": {
       "max_photo_per_target": 3,
       "target_blue_box": {
-        "wp_start": 11,
-        "wp_stop": 12,
+        "reverse_delay_sec": 2.0,
+        "reverse_speed_pwm": 1300,
         "speed_pwm": 1400,
         "stop_delay_sec": 3.0,
-        "reverse_speed_pwm": 1300,
-        "reverse_delay_sec": 2.0
+        "wp_start": 11,
+        "wp_stop": 12
       },
       "target_green_box": {
-        "wp_start": 13,
-        "wp_stop": 14,
+        "reverse_delay_sec": 2.0,
+        "reverse_speed_pwm": 1300,
         "speed_pwm": 1400,
         "stop_delay_sec": 3.0,
-        "reverse_speed_pwm": 1300,
-        "reverse_delay_sec": 2.0
+        "wp_start": 13,
+        "wp_stop": 14
       }
     },
     "docking": {
       "enabled": true,
       "trigger_wp_index": 17,
       "Arena_A": {
-        "servo_angle": 45,
         "duration_sec": 20.0,
-        "rear_pwm": 1100,
-        "rear_dir": 2000,
-        "front_left_pwm": 1200,
         "front_left_dir": 2000,
-        "front_right_pwm": 1200,
-        "front_right_dir": 1000
+        "front_left_pwm": 1200,
+        "front_right_dir": 1000,
+        "front_right_pwm": 1201,
+        "rear_dir": 2000,
+        "rear_pwm": 1100,
+        "servo_angle": 45
       },
       "Arena_B": {
-        "servo_angle": 135,
         "duration_sec": 20.0,
-        "rear_pwm": 1100,
-        "rear_dir": 2000,
-        "front_left_pwm": 1200,
         "front_left_dir": 1000,
+        "front_left_pwm": 1200,
+        "front_right_dir": 2000,
         "front_right_pwm": 1200,
-        "front_right_dir": 2000
+        "rear_dir": 2000,
+        "rear_pwm": 1100,
+        "servo_angle": 135
       }
     }
   }

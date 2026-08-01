@@ -260,39 +260,7 @@ def create_app():
             print(f"[API Capture] Error: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
 
-    # --- [FIX] ENDPOINT BARU: SET MODE VIA HTTP API ---
-    @app.route("/api/set_mode", methods=["POST"])
-    def api_set_mode():
-        """
-        Endpoint HTTP untuk mengubah mode operasi ASV (MANUAL/AUTO).
-        Digunakan oleh Frontend Web (index.html) melalui fetch POST.
-        Payload: {"mode": "AUTO"} atau {"mode": "MANUAL"}
-        """
-        try:
-            data = request.json
-            new_mode = data.get("mode")
 
-            if new_mode not in ["MANUAL", "AUTO"]:
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": "Mode harus 'MANUAL' atau 'AUTO'",
-                        }
-                    ),
-                    400,
-                )
-
-            # Panggil handler yang sudah ada (termasuk race folder creation & serial forwarding)
-            current_app.asv_handler.process_command("CHANGE_MODE", {"mode": new_mode})
-
-            return jsonify({"status": "success", "mode": new_mode}), 200
-
-        except Exception as e:
-            print(f"[API Set Mode] Error: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-    # --- AKHIR ENDPOINT SET MODE ---
 
     # --- MODIFIKASI: RUTE BARU UNTUK API GALERI ---
     @app.route("/api/races")

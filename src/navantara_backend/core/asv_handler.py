@@ -390,6 +390,8 @@ class AsvHandler:
                 if self._previous_esp_mode == "MANUAL" and esp_mode == "AUTO":
                     new_race_id = self._scan_next_race_id()
                     self.current_state.current_race_id = new_race_id
+                    if hasattr(self, "logger") and self.logger is not None:
+                        self.logger.start_new_race_log(new_race_id)
                     logging.info(
                         f"[AsvHandler] ESP MANUAL->AUTO transition. New Race ID: {new_race_id}"
                     )
@@ -405,6 +407,21 @@ class AsvHandler:
                 self.current_state.manual_motor_cmd = data.get(
                     "motor_out", self.current_state.manual_motor_cmd
                 )
+                # --- Sinkronisasi WP Index dengan ESP ---
+                esp_wp_target = data.get("wp_target_idx", -1)
+                # Jika dalam mode simulasi/debug, abaikan laporan target wp dari ESP fisik
+                if self.current_state.use_dummy_counter:
+                    esp_wp_target = -1
+                    
+                # ESP32 1-based, Python 0-based
+                if esp_wp_target > 0:
+                    if (
+                        not self.current_state.use_dummy_counter
+                        and not self.current_state.debug_mode_enabled
+                    ):
+                        self.current_state.nav_target_wp_index = data.get(
+                            "wp_target_idx", self.current_state.nav_target_wp_index
+                        )
             elif mode == "AUTO":
                 status = data.get("status")
                 if status == "WAYPOINT":
@@ -582,34 +599,13 @@ class AsvHandler:
                     command_to_send = None
                     logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
 
-                elif control_mode == "MANUAL":
-                    # Format 8 parameter: A, Servo, DirB, PwmB, DirFL, PwmFL, DirFR, PwmFR
-                    command_to_send = f"A,{int(manual_servo_cmd)},2000,{int(manual_motor_cmd)},2000,{int(manual_motor_cmd)},2000,{int(manual_motor_cmd)}\n"
-                    logging.info(
-                        f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us"
-                    )
-
                 elif control_mode == "AUTO":
                     mission_completed = bool(
                         waypoints and current_waypoint_index >= len(waypoints)
                     )
 
-                    # --- [BARU] DOCKING MISSION LOGIC ---
-                    dock_cfg = self.mission_config.get("docking", {})
-                    trigger_wp = dock_cfg.get("trigger_wp_index", 17)
-                    if (
-                        dock_cfg.get("enabled", False)
-                        and current_effective_index >= trigger_wp
-                        and nav_dist_to_wp < 3.0
-                    ):
-                        if not self.current_state.is_docking_completed:
-                            if not self.current_state.is_docking:
-                                with self.state_lock:
-                                    self.current_state.is_docking = True
-                                    self.current_state.docking_start_time = time.time()
-                                logging.info(
-                                    f"[AsvHandler] DOCKING MISSION TERPICU (WP {current_effective_index}, Dist: {nav_dist_to_wp:.2f}m)"
-                                )
+                    # --- [DOCKING] Logika dipindah sepenuhnya ke ESP32 ---
+                    pass
 
                     # --- [BARU] FOTOGRAFI, LOITERING, & VISUAL SERVOING ---
                     is_in_photo_zone = False
@@ -638,104 +634,21 @@ class AsvHandler:
                         active_photo_cfg = green_cfg
                         active_photo_target = "kotak-hijau"
 
-                    # Cek Stop & Wait (Loitering) & Reverse Maneuver
-                    if is_in_photo_zone and active_photo_cfg:
-                        stop_idx = active_photo_cfg.get("wp_stop", -1)
-                        if (
-                            current_effective_index == stop_idx and nav_dist_to_wp < 3.0
-                        ):  # 3.0m toleransi
-                            if (
-                                not self.current_state.is_loitering
-                                and not self.current_state.is_reversing
-                            ):
-                                self.current_state.is_loitering = True
-                                self.current_state.loiter_start_time = time.time()
-                                logging.info(
-                                    f"[AsvHandler] Mulai Loitering di WP {stop_idx} untuk foto {active_photo_target}."
-                                )
+                    # --- [BARU] Deteksi Transisi Manuver dari ESP32 ---
+                    prev_status = getattr(self, "_prev_esp_status_for_photo", "")
+                    self._prev_esp_status_for_photo = esp_status
 
-                    if self.current_state.is_docking:
-                        elapsed = time.time() - self.current_state.docking_start_time
-                        arena_id = self.current_state.active_arena
-                        active_dock_cfg = dock_cfg.get(
-                            arena_id, dock_cfg.get("Arena_A", {})
-                        )
-                        duration = active_dock_cfg.get("duration_sec", 20.0)
-
-                        if elapsed < duration:
-                            s_ang = active_dock_cfg.get("servo_angle", 90)
-                            r_pwm = active_dock_cfg.get("rear_pwm", 1000)
-                            fl_dir = active_dock_cfg.get("front_left_dir", 2000)
-                            fl_pwm = active_dock_cfg.get("front_left_pwm", 1000)
-                            fr_dir = active_dock_cfg.get("front_right_dir", 2000)
-                            fr_pwm = active_dock_cfg.get("front_right_pwm", 1000)
-                            command_to_send = f"A,{int(s_ang)},2000,{int(r_pwm)},{int(fl_dir)},{int(fl_pwm)},{int(fr_dir)},{int(fr_pwm)}\n"
-                        else:
-                            with self.state_lock:
-                                self.current_state.is_docking = False
-                                self.current_state.is_docking_completed = True
-                                self.current_state.control_mode = "MANUAL"
-                                self.current_state.manual_servo_cmd = 90
-                                self.current_state.manual_motor_cmd = 1000
-
-                            # Beritahu ESP32 bahwa kita pindah ke MANUAL agar ESP tidak meng-override balik ke AUTO
-                            if self.serial_handler and self.serial_handler.is_connected:
-                                self.serial_handler.send_command("M,MANUAL\n")
-
-                            logging.info(
-                                "[AsvHandler] DOCKING SELESAI. Motor Dimatikan. Beralih ke mode MANUAL (STOP)."
-                            )
-                            command_to_send = "A,90,2000,1000,2000,1000,2000,1000\n"
-
-                    elif self.current_state.is_loitering:
-                        elapsed = time.time() - self.current_state.loiter_start_time
-                        delay_req = (
-                            active_photo_cfg.get("stop_delay_sec", 3.0)
-                            if active_photo_cfg
-                            else 3.0
-                        )
-                        if elapsed < delay_req:
-                            # Tahan motor (1000), kemudi netral (90), dir forward (2000)
-                            command_to_send = "A,90,2000,1000,2000,1000,2000,1000\n"
-                        else:
-                            with self.state_lock:
-                                self.current_state.is_loitering = False
-                                self.current_state.is_reversing = True
-                                self.current_state.reverse_start_time = time.time()
-
-                            # Trigger final photo
+                    if esp_status in ("PHOTO_MANEUVER", "DOCKING"):
+                        # Bypass semua intervensi aktuator dari Jetson, biarkan ESP32 bermanuver
+                        command_to_send = "W\n"
+                        
+                        # Jepret foto tepat saat ESP32 baru mulai bermanuver foto
+                        if esp_status == "PHOTO_MANEUVER" and prev_status != "PHOTO_MANEUVER":
                             if hasattr(self, "vision_service"):
                                 self.vision_service.handle_photography_mission(
                                     self.current_state, mode="surface"
                                 )
-
-                            logging.info(
-                                "[AsvHandler] Selesai Loitering (Foto Final diambil), memulai Reverse Maneuver."
-                            )
-
-                    elif self.current_state.is_reversing:
-                        elapsed = time.time() - self.current_state.reverse_start_time
-                        rev_delay_req = (
-                            active_photo_cfg.get("reverse_delay_sec", 2.0)
-                            if active_photo_cfg
-                            else 2.0
-                        )
-                        rev_pwm = (
-                            active_photo_cfg.get("reverse_speed_pwm", 1300)
-                            if active_photo_cfg
-                            else 1300
-                        )
-
-                        if elapsed < rev_delay_req:
-                            # Mundur: Dir=1000, Speed=rev_pwm
-                            command_to_send = f"A,90,1000,{int(rev_pwm)},1000,{int(rev_pwm)},1000,{int(rev_pwm)}\n"
-                        else:
-                            with self.state_lock:
-                                self.current_state.is_reversing = False
-                            logging.info(
-                                "[AsvHandler] Selesai Reverse Maneuver, melanjutkan misi."
-                            )
-                            command_to_send = "W\n"
+                                logging.info("[AsvHandler] ESP32 memulai Loiter, memicu kamera untuk Foto Final.")
 
                     elif mission_completed:
                         command_to_send = "W\n"
@@ -756,11 +669,11 @@ class AsvHandler:
                             logging.info(
                                 f"[AsvHandler] AI Centering ({active_photo_target}): Error={pixel_error:.1f}, Servo={servo_cmd:.1f}"
                             )
+                            command_to_send = f"A,{int(servo_cmd)},2000,{int(target_pwm)},2000,{int(target_pwm)},2000,{int(target_pwm)}\n"
                         else:
-                            # Jika tidak ada target, pakai kemudi GPS dari telemetry
+                            # [FIX] Pelankan kapal di zona foto walau belum deteksi kotak, setir menggunakan kemudi ESP32
                             servo_cmd = self.current_state.nav_servo_cmd
-
-                        command_to_send = f"A,{int(servo_cmd)},2000,{int(target_pwm)},2000,{int(target_pwm)},2000,{int(target_pwm)}\n"
+                            command_to_send = f"A,{int(servo_cmd)},2000,{int(target_pwm)},2000,{int(target_pwm)},2000,{int(target_pwm)}\n"
 
                     elif vision_target_active:
                         with self.state_lock:
@@ -770,7 +683,7 @@ class AsvHandler:
 
                             profile = self._get_active_vision_profile()
                             # Ambil kecepatan motor belakang dari GUI
-                            current_ai_pwm = profile["pwm_utama"]
+                            current_ai_pwm = profile.get("pwm_utama", 1500)
                             # Kita TIDAK butuh nilai servo dari GUI karena akan di-set selalu 90
 
                         obj_class = vision_target_obj_class
@@ -809,10 +722,10 @@ class AsvHandler:
                         motor_depan_kanan = self.FRONT_MOTOR_STOP
 
                         # Ambil nilai servo dan motor depan dari profil misi secara realtime
-                        pwm_depan_kiri_aktif = profile["pwm_kiri"]
-                        pwm_depan_kanan_aktif = profile["pwm_kanan"]
-                        servo_kiri_aktif = profile["angle_left"]
-                        servo_kanan_aktif = profile["angle_right"]
+                        pwm_depan_kiri_aktif = profile.get("pwm_depan_kiri", 1500)
+                        pwm_depan_kanan_aktif = profile.get("pwm_depan_kanan", 1500)
+                        servo_kiri_aktif = profile.get("avoid_angle_left", 45)
+                        servo_kanan_aktif = profile.get("avoid_angle_right", 135)
 
                         if turn_direction == "LEFT":
                             # Belok Kiri: Menggunakan settingan servo kiri dari GUI
@@ -894,6 +807,8 @@ class AsvHandler:
                 if command_to_send:
                     self.serial_handler.send_command(command_to_send)
 
+                # Polling telemetry rutin dihapus karena ESP32 mengirim telemetry secara otonom di akhir loop-nya.
+
                 # --- BAGIAN LOGGING (Disederhanakan) ---
                 with self.state_lock:
                     state_for_log = asdict(self.current_state)
@@ -914,8 +829,6 @@ class AsvHandler:
         """Mendistribusikan perintah dari GUI/SocketIO ke handler yang sesuai."""
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
-            "CHANGE_MODE": self._handle_mode_change,
-            "MANUAL_CONTROL": self._handle_manual_control,
             "SET_WAYPOINTS": self._handle_set_waypoints,
             "NAV_START": self._handle_start_mission,
             "NAV_RETURN": self._handle_initiate_rth,
@@ -1225,41 +1138,6 @@ class AsvHandler:
         # Di luar rentang misi vision, matikan deteksi
         return {"profile_name": "none", "valid_classes": []}
 
-    def _handle_manual_control(self, payload):
-        """Menerjemahkan input keyboard (WASD) ke perintah servo dan motor."""
-        with self.state_lock:
-            rc_channel_5 = self.current_state.rc_channels[4]
-            control_mode = self.current_state.control_mode
-            is_inverted = self.current_state.inverse_servo
-
-        if rc_channel_5 < self.RC_MODE_SWITCH_THRESHOLD:
-            return
-        if control_mode != "MANUAL":
-            return
-
-        keys, actuator_config = set(payload), self.config.get("actuators", {})
-        pwm_stop, pwr = actuator_config.get(
-            "motor_pwm_stop", 1500
-        ), actuator_config.get("motor_pwm_manual_power", 150)
-        servo_def, servo_min, servo_max = (
-            actuator_config.get("servo_default_angle", 90),
-            actuator_config.get("servo_min_angle", 45),
-            actuator_config.get("servo_max_angle", 135),
-        )
-        fwd = 1 if "W" in keys else -1 if "S" in keys else 0
-        turn = 1 if "D" in keys else -1 if "A" in keys else 0
-
-        if is_inverted:
-            turn = -turn
-
-        pwm = pwm_stop + fwd * pwr
-        servo = servo_def - turn * (servo_def - servo_min)
-        servo = max(servo_min, min(servo_max, servo))
-
-        with self.state_lock:
-            self.current_state.manual_servo_cmd = int(servo)
-            self.current_state.manual_motor_cmd = int(pwm)
-
     def set_streaming_status(self, status: bool):
         """Mengatur flag streaming telemetri ke GUI."""
         if self.is_streaming_to_gui != status:
@@ -1336,39 +1214,6 @@ class AsvHandler:
                     max_id = race_num
         return max_id + 1
 
-    def _handle_mode_change(self, payload):
-        """Menangani perubahan mode dari GUI. Juga forward perintah ke ESP via serial."""
-        with self.state_lock:
-            current_mode = self.current_state.control_mode
-            new_mode = payload.get("mode", "MANUAL")
-
-            if current_mode == "MANUAL" and new_mode == "AUTO":
-                # [FIX] Scan filesystem untuk race_id, bukan increment sederhana
-                new_race_id = self._scan_next_race_id()
-                self.current_state.current_race_id = new_race_id
-                self.logger.start_new_race_log(new_race_id)
-                logging.info(
-                    f"[AsvHandler] GUI MANUAL->AUTO transition. New Race ID: {new_race_id}"
-                )
-
-            self.current_state.control_mode = new_mode
-            self.logger.log_event(f"Mode kontrol GUI diubah ke: {new_mode}")
-
-        # [FIX] Forward mode command ke ESP via serial: "M,AUTO\n" atau "M,MANUAL\n"
-        mode_cmd = f"M,{new_mode}\n"
-        self.serial_handler.send_command(mode_cmd)
-        logging.info(f"[AsvHandler] Mode command forwarded to ESP: {mode_cmd.strip()}")
-
-        if new_mode == "MANUAL":
-            actuator_config = self.config.get("actuators", {})
-            pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
-            servo_def = actuator_config.get("servo_default_angle", 90)
-            # Format Baru 8 param: A, Servo, DirB, PwmB, DirFL, PwmFL, DirFR, PwmFR
-            command_str = f"A,{int(servo_def)},2000,{int(pwm_stop)},2000,{int(pwm_stop)},2000,{int(pwm_stop)}\n"
-            logging.info(
-                f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
-            )
-            self.serial_handler.send_command(command_str)
 
     # [BARU] Handler untuk mengubah titik trigger inversi secara dinamis
     def _handle_update_inversion_trigger(self, payload):
