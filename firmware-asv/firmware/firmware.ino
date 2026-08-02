@@ -270,6 +270,19 @@ void checkSerialInput() {
             ai_motor_depan_kiri_val  = motorDepanKiriStr.toInt();
             ai_motor_depan_kanan_val = motorDepanKananStr.toInt();
           }
+        } else if (serialCommand == 'C') {
+          int comma = serialInputBuffer.indexOf(',');
+          if (comma > 0) {
+            String cmdAction = serialInputBuffer.substring(comma + 1);
+            if (cmdAction == "INC") {
+              counter++;
+              if (counter > dataIndex) counter = dataIndex;
+            } else if (cmdAction == "DEC") {
+              if (counter > 0) counter--;
+            } else if (cmdAction == "RESET") {
+              counter = 0;
+            }
+          }
         }
       }
       serialInputBuffer = "";
@@ -612,9 +625,10 @@ void loop() {
     jsonDoc["ai_wp_start_invert"] = AI_SERVO_INVERSION_INDEX;
   }
 
+  jsonDoc["wp_target_idx"] = counter;
+  jsonDoc["wp_total"] = dataIndex;
+
   if (mode == "AUTO" && serialCommand == 'W') { 
-    jsonDoc["wp_target_idx"] = wp_target_idx;
-    
     if (status == "WP_COMPLETE") {
       jsonDoc["wp_dist_m"] = 0.0;
       jsonDoc["wp_target_brg"] = 0.0;

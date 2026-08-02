@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QSplitter,
 )
 from PySide6.QtCore import Signal, Slot, Qt
-from PySide6.QtGui import QImage, QPixmap, QIcon
+from PySide6.QtGui import QImage, QPixmap
 
 
 class VideoView(QWidget):
@@ -35,13 +35,6 @@ class VideoView(QWidget):
         self.invert_button.setCheckable(True)
         self.invert_button.setEnabled(True)
 
-        try:
-            assets_path = os.path.join(os.path.dirname(__file__), "..", "assets")
-            self.play_icon = QIcon(os.path.join(assets_path, "play-circle.svg"))
-            self.pause_icon = QIcon(os.path.join(assets_path, "pause-circle.svg"))
-            self.start_stop_button.setIcon(self.pause_icon)
-        except Exception:
-            pass
 
         self.label_video_1 = QLabel("Menunggu stream...")
         self._style_label(self.label_video_1)
@@ -137,8 +130,5 @@ class VideoView(QWidget):
         self.inversion_changed.emit(self.invert_button.isChecked())
 
     def update_ui_controls(self, is_running):
-        self.start_stop_button.setText("Stop Stream" if is_running else "Start Stream")
-        self.start_stop_button.setIcon(
-            self.pause_icon if is_running else self.play_icon
-        )
+        self.start_stop_button.setText("Stop Stream" if is_running else "Play Stream")
         self.invert_button.setEnabled(is_running)

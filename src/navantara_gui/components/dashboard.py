@@ -57,7 +57,11 @@ class NavigationStatusMonitor(QGroupBox):
         # Kanan: Vision Status
         self.lbl_vision = QLabel("Vision AI:")
         self.val_vision = QLabel("OFF")
-        self.val_vision.setStyleSheet("color: gray;")
+        # --- Baris 4 ---
+        # Kiri: XTE (Cross-Track Error)
+        self.lbl_xte = QLabel("XTE (Dev):")
+        self.val_xte = QLabel("0.0 m")
+        self.val_xte.setStyleSheet("font-weight: bold;")
 
         # Menambahkan ke Layout Grid (row, col)
         # Kolom Kiri (0, 1)
@@ -70,11 +74,14 @@ class NavigationStatusMonitor(QGroupBox):
         self.layout.addWidget(self.lbl_err_hdg, 2, 0)
         self.layout.addWidget(self.val_err_hdg, 2, 1)
 
+        self.layout.addWidget(self.lbl_xte, 3, 0)
+        self.layout.addWidget(self.val_xte, 3, 1)
+
         # Separator vertikal
         line = QFrame()
         line.setFrameShape(QFrame.VLine)
         line.setFrameShadow(QFrame.Sunken)
-        self.layout.addWidget(line, 0, 2, 3, 1)  # Span 3 baris
+        self.layout.addWidget(line, 0, 2, 4, 1)  # Span 4 baris
 
         # Kolom Kanan (3, 4) -- index 2 dipakai separator
         self.layout.addWidget(self.lbl_sats, 0, 3)
@@ -119,7 +126,8 @@ class NavigationStatusMonitor(QGroupBox):
 
         # 3. TARGET WP
         wp_idx = data.get("current_waypoint_index", data.get("cur_wp", data.get("wp_idx", "-")))
-        self.val_wp_idx.setText(f"#{wp_idx}")
+        wp_tot = data.get("nav_esp_total_wp", data.get("wp_tot", "?"))
+        self.val_wp_idx.setText(f"#{wp_idx} / {wp_tot}")
 
         # 4. JARAK WP
         dist = data.get("nav_dist_to_wp", data.get("wp_dst", 0.0))
@@ -145,6 +153,9 @@ class NavigationStatusMonitor(QGroupBox):
             self.val_vision.setText("IDLE")
             self.val_vision.setStyleSheet("color: gray;")
 
+        # 7. XTE
+        xte = data.get("nav_xte_m", data.get("xte", 0.0))
+        self.val_xte.setText(f"{float(xte):.2f} m")
 
 class SensorDisplay(QGroupBox):
     """

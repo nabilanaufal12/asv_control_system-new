@@ -29,7 +29,9 @@ TELEMETRY_KEY_MAP = {
     "waypoints": "wps",
     "current_waypoint_index": "cur_wp",
     "nav_target_wp_index": "wp_idx",
+    "nav_esp_total_wp": "wp_tot",
     "nav_dist_to_wp": "wp_dst",
+    "nav_xte_m": "xte",
     "nav_heading_error": "err_hdg",
     "nav_target_bearing": "tgt_brg",
     "nav_gps_sats": "sat",
@@ -73,7 +75,9 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
+    nav_esp_total_wp: int = 0
     nav_dist_to_wp: float = 0.0  # coba 9999.0
+    nav_xte_m: float = 0.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -337,10 +341,8 @@ class AsvHandler:
                 elif mode == "AUTO":
                     status = data.get("status")
                     if status == "WAYPOINT":
-                        self.current_state.nav_target_wp_index = data.get(
-                            "wp_target_idx"
-                        )
                         self.current_state.nav_dist_to_wp = data.get("wp_dist_m")
+                        self.current_state.nav_xte_m = data.get("xte_m", 0.0)
                         self.current_state.nav_target_bearing = data.get(
                             "wp_target_brg"
                         )
@@ -350,6 +352,14 @@ class AsvHandler:
                     elif status == "AI_ACTIVE":
                         self.current_state.nav_servo_cmd = data.get("servo_out")
                         self.current_state.nav_motor_cmd = data.get("motor_out")
+                
+                # Sinkronisasi WP Index selalu dilakukan di semua mode (karena ESP32 sekarang selalu mengirimkannya)
+                if "wp_target_idx" in data:
+                    new_idx = data.get("wp_target_idx")
+                    self.current_state.nav_target_wp_index = new_idx
+                    self.current_state.current_waypoint_index = new_idx
+                if "wp_total" in data:
+                    self.current_state.nav_esp_total_wp = data.get("wp_total")
         except Exception as e:
             logging.error(
                 f"[AsvHandler] Gagal mem-parsing data JSON: {e}. Data: {data}"
