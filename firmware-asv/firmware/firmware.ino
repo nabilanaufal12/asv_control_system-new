@@ -56,6 +56,13 @@ const int AI_SERVO_INVERSION_INDEX = 7;
 
 double error, lastError = 0, integral = 0;
 
+// ---------------- LOS Navigation ----------------
+double L_delta = 3.0;
+double prev_wp_lat = 0.0;
+double prev_wp_lon = 0.0;
+bool is_new_wp = true;
+double cross_track_error = 0.0;
+
 // ---------------- Waypoint ----------------
 #define MAX_DATA 20 
 Preferences preferences; 
@@ -458,6 +465,7 @@ void loop() {
       Serial.println("Switching to AUTO...");
       isManual = false;
       counter = 0; 
+      is_new_wp = true;
     }
 
     mode = "AUTO";
@@ -499,8 +507,28 @@ void loop() {
         } else { 
           double targetLat = latitudes[counter];
           double targetLon = longitudes[counter];
+          
+          if (is_new_wp) {
+            if (counter == 0) {
+              prev_wp_lat = lat;
+              prev_wp_lon = lon;
+            } else {
+              prev_wp_lat = latitudes[counter - 1];
+              prev_wp_lon = longitudes[counter - 1];
+            }
+            is_new_wp = false;
+          }
+
           double dist = haversine(lat, lon, targetLat, targetLon); 
-          double targetBearing = bearing(lat, lon, targetLat, targetLon); 
+          
+          double path_angle = bearing(prev_wp_lat, prev_wp_lon, targetLat, targetLon);
+          double dist_from_prev = haversine(prev_wp_lat, prev_wp_lon, lat, lon);
+          double bearing_from_prev = bearing(prev_wp_lat, prev_wp_lon, lat, lon);
+          
+          cross_track_error = dist_from_prev * sin(radians(bearing_from_prev - path_angle));
+          
+          double los_correction = degrees(atan2(-cross_track_error, L_delta));
+          double targetBearing = fmod((path_angle + los_correction + 360.0), 360.0);
           
           double errorHeading = targetBearing - heading;
           if (errorHeading > 180) errorHeading -= 360;
@@ -517,12 +545,13 @@ void loop() {
 
           if (dist < 1.75) {
             counter++; 
+            is_new_wp = true;
             Serial.print("✅ WP #");
             Serial.print(counter);
             Serial.println(" tercapai. Menuju WP berikutnya.");
           }
 
-          wp_target_idx = counter + 1; 
+          wp_target_idx = counter; 
           wp_dist_m = dist;
           wp_target_brg = targetBearing;
           wp_error_hdg = errorHeading;
@@ -579,8 +608,8 @@ void loop() {
   
   if (serialCommand == 'A') {
     jsonDoc["ai_inversion_active"] = (counter >= AI_SERVO_INVERSION_INDEX);
-    jsonDoc["ai_wp_target"] = counter + 1;
-    jsonDoc["ai_wp_start_invert"] = AI_SERVO_INVERSION_INDEX + 1;
+    jsonDoc["ai_wp_target"] = counter;
+    jsonDoc["ai_wp_start_invert"] = AI_SERVO_INVERSION_INDEX;
   }
 
   if (mode == "AUTO" && serialCommand == 'W') { 
@@ -590,10 +619,12 @@ void loop() {
       jsonDoc["wp_dist_m"] = 0.0;
       jsonDoc["wp_target_brg"] = 0.0;
       jsonDoc["wp_error_hdg"] = 0.0;
+      jsonDoc["xte_m"] = 0.0;
     } else {
       jsonDoc["wp_dist_m"] = (float)round(wp_dist_m * 100) / 100;
       jsonDoc["wp_target_brg"] = (float)round(wp_target_brg * 100) / 100;
       jsonDoc["wp_error_hdg"] = (float)round(wp_error_hdg * 100) / 100;
+      jsonDoc["xte_m"] = (float)round(cross_track_error * 100) / 100;
     }
   }
 

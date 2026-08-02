@@ -889,20 +889,17 @@ class AsvHandler:
     # [BARU] Handler untuk mengubah titik trigger inversi secara dinamis
     def _handle_update_inversion_trigger(self, payload):
         try:
-            # Terima input 1-based dari GUI (misal: WP 6)
-            raw_wp_number = int(payload.get("index", 6))
-
-            # Konversi ke 0-based index untuk logika internal
-            # Contoh: User ingin trigger di WP 6, maka index target adalah 5
-            trigger_index = max(0, raw_wp_number - 1)
+            # Terima input murni 0-indexed dari GUI (Strict 0-Indexed Data Contract)
+            trigger_index = int(payload.get("index", 5))
+            trigger_index = max(0, trigger_index)
 
             with self.state_lock:
                 self.current_state.inversion_trigger_wp = trigger_index
 
             logging.info(
-                f"[AsvHandler] Inversion Trigger Updated: WP {raw_wp_number} (Index {trigger_index})"
+                f"[AsvHandler] Inversion Trigger Updated: Index {trigger_index}"
             )
-            self.logger.log_event(f"Trigger Inversi diubah ke Waypoint {raw_wp_number}")
+            self.logger.log_event(f"Trigger Inversi diubah ke Index {trigger_index}")
 
         except ValueError:
             logging.warning("[AsvHandler] Payload inversion trigger tidak valid")
@@ -945,7 +942,7 @@ class AsvHandler:
                 self.current_state.inversion_trigger_wp = int(custom_trigger)
 
             self.logger.log_event(
-                f"Waypoints dimuat (Arena: {arena_id}, Trigger Inversi WP: {self.current_state.inversion_trigger_wp + 1}). Jml: {len(waypoints_data)}"
+                f"Waypoints dimuat (Arena: {arena_id}, Trigger Inversi Index: {self.current_state.inversion_trigger_wp}). Jml: {len(waypoints_data)}"
             )
             logging.info(
                 f"[Setup] Arena set to: {arena_id} (Raw: {raw_arena}) | Inversi Trigger Index: {self.current_state.inversion_trigger_wp}"
