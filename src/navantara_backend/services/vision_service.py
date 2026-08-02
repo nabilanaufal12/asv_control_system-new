@@ -164,7 +164,6 @@ class VisionService:
         # --- [CRITICAL: LABEL MAPPING] ---
         # Menjembatani perbedaan label Model Baru vs Logika asv_handler
         self.LABEL_MAP = {
-            "Blue_Ball": "bola-biru",
             "Blue_Box": "kotak-biru",
             "Green_Ball": "bola-hijau",
             "Green_Box": "kotak-hijau",
@@ -229,7 +228,7 @@ class VisionService:
         # Pengaturan deteksi kamera
         cam_detect_cfg = self.config.get(
             "camera_detection",
-            {"bola-merah": 20.0, "bola-hijau": 20.0, "bola-biru": 20.0},
+            {"bola-merah": 20.0, "bola-hijau": 20.0},
         )
         self.FOCAL_LENGTH_PIXELS = cam_detect_cfg.get("focal_length_pixels", 600)
         self.OBJECT_REAL_WIDTHS_CM = cam_detect_cfg.get("object_real_widths_cm", {})
@@ -680,7 +679,10 @@ class VisionService:
 
         # 3. Penyimpanan File
         filename = f"{filename_prefix}_{image_count}.jpg"
-        save_dir = os.path.join(os.getcwd(), "logs", "captures")
+        if hasattr(self.asv_handler, 'logger') and self.asv_handler.logger:
+            save_dir = self.asv_handler.logger.get_current_capture_dir()
+        else:
+            save_dir = os.path.join(os.getcwd(), "logs", "captures")
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 
@@ -971,7 +973,6 @@ class VisionService:
                 "bola-hijau",
                 "kotak-hijau",
                 "kotak-biru",
-                "bola-biru",
             ]:
                 valid_buoys.append(det)
 
@@ -1071,7 +1072,10 @@ class VisionService:
             snapshot = frame_to_use
 
         filename = f"{filename_prefix}_{image_count}.jpg"
-        save_dir = os.path.join(os.getcwd(), "logs", "captures")
+        if hasattr(self.asv_handler, 'logger') and self.asv_handler.logger:
+            save_dir = self.asv_handler.logger.get_current_capture_dir()
+        else:
+            save_dir = os.path.join(os.getcwd(), "logs", "captures")
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 

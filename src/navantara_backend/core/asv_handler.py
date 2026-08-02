@@ -324,6 +324,9 @@ class AsvHandler:
                     "rc_ch", self.current_state.rc_channels
                 )
                 mode = data.get("mode")
+                if mode:
+                    self.current_state.control_mode = mode
+                
                 if mode == "MANUAL":
                     self.current_state.manual_servo_cmd = data.get("servo_out")
                     self.current_state.manual_motor_cmd = data.get("motor_out")
@@ -470,13 +473,8 @@ class AsvHandler:
                     logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
 
                 elif control_mode == "MANUAL":
-                    # Tambahkan 1500, 1500 untuk mematikan motor depan saat mode manual
-                    command_to_send = (
-                        f"A,{int(manual_servo_cmd)},{int(manual_motor_cmd)},1500,1500\n"
-                    )
-                    logging.info(
-                        f"[AsvHandler] MANUAL CONTROL -> Servo: {int(manual_servo_cmd)} deg, Motor: {int(manual_motor_cmd)} us"
-                    )
+                    command_to_send = "W\n"
+                    logging.info("[AsvHandler] MANUAL CONTROL -> Standby (Kirim W)")
 
                 elif control_mode == "AUTO":
                     mission_completed = bool(
@@ -643,11 +641,7 @@ class AsvHandler:
     def process_command(self, command, payload):
         command_handlers = {
             "CONFIGURE_SERIAL": self._handle_serial_configuration,
-            "CHANGE_MODE": self._handle_mode_change,
-            "MANUAL_CONTROL": self._handle_manual_control,
             "SET_WAYPOINTS": self._handle_set_waypoints,
-            "NAV_START": self._handle_start_mission,
-            "NAV_RETURN": self._handle_initiate_rth,
             "UPDATE_PID": self._handle_update_pid,
             "VISION_TARGET_UPDATE": self._handle_vision_target_update,
             "UPDATE_VISION_SPEED": self._handle_update_vision_speed,
@@ -813,40 +807,6 @@ class AsvHandler:
         else:
             logging.error(f"[AsvHandler] Capture Gagal: {result.get('message')}")
 
-    def _handle_manual_control(self, payload):
-        with self.state_lock:
-            rc_channel_5 = self.current_state.rc_channels[4]
-            control_mode = self.current_state.control_mode
-            is_inverted = self.current_state.inverse_servo
-
-        if rc_channel_5 < 1500:
-            return
-        if control_mode != "MANUAL":
-            return
-
-        keys, actuator_config = set(payload), self.config.get("actuators", {})
-        pwm_stop, pwr = actuator_config.get(
-            "motor_pwm_stop", 1500
-        ), actuator_config.get("motor_pwm_manual_power", 150)
-        servo_def, servo_min, servo_max = (
-            actuator_config.get("servo_default_angle", 90),
-            actuator_config.get("servo_min_angle", 45),
-            actuator_config.get("servo_max_angle", 135),
-        )
-        fwd = 1 if "W" in keys else -1 if "S" in keys else 0
-        turn = 1 if "D" in keys else -1 if "A" in keys else 0
-
-        if is_inverted:
-            turn = -turn
-
-        pwm = pwm_stop + fwd * pwr
-        servo = servo_def - turn * (servo_def - servo_min)
-        servo = max(servo_min, min(servo_max, servo))
-
-        with self.state_lock:
-            self.current_state.manual_servo_cmd = int(servo)
-            self.current_state.manual_motor_cmd = int(pwm)
-
     def set_streaming_status(self, status: bool):
         if self.is_streaming_to_gui != status:
             logging.info(f"[AsvHandler] Status streaming telemetri diatur ke: {status}")
@@ -869,22 +829,6 @@ class AsvHandler:
             self.serial_handler.find_and_connect_esp32(baud)
         else:
             self.serial_handler.connect(port, baud)
-
-    def _handle_mode_change(self, payload):
-        with self.state_lock:
-            new_mode = payload.get("mode", "MANUAL")
-            self.current_state.control_mode = new_mode
-            self.logger.log_event(f"Mode kontrol GUI diubah ke: {new_mode}")
-
-        if new_mode == "MANUAL":
-            actuator_config = self.config.get("actuators", {})
-            pwm_stop = actuator_config.get("motor_pwm_stop", 1500)
-            servo_def = actuator_config.get("servo_default_angle", 90)
-            command_str = f"A,{int(servo_def)},{int(pwm_stop)},1500,1500\n"
-            logging.info(
-                f"[LOG | MODE] GUI ganti ke MANUAL, kirim netral: {command_str.strip()}"
-            )
-            self.serial_handler.send_command(command_str)
 
     # [BARU] Handler untuk mengubah titik trigger inversi secara dinamis
     def _handle_update_inversion_trigger(self, payload):
@@ -948,24 +892,6 @@ class AsvHandler:
                 f"[Setup] Arena set to: {arena_id} (Raw: {raw_arena}) | Inversi Trigger Index: {self.current_state.inversion_trigger_wp}"
             )
 
-    def _handle_start_mission(self, payload):
-        with self.state_lock:
-            if not self.current_state.waypoints:
-                return
-            self.current_state.control_mode = "AUTO"
-            self.current_state.current_waypoint_index = 0
-            self.current_state.use_dummy_counter = False
-        self.logger.log_event("Misi navigasi dimulai.")
-
-    def _handle_initiate_rth(self, payload):
-        with self.state_lock:
-            if not self.current_state.waypoints:
-                return
-            self.current_state.waypoints = [self.current_state.waypoints[0]]
-            self.current_state.current_waypoint_index = 0
-            self.current_state.control_mode = "AUTO"
-        self.logger.log_event("Memulai Return to Home.")
-
     def _handle_set_photo_mission(self, payload):
         try:
             wp1 = int(payload.get("wp1", -1))
@@ -993,6 +919,13 @@ class AsvHandler:
             logging.warning(
                 f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}"
             )
+
+    def stop(self):
+        self.running = False
+        self.serial_handler.disconnect()
+        self.logger.log_event("AsvHandler dihentikan.")
+        self.logger.stop()
+        logging.info("[AsvHandler] Dihentikan.")
 
     def stop(self):
         self.running = False

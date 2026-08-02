@@ -213,11 +213,6 @@ class MainWindow(QMainWindow):
             )
         )
 
-        self.control_panel.manual_button_clicked.connect(
-            lambda: self.set_mode("MANUAL")
-        )
-        self.control_panel.auto_button_clicked.connect(lambda: self.set_mode("AUTO"))
-
         self.settings_panel.connect_requested.connect(
             lambda details: self.api_client.send_command("CONFIGURE_SERIAL", details)
         )
@@ -277,29 +272,13 @@ class MainWindow(QMainWindow):
 
         is_manual = mode == "MANUAL"
 
-        self.control_panel.manual_mode_btn.setChecked(is_manual)
-        self.control_panel.auto_mode_btn.setChecked(not is_manual)
         self.update_button_states()
         self.setFocus()
 
     def update_button_states(self):
-        is_manual = self.current_control_mode == "MANUAL"
-
-        self.control_panel.manual_mode_btn.setEnabled(not self.is_rc_override)
-        self.control_panel.auto_mode_btn.setEnabled(not self.is_rc_override)
-
-        self.control_panel.start_mission_btn.setEnabled(
-            not is_manual and not self.is_rc_override
-        )
-        self.control_panel.pause_mission_btn.setEnabled(
-            not is_manual and not self.is_rc_override
-        )
-        self.control_panel.return_home_btn.setEnabled(
-            not is_manual and not self.is_rc_override
-        )
-
-        for button in self.control_panel.key_buttons.values():
-            button.setEnabled(is_manual and not self.is_rc_override)
+        # Tombol-tombol kontrol sudah dihapus. Method ini dibiarkan kosong 
+        # atau untuk keperluan tombol masa depan.
+        pass
 
     @Slot(dict)
     def on_data_updated(self, data):
@@ -362,32 +341,4 @@ class MainWindow(QMainWindow):
             else:
                 logging.error(f"Gagal memuat misi {mission_id}: format data salah.")
 
-    def handle_manual_keys(self):
-        self.api_client.send_command("MANUAL_CONTROL", list(self.active_manual_keys))
-
-    def keyPressEvent(self, event):
-        if self.current_control_mode != "MANUAL" or self.is_rc_override:
-            return
-
-        if event.isAutoRepeat():
-            return
-        key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
-        if event.key() in key_map:
-            key_char = key_map[event.key()]
-            if key_char not in self.active_manual_keys:
-                self.active_manual_keys.add(key_char)
-                self.control_panel.update_key_press_status(key_char, True)
-                self.handle_manual_keys()
-
-    def keyReleaseEvent(self, event):
-        if self.current_control_mode != "MANUAL" or self.is_rc_override:
-            return
-
-        if event.isAutoRepeat():
-            return
-        key_map = {Qt.Key_W: "W", Qt.Key_A: "A", Qt.Key_S: "S", Qt.Key_D: "D"}
-        if event.key() in key_map:
-            key_char = key_map[event.key()]
-            self.active_manual_keys.discard(key_char)
-            self.control_panel.update_key_press_status(key_char, False)
-            self.handle_manual_keys()
+    # Keyboard events for manual drive removed

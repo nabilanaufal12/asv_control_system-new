@@ -161,49 +161,82 @@ def create_app():
 
     # === AKHIR FIX AKHIR ===
 
-    # --- MODIFIKASI: RUTE BARU UNTUK MENYAJIKAN GAMBAR GALERI ---
-    @app.route("/captures/<path:filename>")
-    def serve_capture(filename):
+    # --- MODIFIKASI: RUTE BARU UNTUK MENYAJIKAN GAMBAR/CSV GALERI ---
+    @app.route("/logs/<path:filepath>")
+    def serve_logs_file(filepath):
         """
-        Menyajikan file gambar statis dari direktori logs/captures.
+        Menyajikan file statis (gambar, csv) dari direktori logs/.
         """
-        captures_dir = os.path.join(os.getcwd(), "logs", "captures")
-        return send_from_directory(captures_dir, filename)
+        logs_dir = os.path.join(os.getcwd(), "logs")
+        return send_from_directory(logs_dir, filepath)
 
-    # --- AKHIR MODIFIKASI ---
-
-    # --- [FITUR BARU] DOWNLOAD LOG CSV ---
-
-    @app.route("/api/logfiles/csv", methods=["GET"])
-    def list_csv_logs():
+    @app.route("/api/races", methods=["GET"])
+    def list_races():
         """
-        Mengembalikan daftar file CSV dari folder logs/telemetry_csv.
+        Mengembalikan daftar race yang tersedia di folder logs/.
         """
         try:
-            if not os.path.exists(csv_log_dir):
+            logs_dir = os.path.join(os.getcwd(), "logs")
+            if not os.path.exists(logs_dir):
                 return jsonify([])
 
-            # Ambil semua file .csv
-            files = [f for f in os.listdir(csv_log_dir) if f.endswith(".csv")]
-            # Urutkan desc (terbaru diatas, asumsi penamaan timestamp)
-            files.sort(reverse=True)
-
-            return jsonify(files)
+            races = []
+            for entry in os.listdir(logs_dir):
+                if entry.startswith("race_") and os.path.isdir(os.path.join(logs_dir, entry)):
+                    try:
+                        num = int(entry.split("_")[1])
+                        races.append({"id": num, "name": f"Race {num}"})
+                    except ValueError:
+                        continue
+            
+            # Urutkan berdasarkan id desc
+            races.sort(key=lambda x: x["id"], reverse=True)
+            return jsonify(races)
         except Exception as e:
-            print(f"[API Log] Error listing CSV: {e}")
+            print(f"[API Log] Error listing races: {e}")
             return jsonify({"error": str(e)}), 500
 
-    @app.route("/download/log/csv/<path:filename>", methods=["GET"])
-    def download_csv_log(filename):
+    @app.route("/api/get-race-data", methods=["GET"])
+    def get_race_data():
         """
-        Download file CSV log sebagai attachment.
+        Mengembalikan gabungan telemetri dan daftar gambar untuk suatu race_id.
         """
         try:
-            return send_from_directory(csv_log_dir, filename, as_attachment=True)
-        except Exception:
-            return jsonify({"error": "File not found"}), 404
-
-    # --- AKHIR FITUR BARU ---
+            race_id = request.args.get("race_id")
+            if not race_id:
+                return jsonify({"error": "Missing race_id param"}), 400
+                
+            race_dir = os.path.join(os.getcwd(), "logs", f"race_{race_id}")
+            if not os.path.exists(race_dir):
+                return jsonify({"error": "Race not found"}), 404
+            
+            # 1. Parse Telemetry
+            csv_path = os.path.join(race_dir, "telemetry", "mission_data.csv")
+            telemetry_data = []
+            if os.path.exists(csv_path):
+                import csv
+                with open(csv_path, "r") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        telemetry_data.append(row)
+            
+            # 2. Parse Captures
+            captures_dir = os.path.join(race_dir, "captures")
+            filenames = []
+            if os.path.exists(captures_dir):
+                search_path = os.path.join(captures_dir, "*.jpg")
+                full_paths = glob.glob(search_path)
+                filenames = [os.path.basename(f) for f in full_paths]
+                filenames.sort()
+                
+            return jsonify({
+                "telemetry": telemetry_data,
+                "captures": filenames
+            })
+            
+        except Exception as e:
+            print(f"[API Log] Error parsing race data for {race_id}: {e}")
+            return jsonify({"error": str(e)}), 500
 
     # --- 4. TAMBAHAN ENDPOINT API ---
     @app.route("/api/telemetry")
@@ -216,6 +249,17 @@ def create_app():
 
             with current_app.asv_handler.state_lock:
                 data_copy = asdict(state_data)
+                
+            # Sisipkan captures terbaru (opsional untuk REST API, tapi baik untuk konsistensi)
+            try:
+                captures_dir = current_app.asv_handler.logger.get_current_capture_dir()
+                search_path = os.path.join(captures_dir, "*.jpg")
+                full_paths = glob.glob(search_path)
+                filenames = [os.path.basename(f) for f in full_paths]
+                filenames.sort()
+                data_copy["captures"] = filenames
+            except Exception:
+                data_copy["captures"] = []
 
             response = jsonify(data_copy)
 
@@ -260,13 +304,13 @@ def create_app():
     # --- AKHIR MODIFIKASI ---
 
     # --- MODIFIKASI: RUTE BARU UNTUK API GALERI ---
-    @app.route("/api/gallery")
-    def get_gallery():
+    @app.route("/api/races/<int:race_id>/gallery")
+    def get_gallery(race_id):
         """
-        Endpoint API HTTP untuk mengambil daftar file gambar galeri sebagai JSON.
+        Endpoint API HTTP untuk mengambil daftar file gambar galeri dari race tertentu sebagai JSON.
         """
         try:
-            captures_dir = os.path.join(os.getcwd(), "logs", "captures")
+            captures_dir = os.path.join(os.getcwd(), "logs", f"race_{race_id}", "captures")
             search_path = os.path.join(captures_dir, "*.jpg")
             full_paths = glob.glob(search_path)
             filenames = [os.path.basename(f) for f in full_paths]
@@ -276,6 +320,22 @@ def create_app():
         except Exception as e:
             return (
                 jsonify({"error": str(e), "message": "Gagal mencari galeri."}),
+                500,
+            )
+            
+    @app.route("/api/gallery/live")
+    def get_gallery_live():
+        try:
+            captures_dir = current_app.asv_handler.logger.get_current_capture_dir()
+            search_path = os.path.join(captures_dir, "*.jpg")
+            full_paths = glob.glob(search_path)
+            filenames = [os.path.basename(f) for f in full_paths]
+            filenames.sort()
+            return jsonify(filenames)
+
+        except Exception as e:
+            return (
+                jsonify({"error": str(e), "message": "Gagal mencari galeri live."}),
                 500,
             )
 
@@ -293,6 +353,17 @@ def create_app():
                 while True:
                     with current_app.asv_handler.state_lock:
                         data = asdict(current_app.asv_handler.current_state)
+                        
+                    # Sisipkan nama-nama file gambar terkini ke payload SSE
+                    try:
+                        captures_dir = current_app.asv_handler.logger.get_current_capture_dir()
+                        search_path = os.path.join(captures_dir, "*.jpg")
+                        full_paths = glob.glob(search_path)
+                        filenames = [os.path.basename(f) for f in full_paths]
+                        filenames.sort()
+                        data["captures"] = filenames
+                    except Exception:
+                        data["captures"] = []
 
                     json_data = json.dumps(data)
 

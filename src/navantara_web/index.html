@@ -119,13 +119,13 @@
           <div class="camera-feed">
             <h3>SURFACE CAM</h3>
             <div class="camera-container" id="cam1-container">
-              <img src="http://192.168.1.27:5000/live_video_feed" alt="Camera 1 Feed" crossorigin="anonymous" />
+              <img src="http://192.168.1.20:5000/live_video_feed" alt="Camera 1 Feed" crossorigin="anonymous" />
             </div>
           </div>
           <div class="camera-feed">
             <h3>UNDERWATER CAM</h3>
             <div class="camera-container" id="cam2-container">
-              <img src="http://192.168.1.27:5000/live_video_feed_cam2" alt="Camera 2 Feed" crossorigin="anonymous" />
+              <img src="http://192.168.1.20:5000/live_video_feed_cam2" alt="Camera 2 Feed" crossorigin="anonymous" />
             </div>
           </div>
         </section>
@@ -155,27 +155,26 @@
             </div>
           </div>
 
-        </section>
-
-        <section class="capture-section">
+        <section class="capture-section" style="display: flex; flex-direction: column;">
           <div class="section-header">
             <h3>Capture Results</h3>
-            <button id="refresh-gallery-btn">Refresh Gallery</button>
+            <select id="race-selector" class="race-dropdown" onchange="if(this.value) loadRace(this.value)">
+              <option value="">-- Pilih Race --</option>
+            </select>
           </div>
 
-          <div class="capture-results">
-
+          <div class="capture-results" style="overflow-y: auto;">
             <div class="gallery-column">
               <h4>Surface</h4>
               <div class="capture-grid" id="surface-gallery">
-                <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
+                <p>Silakan pilih race untuk melihat gambar...</p>
               </div>
             </div>
 
             <div class="gallery-column">
               <h4>Underwater</h4>
               <div class="capture-grid" id="underwater-gallery">
-                <p>Klik 'Refresh Gallery' untuk memuat gambar...</p>
+                <p>Silakan pilih race untuk melihat gambar...</p>
               </div>
             </div>
 
@@ -184,18 +183,16 @@
               <div class="wave"></div>
             </div>
           </div>
-
         </section>
 
         <section class="log-section">
           <div class="section-header">
-            <h3>Log Telemetri (CSV)</h3>
-            <button id="refresh-csv-btn" onclick="fetchCsvLogList()">Refresh List</button>
+            <h3>Log Telemetry</h3>
           </div>
-          <div class="log-grid" id="csv-log-container">
-            <ul id="csv-log-list" class="csv-list">
-              <li class="csv-item" style="justify-content: center; color: #7f8c8d;">Memuat data log...</li>
-            </ul>
+          <div class="log-grid" id="csv-log-container" style="display: flex; align-items: center; justify-content: center; padding: 15px;">
+            <div id="telemetry-download-container" style="text-align: center; color: #7f8c8d;">
+              Pilih race di atas untuk mengunduh log...
+            </div>
           </div>
         </section>
       </div>
