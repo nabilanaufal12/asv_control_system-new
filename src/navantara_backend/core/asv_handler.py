@@ -306,11 +306,11 @@ class AsvHandler:
         try:
             with self.state_lock:
                 self.current_state.heading = data.get(
-                    "heading", self.current_state.heading
+                    "hdg", self.current_state.heading
                 )
-                self.current_state.speed = data.get("speed_kmh", 0.0) / 3.6
+                self.current_state.speed = data.get("spd", 0.0) / 3.6
                 self.current_state.nav_gps_sats = data.get(
-                    "sats", self.current_state.nav_gps_sats
+                    "sat", self.current_state.nav_gps_sats
                 )
                 self.current_state.latitude = data.get(
                     "lat", self.current_state.latitude
@@ -318,13 +318,15 @@ class AsvHandler:
                 self.current_state.longitude = data.get(
                     "lon", self.current_state.longitude
                 )
-                status_val = data.get("status", None)
-                self.current_state.esp_status = status_val
+
+                status_val = data.get("sts", None)
+                if status_val:
+                    self.current_state.esp_status = status_val
 
                 self.current_state.rc_channels = data.get(
-                    "rc_ch", self.current_state.rc_channels
+                    "rc", self.current_state.rc_channels
                 )
-                mode = data.get("mode")
+                mode = data.get("mod")
                 if mode:
                     # Deteksi transisi dari MANUAL ke AUTO untuk membuat folder race_x baru
                     if self.current_state.control_mode == "MANUAL" and mode == "AUTO":
@@ -336,30 +338,30 @@ class AsvHandler:
                     self.current_state.control_mode = mode
 
                 if mode == "MANUAL":
-                    self.current_state.manual_servo_cmd = data.get("servo_out")
-                    self.current_state.manual_motor_cmd = data.get("motor_out")
+                    self.current_state.manual_servo_cmd = data.get("srv")
+                    self.current_state.manual_motor_cmd = data.get("mot")
                 elif mode == "AUTO":
-                    status = data.get("status")
+                    status = data.get("sts")
                     if status == "WAYPOINT":
-                        self.current_state.nav_dist_to_wp = data.get("wp_dist_m")
-                        self.current_state.nav_xte_m = data.get("xte_m", 0.0)
+                        self.current_state.nav_dist_to_wp = data.get("w_dst")
+                        self.current_state.nav_xte_m = data.get("xte", 0.0)
                         self.current_state.nav_target_bearing = data.get(
-                            "wp_target_brg"
+                            "w_brg"
                         )
-                        self.current_state.nav_heading_error = data.get("wp_error_hdg")
-                        self.current_state.nav_servo_cmd = data.get("servo_out")
-                        self.current_state.nav_motor_cmd = data.get("motor_out")
+                        self.current_state.nav_heading_error = data.get("w_err")
+                        self.current_state.nav_servo_cmd = data.get("srv")
+                        self.current_state.nav_motor_cmd = data.get("mot")
                     elif status == "AI_ACTIVE":
-                        self.current_state.nav_servo_cmd = data.get("servo_out")
-                        self.current_state.nav_motor_cmd = data.get("motor_out")
+                        self.current_state.nav_servo_cmd = data.get("srv")
+                        self.current_state.nav_motor_cmd = data.get("mot")
                 
-                # Sinkronisasi WP Index selalu dilakukan di semua mode (karena ESP32 sekarang selalu mengirimkannya)
-                if "wp_target_idx" in data:
-                    new_idx = data.get("wp_target_idx")
+                # Sinkronisasi WP Index selalu dilakukan di semua mode
+                if "w_id" in data:
+                    new_idx = data.get("w_id")
                     self.current_state.nav_target_wp_index = new_idx
                     self.current_state.current_waypoint_index = new_idx
-                if "wp_total" in data:
-                    self.current_state.nav_esp_total_wp = data.get("wp_total")
+                if "w_tot" in data:
+                    self.current_state.nav_esp_total_wp = data.get("w_tot")
         except Exception as e:
             logging.error(
                 f"[AsvHandler] Gagal mem-parsing data JSON: {e}. Data: {data}"

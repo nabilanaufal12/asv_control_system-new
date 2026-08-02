@@ -224,21 +224,21 @@ class SerialHandler:
                 self.dummy_lon += 0.000005 * random.uniform(0.8, 1.2)
                 self.dummy_data_counter += 1
                 dummy_data = {
-                    "heading": round(self.dummy_heading, 1),
+                    "hdg": round(self.dummy_heading, 1),
                     "lat": round(self.dummy_lat, 6),
                     "lon": round(self.dummy_lon, 6),
-                    "speed_kmh": round(1.2 + random.uniform(-0.1, 0.1), 1),
-                    "sats": 10,
+                    "spd": round(1.2 + random.uniform(-0.1, 0.1), 1),
+                    "sat": 10,
                 }
                 if self.dummy_data_counter % 2 == 0:
                     self.dummy_servo = 110 if self.dummy_servo == 90 else 90
                     self.dummy_motor = 1550 if self.dummy_motor == 1500 else 1500
                     dummy_data.update(
                         {
-                            "mode": "MANUAL",
-                            "status": "ACTIVE",
-                            "servo_out": self.dummy_servo,
-                            "motor_out": self.dummy_motor,
+                            "mod": "MANUAL",
+                            "sts": "ACTIVE",
+                            "srv": self.dummy_servo,
+                            "mot": self.dummy_motor,
                         }
                     )
                 else:
@@ -251,14 +251,14 @@ class SerialHandler:
                         heading_error += 360
                     dummy_data.update(
                         {
-                            "mode": "AUTO",
-                            "status": "WAYPOINT",
-                            "servo_out": 100,
-                            "motor_out": 1600,
-                            "wp_target_idx": 2,
-                            "wp_dist_m": round(dist_to_wp, 1),
-                            "wp_target_brg": round(target_bearing, 1),
-                            "wp_error_hdg": round(heading_error, 1),
+                            "mod": "AUTO",
+                            "sts": "WAYPOINT",
+                            "srv": 100,
+                            "mot": 1600,
+                            "w_id": 2,
+                            "w_dst": round(dist_to_wp, 1),
+                            "w_brg": round(target_bearing, 1),
+                            "w_err": round(heading_error, 1),
                         }
                     )
                 return json.dumps(dummy_data)

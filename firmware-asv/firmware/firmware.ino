@@ -296,6 +296,7 @@ void checkSerialInput() {
 
 void setup() {
   Serial.begin(230400); 
+  serialInputBuffer.reserve(128);
 
   // ========================================================
   // 1. INISIALISASI AKTUATOR TERLEBIH DAHULU (ESC & MAJU/MUNDUR)
@@ -605,40 +606,40 @@ void loop() {
   
   jsonDoc.clear(); 
 
-  jsonDoc["mode"] = mode;
-  jsonDoc["status"] = status;
+  jsonDoc["mod"] = mode;
+  jsonDoc["sts"] = status;
 
-  jsonDoc["heading"] = (float)round(heading * 100) / 100;
+  jsonDoc["hdg"] = (float)round(heading * 100) / 100;
   jsonDoc["lat"] = lat;
   jsonDoc["lon"] = lon;
-  jsonDoc["speed_kmh"] = (float)round(speed * 100) / 100;
-  jsonDoc["sats"] = sats;
+  jsonDoc["spd"] = (float)round(speed * 100) / 100;
+  jsonDoc["sat"] = sats;
 
-  jsonDoc["servo_out"] = finalServo;
-  jsonDoc["motor_bwh_out"] = finalMotor;
-  jsonDoc["motor_d_kiri_out"] = finalMotorDepanKiri;
-  jsonDoc["motor_d_kanan_out"] = finalMotorDepanKanan;
+  jsonDoc["srv"] = finalServo;
+  jsonDoc["mot"] = finalMotor;
+  jsonDoc["m_dl"] = finalMotorDepanKiri;
+  jsonDoc["m_dr"] = finalMotorDepanKanan;
   
   if (serialCommand == 'A') {
-    jsonDoc["ai_inversion_active"] = (counter >= AI_SERVO_INVERSION_INDEX);
-    jsonDoc["ai_wp_target"] = counter;
-    jsonDoc["ai_wp_start_invert"] = AI_SERVO_INVERSION_INDEX;
+    jsonDoc["ai_i"] = (counter >= AI_SERVO_INVERSION_INDEX);
+    jsonDoc["ai_wt"] = counter;
+    jsonDoc["ai_ws"] = AI_SERVO_INVERSION_INDEX;
   }
 
-  jsonDoc["wp_target_idx"] = counter;
-  jsonDoc["wp_total"] = dataIndex;
+  jsonDoc["w_id"] = counter;
+  jsonDoc["w_tot"] = dataIndex;
 
   if (mode == "AUTO" && serialCommand == 'W') { 
     if (status == "WP_COMPLETE") {
-      jsonDoc["wp_dist_m"] = 0.0;
-      jsonDoc["wp_target_brg"] = 0.0;
-      jsonDoc["wp_error_hdg"] = 0.0;
-      jsonDoc["xte_m"] = 0.0;
+      jsonDoc["w_dst"] = 0.0;
+      jsonDoc["w_brg"] = 0.0;
+      jsonDoc["w_err"] = 0.0;
+      jsonDoc["xte"] = 0.0;
     } else {
-      jsonDoc["wp_dist_m"] = (float)round(wp_dist_m * 100) / 100;
-      jsonDoc["wp_target_brg"] = (float)round(wp_target_brg * 100) / 100;
-      jsonDoc["wp_error_hdg"] = (float)round(wp_error_hdg * 100) / 100;
-      jsonDoc["xte_m"] = (float)round(cross_track_error * 100) / 100;
+      jsonDoc["w_dst"] = (float)round(wp_dist_m * 100) / 100;
+      jsonDoc["w_brg"] = (float)round(wp_target_brg * 100) / 100;
+      jsonDoc["w_err"] = (float)round(wp_error_hdg * 100) / 100;
+      jsonDoc["xte"] = (float)round(cross_track_error * 100) / 100;
     }
   }
 
