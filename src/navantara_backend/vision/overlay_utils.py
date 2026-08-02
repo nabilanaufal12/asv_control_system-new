@@ -157,7 +157,6 @@ def apply_overlay(background_frame, overlay_data):
     lat = telemetry_data.get("latitude", 0)
     lon = telemetry_data.get("longitude", 0)
     sog_ms = telemetry_data.get("speed", 0)
-    cog = telemetry_data.get("cog", 0)
     hdg = telemetry_data.get("heading", 0)
 
     # 1. Format GPS (N/S dan E/W)

@@ -75,7 +75,7 @@ class AsvState:
     accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
-    nav_dist_to_wp: float = 9999.0  # coba 9999.0
+    nav_dist_to_wp: float = 0.0  # coba 9999.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
     nav_servo_cmd: int = 90
@@ -490,7 +490,7 @@ class AsvHandler:
                             self.current_state.recovering_from_avoidance = False
                             self.current_state.is_avoiding = True
                             self.current_state.gate_context["last_gate_config"] = None
-                            
+
                             # Ambil kecepatan motor belakang dari GUI
                             current_ai_pwm = self.current_state.vision_auto_motor_cmd
                             # Kita TIDAK butuh nilai servo dari GUI karena akan di-set selalu 90
@@ -499,7 +499,7 @@ class AsvHandler:
                         turn_direction = "STRAIGHT"
                         desc = "Neutral"
 
-                       # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek & Inversi)
+                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek & Inversi)
                         if final_inversion_state:
                             # --- ARENA B (INVERTED) ---
                             if obj_class in ["bola-hijau", "kotak-hijau"]:
@@ -525,30 +525,36 @@ class AsvHandler:
 
                         # 2. LOGIKA KEMUDI (SERVO BELAKANG & MOTOR DEPAN)
                         # Ambil tenaga motor belakang dari GUI
-                        pwm_cmd = current_ai_pwm 
+                        pwm_cmd = current_ai_pwm
 
-                        motor_depan_kiri = 1000  
+                        motor_depan_kiri = 1000
                         motor_depan_kanan = 1000
-                        
+
                         # Ambil nilai servo dan motor depan dari GUI secara realtime
                         with self.state_lock:
-                            pwm_depan_kiri_aktif = self.current_state.vision_front_motor_left_cmd
-                            pwm_depan_kanan_aktif = self.current_state.vision_front_motor_right_cmd
+                            pwm_depan_kiri_aktif = (
+                                self.current_state.vision_front_motor_left_cmd
+                            )
+                            pwm_depan_kanan_aktif = (
+                                self.current_state.vision_front_motor_right_cmd
+                            )
                             servo_kiri_aktif = self.current_state.vision_servo_left_cmd
-                            servo_kanan_aktif = self.current_state.vision_servo_right_cmd
+                            servo_kanan_aktif = (
+                                self.current_state.vision_servo_right_cmd
+                            )
 
                         if turn_direction == "LEFT":
                             # Belok Kiri: Menggunakan settingan servo kiri dari GUI
                             servo_cmd = servo_kiri_aktif
-                            motor_depan_kanan = pwm_depan_kanan_aktif 
+                            motor_depan_kanan = pwm_depan_kanan_aktif
                             desc += f" | Belok KIRI (Servo: {servo_kiri_aktif}, M.Kanan: {pwm_depan_kanan_aktif})"
-                            
+
                         elif turn_direction == "RIGHT":
                             # Belok Kanan: Menggunakan settingan servo kanan dari GUI
                             servo_cmd = servo_kanan_aktif
                             motor_depan_kiri = pwm_depan_kiri_aktif
                             desc += f" | Belok KANAN (Servo: {servo_kanan_aktif}, M.Kiri: {pwm_depan_kiri_aktif})"
-                            
+
                         else:
                             # Lurus: Servo Netral
                             servo_cmd = servo_default
@@ -557,14 +563,20 @@ class AsvHandler:
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
                         if nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav.")
+                            logging.info(
+                                "[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav."
+                            )
                         elif esp_status == "WP_COMPLETE" or status == "WP_COMPLETE":
                             command_to_send = "W\n"
-                            logging.info("[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W")
+                            logging.info(
+                                "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W"
+                            )
                         else:
                             # Kirim 5 parameter: A, Servo (Selalu 90), Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)},{motor_depan_kiri},{motor_depan_kanan}\n"
-                            logging.info(f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}")
+                            logging.info(
+                                f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}"
+                            )
 
                     elif resume_waypoint_on_clear:
                         with self.state_lock:
@@ -712,7 +724,9 @@ class AsvHandler:
             with self.state_lock:
                 self.current_state.vision_front_motor_left_cmd = left_val
                 self.current_state.vision_front_motor_right_cmd = right_val
-            logging.info(f"[AsvHandler] Motor Depan AI Updated -> Kiri: {left_val}, Kanan: {right_val}")
+            logging.info(
+                f"[AsvHandler] Motor Depan AI Updated -> Kiri: {left_val}, Kanan: {right_val}"
+            )
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
 

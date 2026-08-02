@@ -24,10 +24,10 @@ HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
 #define PIN_SERVO_KANAN 23
 
 // Pin ESC Motor
-#define PIN_ESC_DEPAN_KIRI 27
-#define PIN_ESC_DEPAN_KANAN 25
-#define PIN_ESC_BAWAH_KIRI 26
-#define PIN_ESC_BAWAH_KANAN 33
+#define PIN_ESC_DEPAN_KIRI 26
+#define PIN_ESC_DEPAN_KANAN 33
+#define PIN_ESC_BAWAH_KIRI 27
+#define PIN_ESC_BAWAH_KANAN 25
 
 // Pin Arah (Maju/Mundur) menggunakan sinyal PWM
 #define DIR_DEPAN_KIRI 14
