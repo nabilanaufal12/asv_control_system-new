@@ -12,44 +12,53 @@ class MissionLogger:
             os.makedirs(self.base_log_dir)
 
         self._lock = threading.Lock()
-        
-        # Cari Race ID tertinggi saat ini
-        max_id = 0
-        for entry in os.listdir(self.base_log_dir):
-            if entry.startswith("race_") and os.path.isdir(os.path.join(self.base_log_dir, entry)):
-                try:
-                    num = int(entry.split("_")[1])
-                    if num > max_id:
-                        max_id = num
-                except ValueError:
-                    continue
-        
-        # Buat sesi race baru (increment) setiap kali logger / server direstart
-        self.current_race_id = max_id + 1
-        
-        self.race_dir = os.path.join(self.base_log_dir, f"race_{self.current_race_id}")
-        self.telemetry_dir = os.path.join(self.race_dir, "telemetry")
-        self.captures_dir = os.path.join(self.race_dir, "captures")
-        
-        os.makedirs(self.telemetry_dir, exist_ok=True)
-        os.makedirs(self.captures_dir, exist_ok=True)
-        
-        self.telemetry_log_path = os.path.join(self.telemetry_dir, "mission_data.csv")
-        self.event_log_path = os.path.join(self.race_dir, "global_events.log")
-
-        # --- SETUP CSV DENGAN FORMAT SESUAI PERMINTAAN ---
-        self.telemetry_file = open(self.telemetry_log_path, "a", newline="")
+        self.telemetry_file = None
+        self.telemetry_writer = None
         self.fieldnames = ["Day", "Date", "Time", "GPS", "SOG", "COG", "HDG"]
         
-        self.telemetry_writer = csv.DictWriter(
-            self.telemetry_file, fieldnames=self.fieldnames
-        )
-        
-        # Jika file masih kosong, tulis header
-        if os.path.getsize(self.telemetry_log_path) == 0:
-            self.telemetry_writer.writeheader()
+        self.start_new_race()
+
+    def start_new_race(self):
+        with self._lock:
+            # Tutup file sebelumnya jika masih terbuka
+            if self.telemetry_file and not self.telemetry_file.closed:
+                self.telemetry_file.close()
+
+            # Cari Race ID tertinggi saat ini
+            max_id = 0
+            for entry in os.listdir(self.base_log_dir):
+                if entry.startswith("race_") and os.path.isdir(os.path.join(self.base_log_dir, entry)):
+                    try:
+                        num = int(entry.split("_")[1])
+                        if num > max_id:
+                            max_id = num
+                    except ValueError:
+                        continue
             
-        print(f"[Logger] Started Race {self.current_race_id}")
+            # Buat sesi race baru (increment)
+            self.current_race_id = max_id + 1
+            
+            self.race_dir = os.path.join(self.base_log_dir, f"race_{self.current_race_id}")
+            self.telemetry_dir = os.path.join(self.race_dir, "telemetry")
+            self.captures_dir = os.path.join(self.race_dir, "captures")
+            
+            os.makedirs(self.telemetry_dir, exist_ok=True)
+            os.makedirs(self.captures_dir, exist_ok=True)
+            
+            self.telemetry_log_path = os.path.join(self.telemetry_dir, "mission_data.csv")
+            self.event_log_path = os.path.join(self.race_dir, "global_events.log")
+
+            # Buka CSV baru untuk race ini
+            self.telemetry_file = open(self.telemetry_log_path, "a", newline="")
+            self.telemetry_writer = csv.DictWriter(
+                self.telemetry_file, fieldnames=self.fieldnames
+            )
+            
+            # Jika file masih kosong, tulis header
+            if os.path.getsize(self.telemetry_log_path) == 0:
+                self.telemetry_writer.writeheader()
+                
+            print(f"[Logger] Started New Race: {self.current_race_id}")
 
     def log_telemetry(self, state_data):
         """

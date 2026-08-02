@@ -325,6 +325,11 @@ class AsvHandler:
                 )
                 mode = data.get("mode")
                 if mode:
+                    # Deteksi transisi dari MANUAL ke AUTO untuk membuat folder race_x baru
+                    if self.current_state.control_mode == "MANUAL" and mode == "AUTO":
+                        logging.info("[AsvHandler] Mode berubah MANUAL -> AUTO. Membuat Race Session baru.")
+                        self.logger.start_new_race()
+                    
                     self.current_state.control_mode = mode
                 
                 if mode == "MANUAL":
