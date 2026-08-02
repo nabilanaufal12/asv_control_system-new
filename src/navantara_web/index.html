@@ -265,13 +265,6 @@
           { x: 156, y: 451 },
         ],
       };
-      function ptRole(index, total) {
-        if (index === 0) return 'start';
-        if (index === total - 1) return 'finish';
-        if (index === total - 3) return 'imaging_surface';
-        if (index === total - 2) return 'imaging_underwater';
-        return 'waypoint';
-      }
       let currentArena = null;
       let predefinedPoints = [];
       let points = [];
@@ -296,39 +289,28 @@
             arenaABtn.classList.remove("active");
           }
         }
-        initialize(); // Pastikan initialize selalu dipanggil
+        initialize();
       }
 
       window.addEventListener("switchArena", (event) =>
         switchArena(event.detail.arena)
       );
 
-      function drawUpToPoint(pointNumber) {
-        const maxPoints = predefinedPoints.length;
-        const targetPoint = Math.max(0, Math.min(pointNumber, maxPoints));
-        points = [];
-        for (let i = 0; i < targetPoint; i++) {
-          points.push(predefinedPoints[i]);
-        }
-        drawAll();
-      }
-
       window.addEventListener("setTrajectoryPoint", function (event) {
         const pointIndex = parseInt(event.detail.point, 10);
-
-        // 🚩 LOG PENERIMAAN EVENT DARI JS/MAIN.JS
         console.log("[Canvas Script] Event 'setTrajectoryPoint' diterima. Titik target:", pointIndex);
 
         if (!isNaN(pointIndex)) {
-          drawUpToPoint(pointIndex);
+          currentTargetPoint = Math.max(0, Math.min(pointIndex, predefinedPoints.length));
+          drawAll(currentTargetPoint);
         }
       });
 
       function initialize() {
         drawBackground();
         drawGrid();
-        // PERBAIKAN: Set awal ke 0 titik, menunggu perintah dari telemetri
-        drawUpToPoint(0);
+        currentTargetPoint = 0;
+        drawAll(currentTargetPoint);
       }
 
       function drawBackground() {
@@ -336,16 +318,13 @@
         const img = new Image();
         img.onload = () => backgroundCtx.drawImage(img, 0, 0, 800, 500);
         img.onerror = () => {
-          // Tactical dark fallback background
           backgroundCtx.fillStyle = '#07111f';
           backgroundCtx.fillRect(0, 0, 800, 500);
-          // Subtle water-texture gradient
           const grad = backgroundCtx.createLinearGradient(0, 0, 0, 500);
           grad.addColorStop(0, 'rgba(0,60,90,0.6)');
           grad.addColorStop(1, 'rgba(0,20,40,0.8)');
           backgroundCtx.fillStyle = grad;
           backgroundCtx.fillRect(0, 0, 800, 500);
-          // Center label
           backgroundCtx.font = 'bold 20px Rajdhani, Inter, sans-serif';
           backgroundCtx.fillStyle = 'rgba(0,180,216,0.2)';
           backgroundCtx.textAlign = 'center';
@@ -356,7 +335,6 @@
 
       function drawGrid() {
         gridCtx.clearRect(0, 0, 800, 500);
-        // Minor grid lines — subtle dark-teal
         gridCtx.strokeStyle = 'rgba(0,180,216,0.08)';
         gridCtx.lineWidth = 1;
         for (let x = 50; x < 800; x += 50) {
@@ -365,126 +343,47 @@
         for (let y = 50; y < 500; y += 50) {
           gridCtx.beginPath(); gridCtx.moveTo(0, y); gridCtx.lineTo(800, y); gridCtx.stroke();
         }
-        // Outer border
         gridCtx.strokeStyle = 'rgba(0,180,216,0.4)';
         gridCtx.lineWidth = 2;
         gridCtx.strokeRect(1, 1, 798, 498);
       }
 
-      function drawPoint(x, y, index) {
-        const total = predefinedPoints.length;
-        const role = ptRole(index, total);
+      function drawPoint(x, y, logicalIndex, status) {
         pointCtx.save();
         pointCtx.textAlign = 'center';
 
-        if (role === 'start') {
-          // ── START: solid green pentagon-ish circle with "S" ──
-          pointCtx.shadowColor = '#00e676';
-          pointCtx.shadowBlur = 12;
-          pointCtx.fillStyle = '#00e676';
-          pointCtx.beginPath();
-          pointCtx.arc(x, y, 10, 0, Math.PI * 2);
-          pointCtx.fill();
-          pointCtx.strokeStyle = '#ffffff'; pointCtx.lineWidth = 2; pointCtx.stroke();
-          pointCtx.shadowBlur = 0;
-          pointCtx.fillStyle = '#003300';
-          pointCtx.font = 'bold 11px Rajdhani, sans-serif';
-          pointCtx.fillText('S', x, y + 4);
-
-        } else if (role === 'finish') {
-          // ── FINISH / DOCK: blue rounded square + 3 small circles ──
-          pointCtx.shadowColor = '#2979ff';
-          pointCtx.shadowBlur = 14;
-          pointCtx.fillStyle = '#1565c0';
-          pointCtx.strokeStyle = '#82b1ff';
-          pointCtx.lineWidth = 2;
-          pointCtx.beginPath();
-          const hw = 10;
-          pointCtx.roundRect(x - hw, y - hw, hw * 2, hw * 2, 3);
-          pointCtx.fill(); pointCtx.stroke();
-          // 3 small blue balls
-          pointCtx.shadowBlur = 0;
-          [-8, 0, 8].forEach(ox => {
-            pointCtx.fillStyle = '#64b5f6';
-            pointCtx.strokeStyle = '#ffffff';
-            pointCtx.lineWidth = 1;
-            pointCtx.beginPath();
-            pointCtx.arc(x + ox, y + 20, 4, 0, Math.PI * 2);
-            pointCtx.fill(); pointCtx.stroke();
-          });
-          pointCtx.fillStyle = '#ffffff';
-          pointCtx.font = 'bold 9px Rajdhani, sans-serif';
-          pointCtx.fillText('DOCK', x, y + 4);
-
-        } else if (role === 'imaging_surface') {
-          // ── SURFACE IMAGING: green square box ──
-          pointCtx.shadowColor = '#00e676';
-          pointCtx.shadowBlur = 10;
-          pointCtx.fillStyle = 'rgba(0,200,100,0.85)';
-          pointCtx.strokeStyle = '#00e676';
-          pointCtx.lineWidth = 2;
-          pointCtx.beginPath();
-          pointCtx.rect(x - 10, y - 10, 20, 20);
-          pointCtx.fill(); pointCtx.stroke();
-          pointCtx.shadowBlur = 0;
-          pointCtx.fillStyle = '#ffffff';
-          pointCtx.font = 'bold 8px Rajdhani, sans-serif';
-          pointCtx.fillText('CAM1', x, y + 20);
-
-        } else if (role === 'imaging_underwater') {
-          // ── UNDERWATER IMAGING: blue square box ──
-          pointCtx.shadowColor = '#40c4ff';
-          pointCtx.shadowBlur = 10;
-          pointCtx.fillStyle = 'rgba(30,100,220,0.85)';
-          pointCtx.strokeStyle = '#40c4ff';
-          pointCtx.lineWidth = 2;
-          pointCtx.beginPath();
-          pointCtx.rect(x - 10, y - 10, 20, 20);
-          pointCtx.fill(); pointCtx.stroke();
-          pointCtx.shadowBlur = 0;
-          pointCtx.fillStyle = '#ffffff';
-          pointCtx.font = 'bold 8px Rajdhani, sans-serif';
-          pointCtx.fillText('CAM2', x, y + 20);
-
-        } else {
-          // ── WAYPOINT: cyan circle with white ring ──
-          pointCtx.shadowColor = '#00b4d8';
-          pointCtx.shadowBlur = 8;
-          pointCtx.fillStyle = '#00b4d8';
-          pointCtx.beginPath();
-          pointCtx.arc(x, y, 7, 0, Math.PI * 2);
-          pointCtx.fill();
-          pointCtx.strokeStyle = '#ffffff'; pointCtx.lineWidth = 1.5; pointCtx.stroke();
-          pointCtx.shadowBlur = 0;
-          pointCtx.fillStyle = '#003344';
-          pointCtx.font = 'bold 10px Rajdhani, sans-serif';
-          pointCtx.fillText(index + 1, x, y + 4);
-        }
-
-        // ── Waypoint number label (above) for all except finish ──
-        if (role !== 'finish' && role !== 'imaging_surface' && role !== 'imaging_underwater') {
-          pointCtx.fillStyle = 'rgba(0,180,216,0.9)';
-          pointCtx.font = 'bold 10px Rajdhani, sans-serif';
-          pointCtx.fillText('WP' + (index + 1), x, y - 16);
-        }
+        // Semua WP (1-9) Seragam: BULAT (Circle) - Cyan Tactical
+        pointCtx.shadowColor = '#00b4d8';
+        pointCtx.shadowBlur = 10;
+        pointCtx.fillStyle = 'rgba(0,180,216,0.85)';
+        pointCtx.strokeStyle = '#ffffff';
+        pointCtx.lineWidth = 2;
+        pointCtx.beginPath();
+        pointCtx.arc(x, y, 10, 0, Math.PI * 2);
+        pointCtx.fill(); pointCtx.stroke();
+        
+        pointCtx.shadowBlur = 0;
+        pointCtx.fillStyle = '#ffffff';
+        pointCtx.font = 'bold 10px Rajdhani, sans-serif';
+        
+        let label = `WP${logicalIndex + 1}`;
+        if (logicalIndex === 0) label = 'START';
+        if (logicalIndex === 6) label = 'CAM1';
+        if (logicalIndex === 7) label = 'CAM2';
+        if (logicalIndex === 8) label = 'DOCK';
+        
+        pointCtx.fillText(label, x, y + 22);
 
         pointCtx.restore();
       }
 
       function drawLine(x1, y1, x2, y2) {
-        // Glow layer — wider, more transparent
         lineCtx.save();
-        lineCtx.strokeStyle = 'rgba(0,180,216,0.25)';
-        lineCtx.lineWidth = 7;
-        lineCtx.lineCap = 'round';
-        lineCtx.setLineDash([14, 8]);
-        lineCtx.beginPath();
-        lineCtx.moveTo(x1, y1); lineCtx.lineTo(x2, y2);
-        lineCtx.stroke();
-        // Sharp core line
-        lineCtx.strokeStyle = '#00b4d8';
-        lineCtx.lineWidth = 2;
-        lineCtx.setLineDash([10, 6]);
+        lineCtx.strokeStyle = 'rgba(0,180,216,0.8)';
+        lineCtx.lineWidth = 3;
+        lineCtx.shadowColor = '#00b4d8';
+        lineCtx.shadowBlur = 8;
+        lineCtx.setLineDash([8, 8]);
         lineCtx.beginPath();
         lineCtx.moveTo(x1, y1); lineCtx.lineTo(x2, y2);
         lineCtx.stroke();
@@ -492,19 +391,23 @@
         lineCtx.restore();
       }
 
-      function drawAll() {
+      function drawAll(targetPointIndex) {
         lineCtx.clearRect(0, 0, 800, 500);
         pointCtx.clearRect(0, 0, 800, 500);
-        for (let i = 0; i < points.length; i++) {
-          drawPoint(points[i].x, points[i].y, i);
-          if (i > 0) {
-            drawLine(
-              points[i - 1].x,
-              points[i - 1].y,
-              points[i].x,
-              points[i].y
-            );
-          }
+        
+        // 1. Gambar GARIS LINTASAN HANYA dari 0 sampai targetPointIndex
+        for (let i = 1; i <= targetPointIndex && i < predefinedPoints.length; i++) {
+          drawLine(
+            predefinedPoints[i - 1].x,
+            predefinedPoints[i - 1].y,
+            predefinedPoints[i].x,
+            predefinedPoints[i].y
+          );
+        }
+
+        // 2. Gambar POINT HANYA dari 0 sampai targetPointIndex (dinamis)
+        for (let i = 0; i <= targetPointIndex && i < predefinedPoints.length; i++) {
+          drawPoint(predefinedPoints[i].x, predefinedPoints[i].y, i);
         }
       }
 

@@ -227,13 +227,14 @@ async function fetchCsvLogList() {
         option.textContent = race.name;
         raceSelector.appendChild(option);
       });
-      
-      // Otomatis mencari dan memuat race terbaru
+      // Hapus auto-load history, biarkan canvas mulai bersih di titik 0 (Live Mode)
       const latestRace = races.reduce((prev, current) => {
         return (parseInt(prev.id) > parseInt(current.id)) ? prev : current;
       });
       raceSelector.value = latestRace.id;
-      loadRace(latestRace.id);
+      // loadRace(latestRace.id); // DIMATIKAN agar tidak langsung muncul semua titik
+      
+      console.log("Dashboard siap. Menunggu data live dari ESP32...");
     }
 
   } catch (error) {
@@ -271,8 +272,8 @@ async function loadRace(raceId) {
         if (dlContainer) {
           const csvUrl = `${SERVER_IP}/api/races/${raceId}/download`;
           dlContainer.innerHTML = `
-            <a href="${csvUrl}" target="_blank" download style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; background-color: var(--primary-cyan); color: #000; padding: 10px 20px; font-weight: bold; border-radius: 5px; cursor: pointer; transition: background-color 0.2s;">
-              <i class="fas fa-file-csv" style="font-size: 1.5em; margin-right: 10px; color: #000;"></i>
+            <a href="${csvUrl}" target="_blank" download class="btn-download">
+              <i class="fas fa-file-csv"></i>
               <span>Unduh mission_data.csv<br><small style="font-size: 0.8em; font-weight: normal;">Race ${raceId}</small></span>
             </a>
           `;
@@ -443,47 +444,24 @@ function setupLocalSocketIO(elements, icons) {
       if (targetWpIndex !== undefined && targetWpIndex >= 0) {
 
         // --- LOGIKA PEMETAAN BARU DIMULAI DI SINI ---
-        switch (targetWpIndex) {
-          case 0:
-            point = 0;
-            break;
-          case 1:
-            point = 1;
-            break;
-          case 2:
-          case 3:
-            point = 2; // Waypoint 2 dan 3 memetakan ke titik ke-2
-            break;
-          case 4:
-            point = 3; // Waypoint 4 memetakan ke titik ke-3
-            break;
-          case 5:
-          case 6:
-          case 7:
-            point = 4; // Waypoint 5, 6, dan 7 memetakan ke titik ke-4
-            break;
-          case 8:
-            point = 5; // Waypoint 8 memetakan ke titik ke-5
-            break;
-          case 9:
-          case 10:
-          case 11:
-            point = 6; // Waypoint 9, 10, dan 11 memetakan ke titik ke-6
-            break;
-          case 12:
-            point = 7; // Waypoint 12 memetakan ke titik ke-7
-            break;
-          case 13:
-            point = 8; // Waypoint 13 memetakan ke titik ke-8
-            break;
-          case 14:
-            point = 9; // Waypoint 14 memetakan ke titik ke-9
-            break;
-          default:
-            // Untuk nilai di luar pemetaan, default ke nilai terakhir yang diketahui atau 0
-            point = lastKnownPoint !== -1 ? lastKnownPoint : 0;
-            console.warn(`[UI Canvas] targetWpIndex ${targetWpIndex} di luar pemetaan, menggunakan point: ${point}`);
-            break;
+        function getLogicalIndex(rawIndex) {
+          if (rawIndex === 0) return 0;
+          if (rawIndex >= 1 && rawIndex <= 2) return 1;
+          if (rawIndex >= 3 && rawIndex <= 4) return 2;
+          if (rawIndex >= 5 && rawIndex <= 6) return 3;
+          if (rawIndex === 7) return 4;
+          if (rawIndex >= 8 && rawIndex <= 9) return 5;
+          if (rawIndex >= 10 && rawIndex <= 11) return 6;
+          if (rawIndex >= 12 && rawIndex <= 15) return 7;
+          if (rawIndex >= 16 && rawIndex <= 18) return 8;
+          return -1;
+        }
+
+        point = getLogicalIndex(targetWpIndex);
+        if (point === -1) {
+          // Untuk nilai di luar pemetaan, default ke nilai terakhir yang diketahui atau 0
+          point = lastKnownPoint !== -1 ? lastKnownPoint : 0;
+          console.warn(`[UI Canvas] targetWpIndex ${targetWpIndex} di luar pemetaan, menggunakan point: ${point}`);
         }
         // --- LOGIKA PEMETAAN BARU BERAKHIR DI SINI ---
 
