@@ -149,17 +149,17 @@
             <div class="info-item">
               <span>SOG:</span><span id="sog-value" class="telemetry-val">0 km/jam</span>
             </div>
-
             <div class="info-item">
               <span>COG:</span><span id="hdg-value" class="telemetry-val">0°</span>
             </div>
           </div>
+        </section>
 
         <section class="capture-section" style="display: flex; flex-direction: column;">
           <div class="section-header">
             <h3>Capture Results</h3>
             <select id="race-selector" class="race-dropdown" onchange="if(this.value) loadRace(this.value)">
-              <option value="">-- Pilih Race --</option>
+              <option value="">Pilih Race</option>
             </select>
           </div>
 
@@ -189,7 +189,8 @@
           <div class="section-header">
             <h3>Log Telemetry</h3>
           </div>
-          <div class="log-grid" id="csv-log-container" style="display: flex; align-items: center; justify-content: center; padding: 15px;">
+          <div class="log-grid" id="csv-log-container"
+            style="display: flex; align-items: center; justify-content: center; padding: 15px;">
             <div id="telemetry-download-container" style="text-align: center; color: #7f8c8d;">
               Pilih race di atas untuk mengunduh log...
             </div>
@@ -361,17 +362,17 @@
         pointCtx.beginPath();
         pointCtx.arc(x, y, 10, 0, Math.PI * 2);
         pointCtx.fill(); pointCtx.stroke();
-        
+
         pointCtx.shadowBlur = 0;
         pointCtx.fillStyle = '#ffffff';
         pointCtx.font = 'bold 10px Rajdhani, sans-serif';
-        
+
         let label = `WP${logicalIndex + 1}`;
         if (logicalIndex === 0) label = 'START';
         if (logicalIndex === 6) label = 'CAM1';
         if (logicalIndex === 7) label = 'CAM2';
         if (logicalIndex === 8) label = 'DOCK';
-        
+
         pointCtx.fillText(label, x, y + 22);
 
         pointCtx.restore();
@@ -394,7 +395,7 @@
       function drawAll(targetPointIndex) {
         lineCtx.clearRect(0, 0, 800, 500);
         pointCtx.clearRect(0, 0, 800, 500);
-        
+
         // 1. Gambar GARIS LINTASAN HANYA dari 0 sampai targetPointIndex
         for (let i = 1; i <= targetPointIndex && i < predefinedPoints.length; i++) {
           drawLine(

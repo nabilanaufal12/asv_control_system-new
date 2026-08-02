@@ -28,31 +28,26 @@ class VideoView(QWidget):
     def __init__(self, config, parent=None):
         super().__init__(parent)
 
-        self.is_camera_running = False
+        self.is_camera_running = True
 
         # --- UI SETUP ---
-        self.start_stop_button = QPushButton("Start Stream")
-        self.invert_button = QPushButton("Invert Logic")
+        self.start_stop_button = QPushButton("Stop Stream")
+        self.invert_button = QPushButton("Swap Camera")
         self.invert_button.setCheckable(True)
-        self.invert_button.setEnabled(False)
+        self.invert_button.setEnabled(True)
 
         try:
             assets_path = os.path.join(os.path.dirname(__file__), "..", "assets")
             self.play_icon = QIcon(os.path.join(assets_path, "play-circle.svg"))
             self.pause_icon = QIcon(os.path.join(assets_path, "pause-circle.svg"))
-            self.start_stop_button.setIcon(self.play_icon)
+            self.start_stop_button.setIcon(self.pause_icon)
         except Exception:
             pass
 
-        control_layout = QHBoxLayout()
-        control_layout.addStretch()
-        control_layout.addWidget(self.invert_button)
-        control_layout.addWidget(self.start_stop_button)
-
-        self.label_video_1 = QLabel("Stream nonaktif.")
+        self.label_video_1 = QLabel("Menunggu stream...")
         self._style_label(self.label_video_1)
 
-        self.label_video_2 = QLabel("Stream nonaktif.")
+        self.label_video_2 = QLabel("Menunggu stream...")
         self._style_label(self.label_video_2)
 
         video_splitter = QSplitter(Qt.Horizontal)
@@ -60,7 +55,6 @@ class VideoView(QWidget):
         video_splitter.addWidget(self.label_video_2)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(control_layout)
         layout.addWidget(video_splitter, 1)
         self.setLayout(layout)
 

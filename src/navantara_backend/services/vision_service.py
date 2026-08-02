@@ -164,10 +164,12 @@ class VisionService:
         # --- [CRITICAL: LABEL MAPPING] ---
         # Menjembatani perbedaan label Model Baru vs Logika asv_handler
         self.LABEL_MAP = {
+            "Blue_Ball": "bola-biru",
             "Blue_Box": "kotak-biru",
             "Green_Ball": "bola-hijau",
             "Green_Box": "kotak-hijau",
             "Red_Ball": "bola-merah",
+            "Red_Box": "kotak-merah",  # Jaga-jaga jika ada Red Box di masa depan
         }
         # ---------------------------------
 
@@ -184,7 +186,7 @@ class VisionService:
 
         # Pengaturan awal
         self.gui_is_listening = False
-        self.is_inverted = False
+        self.camera_swapped = False
 
         # Pengaturan dari config.json
         # [MODIFIKASI] Dukungan string path (udev) dengan fallback ke index lama
@@ -460,29 +462,59 @@ class VisionService:
         # Fungsi helper untuk inisialisasi kamera
         def init_camera(source):
             try:
-                # Coba buka sebentar untuk tes
-                temp = cv2.VideoCapture(source)
-                if not temp.isOpened():
-                    print(f"[{cam_id_log}] Gagal membuka device {source} (Not Opened).")
-                    return None
-                temp.release()
-
-                # Inisialisasi ThreadedCamera dengan source yang sesuai
+                # Inisialisasi ThreadedCamera langsung untuk menghindari double-open
+                # yang dapat menyebabkan resource lock pada driver V4L2 di Linux
                 new_cap = ThreadedCamera(source)
+
+                if (
+                    not getattr(new_cap, "capture", None)
+                    or not new_cap.capture.isOpened()
+                ):
+                    print(f"[{cam_id_log}] Gagal membuka device {source} (Not Opened).")
+                    new_cap.stop()
+                    return None
+
                 print(f"[{cam_id_log}] Kamera berhasil diinisialisasi (Re-init).")
                 return new_cap
             except Exception as e:
                 print(f"[{cam_id_log}] Exception saat init kamera: {e}")
                 return None
 
-        # Inisialisasi awal menggunakan cam_src (bisa string path atau int)
-        cap = init_camera(cam_src)
+        # Fungsi untuk mengecek source kamera yang seharusnya
+        def get_target_src():
+            is_swapped = getattr(self, "camera_swapped", False)
+            if apply_detection:
+                return self.camera_src_2 if is_swapped else self.camera_src_1
+            else:
+                return self.camera_src_1 if is_swapped else self.camera_src_2
+
+        # Inisialisasi awal
+        current_opened_src = get_target_src()
+        cap = init_camera(current_opened_src)
 
         # Settingan GUI
         GUI_SKIP_RATE = 5
         frame_counter = 0
 
         while self.running:
+            # --- CEK SWAP KAMERA SECARA DINAMIS ---
+            target_src = get_target_src()
+            if target_src != current_opened_src:
+                print(
+                    f"[{cam_id_log}] Swap Kamera terdeteksi! Mengubah source {current_opened_src} -> {target_src}"
+                )
+                if cap:
+                    try:
+                        cap.stop()
+                    except:
+                        pass
+                    cap = None
+                eventlet.sleep(0.5)
+                current_opened_src = target_src
+                cap = init_camera(current_opened_src)
+                consecutive_failures = 0
+                continue
+
             frame_valid = False
             frame_to_process = None
 
@@ -524,7 +556,7 @@ class VisionService:
                     eventlet.sleep(RECONNECT_DELAY)
 
                     # 3. Coba buat instance baru dengan source yang sama
-                    cap = init_camera(cam_src)
+                    cap = init_camera(current_opened_src)
 
                     # Reset counter agar tidak spam reset jika kamera benar-benar mati
                     consecutive_failures = 0
@@ -679,7 +711,7 @@ class VisionService:
 
         # 3. Penyimpanan File
         filename = f"{filename_prefix}_{image_count}.jpg"
-        if hasattr(self.asv_handler, 'logger') and self.asv_handler.logger:
+        if hasattr(self.asv_handler, "logger") and self.asv_handler.logger:
             save_dir = self.asv_handler.logger.get_current_capture_dir()
         else:
             save_dir = os.path.join(os.getcwd(), "logs", "captures")
@@ -971,8 +1003,10 @@ class VisionService:
             if cls in [
                 "bola-merah",
                 "bola-hijau",
+                "bola-biru",
                 "kotak-hijau",
                 "kotak-biru",
+                "kotak-merah",
             ]:
                 valid_buoys.append(det)
 
@@ -1072,7 +1106,7 @@ class VisionService:
             snapshot = frame_to_use
 
         filename = f"{filename_prefix}_{image_count}.jpg"
-        if hasattr(self.asv_handler, 'logger') and self.asv_handler.logger:
+        if hasattr(self.asv_handler, "logger") and self.asv_handler.logger:
             save_dir = self.asv_handler.logger.get_current_capture_dir()
         else:
             save_dir = os.path.join(os.getcwd(), "logs", "captures")
@@ -1095,7 +1129,7 @@ class VisionService:
             if self.gui_is_listening != status:
                 self.gui_is_listening = status
 
-    def set_inversion(self, payload: dict):
-        is_inverted = payload.get("inverted", False)
+    def set_camera_swap(self, swapped: bool):
         with self.settings_lock:
-            self.is_inverted = is_inverted
+            self.camera_swapped = swapped
+            print(f"[VisionService] Camera Swapped state set to: {swapped}")

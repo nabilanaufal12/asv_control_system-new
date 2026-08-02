@@ -182,13 +182,15 @@ def create_app():
 
             races = []
             for entry in os.listdir(logs_dir):
-                if entry.startswith("race_") and os.path.isdir(os.path.join(logs_dir, entry)):
+                if entry.startswith("race_") and os.path.isdir(
+                    os.path.join(logs_dir, entry)
+                ):
                     try:
                         num = int(entry.split("_")[1])
                         races.append({"id": num, "name": f"Race {num}"})
                     except ValueError:
                         continue
-            
+
             # Urutkan berdasarkan id desc
             races.sort(key=lambda x: x["id"], reverse=True)
             return jsonify(races)
@@ -205,21 +207,22 @@ def create_app():
             race_id = request.args.get("race_id")
             if not race_id:
                 return jsonify({"error": "Missing race_id param"}), 400
-                
+
             race_dir = os.path.join(os.getcwd(), "logs", f"race_{race_id}")
             if not os.path.exists(race_dir):
                 return jsonify({"error": "Race not found"}), 404
-            
+
             # 1. Parse Telemetry
             csv_path = os.path.join(race_dir, "telemetry", "mission_data.csv")
             telemetry_data = []
             if os.path.exists(csv_path):
                 import csv
+
                 with open(csv_path, "r") as f:
                     reader = csv.DictReader(f)
                     for row in reader:
                         telemetry_data.append(row)
-            
+
             # 2. Parse Captures
             captures_dir = os.path.join(race_dir, "captures")
             filenames = []
@@ -228,12 +231,9 @@ def create_app():
                 full_paths = glob.glob(search_path)
                 filenames = [os.path.basename(f) for f in full_paths]
                 filenames.sort()
-                
-            return jsonify({
-                "telemetry": telemetry_data,
-                "captures": filenames
-            })
-            
+
+            return jsonify({"telemetry": telemetry_data, "captures": filenames})
+
         except Exception as e:
             print(f"[API Log] Error parsing race data for {race_id}: {e}")
             return jsonify({"error": str(e)}), 500
@@ -249,7 +249,7 @@ def create_app():
 
             with current_app.asv_handler.state_lock:
                 data_copy = asdict(state_data)
-                
+
             # Sisipkan captures terbaru (opsional untuk REST API, tapi baik untuk konsistensi)
             try:
                 captures_dir = current_app.asv_handler.logger.get_current_capture_dir()
@@ -310,7 +310,9 @@ def create_app():
         Endpoint API HTTP untuk mengambil daftar file gambar galeri dari race tertentu sebagai JSON.
         """
         try:
-            captures_dir = os.path.join(os.getcwd(), "logs", f"race_{race_id}", "captures")
+            captures_dir = os.path.join(
+                os.getcwd(), "logs", f"race_{race_id}", "captures"
+            )
             search_path = os.path.join(captures_dir, "*.jpg")
             full_paths = glob.glob(search_path)
             filenames = [os.path.basename(f) for f in full_paths]
@@ -322,7 +324,7 @@ def create_app():
                 jsonify({"error": str(e), "message": "Gagal mencari galeri."}),
                 500,
             )
-            
+
     @app.route("/api/gallery/live")
     def get_gallery_live():
         try:
@@ -353,10 +355,12 @@ def create_app():
                 while True:
                     with current_app.asv_handler.state_lock:
                         data = asdict(current_app.asv_handler.current_state)
-                        
+
                     # Sisipkan nama-nama file gambar terkini ke payload SSE
                     try:
-                        captures_dir = current_app.asv_handler.logger.get_current_capture_dir()
+                        captures_dir = (
+                            current_app.asv_handler.logger.get_current_capture_dir()
+                        )
                         search_path = os.path.join(captures_dir, "*.jpg")
                         full_paths = glob.glob(search_path)
                         filenames = [os.path.basename(f) for f in full_paths]

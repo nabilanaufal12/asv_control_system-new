@@ -327,11 +327,13 @@ class AsvHandler:
                 if mode:
                     # Deteksi transisi dari MANUAL ke AUTO untuk membuat folder race_x baru
                     if self.current_state.control_mode == "MANUAL" and mode == "AUTO":
-                        logging.info("[AsvHandler] Mode berubah MANUAL -> AUTO. Membuat Race Session baru.")
+                        logging.info(
+                            "[AsvHandler] Mode berubah MANUAL -> AUTO. Membuat Race Session baru."
+                        )
                         self.logger.start_new_race()
-                    
+
                     self.current_state.control_mode = mode
-                
+
                 if mode == "MANUAL":
                     self.current_state.manual_servo_cmd = data.get("servo_out")
                     self.current_state.manual_motor_cmd = data.get("motor_out")
@@ -653,6 +655,7 @@ class AsvHandler:
             "UPDATE_VISION_FRONT_MOTOR": self._handle_update_vision_front_motor,
             "UPDATE_VISION_SERVO": self._handle_update_vision_servo,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
+            "SWAP_CAMERAS": self._handle_swap_cameras,
             "INVERSE_SERVO": self._handle_inverse_servo,
             "SET_INVERSION": self._handle_set_inversion,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
@@ -735,6 +738,18 @@ class AsvHandler:
             if self.current_state.inverse_servo != new_state:
                 self.current_state.inverse_servo = new_state
                 logging.info(f"[AsvHandler] Kontrol Inversi diatur ke: {new_state}")
+
+    def _handle_swap_cameras(self, payload):
+        with self.state_lock:
+            if hasattr(self, "vision_service") and self.vision_service:
+                self.vision_service.set_camera_swap(payload.get("swapped", False))
+                logging.info(
+                    f"[AsvHandler] Perintah Swap Kamera diteruskan ke VisionService: {payload}"
+                )
+            else:
+                logging.warning(
+                    "[AsvHandler] vision_service belum di-inject, gagal swap kamera"
+                )
 
     def _handle_inverse_servo(self, payload):
         with self.state_lock:

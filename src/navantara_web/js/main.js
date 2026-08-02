@@ -218,7 +218,7 @@ async function fetchCsvLogList() {
     if (!response.ok) throw new Error('Gagal mengambil data race');
 
     const races = await response.json();
-    raceSelector.innerHTML = '<option value="">-- Pilih Race --</option>';
+    raceSelector.innerHTML = '<option value="">Pilih Race</option>';
 
     if (races.length > 0) {
       races.forEach(race => {
@@ -232,8 +232,8 @@ async function fetchCsvLogList() {
         return (parseInt(prev.id) > parseInt(current.id)) ? prev : current;
       });
       raceSelector.value = latestRace.id;
-      // loadRace(latestRace.id); // DIMATIKAN agar tidak langsung muncul semua titik
-      
+      loadRace(latestRace.id);
+
       console.log("Dashboard siap. Menunggu data live dari ESP32...");
     }
 
@@ -250,11 +250,9 @@ function switchToLiveMode() {
 }
 
 async function loadRace(raceId) {
-  isLiveMode = false;
   currentHistoryRaceId = raceId;
-  
-  console.log(`Switched to HISTORY mode: Race ${raceId}`);
-  
+  console.log(`Loading gallery & logs for Race ${raceId}`);
+
   const dlContainer = document.getElementById('telemetry-download-container');
   if (dlContainer) {
     dlContainer.innerHTML = '<span style="color: #7f8c8d;">Memuat data telemetry...</span>';
@@ -264,11 +262,14 @@ async function loadRace(raceId) {
     const response = await fetch(`${SERVER_IP}/api/get-race-data?race_id=${raceId}`);
     if (response.ok) {
       const data = await response.json();
-      
+
       // Plot Telemetri dan ubah tombol download
       if (data.telemetry) {
-        window.dispatchEvent(new CustomEvent('setTrajectoryPoint', { detail: { point: data.telemetry.length } }));
-        
+        // [FIX] HAPUS dispatch event setTrajectoryPoint menggunakan data.telemetry.length
+        // karena length adalah jumlah baris CSV (ratusan), bukan index waypoint kapal.
+        // Ini yang menyebabkan tiba-tiba titik trajectory langsung muncul semua.
+        // window.dispatchEvent(new CustomEvent('setTrajectoryPoint', { detail: { point: data.telemetry.length } }));
+
         if (dlContainer) {
           const csvUrl = `${SERVER_IP}/api/races/${raceId}/download`;
           dlContainer.innerHTML = `
@@ -279,14 +280,14 @@ async function loadRace(raceId) {
           `;
         }
       }
-      
+
       // Plot Galeri Foto
       if (data.captures) {
         lastRenderedCaptures = "[]"; // paksa render ulang
         renderGallery(data.captures, raceId);
       }
     }
-  } catch(e) {
+  } catch (e) {
     console.error("Error load race data", e);
     if (dlContainer) {
       dlContainer.innerHTML = '<span style="color: #e74c3c;">Gagal memuat telemetry.</span>';
@@ -317,7 +318,7 @@ function setupLocalSocketIO(elements, icons) {
 
   eventSource.onmessage = function (event) {
     if (!isLiveMode) return;
-    
+
     // 💡 Optimasi 1: Proses parsing JSON secepatnya
     const rawData = JSON.parse(event.data);
     if (!rawData) {
@@ -661,3 +662,54 @@ function calculateDestinationPoint(lat1, lon1, bearing, distanceKm) {
   const lon2 = (lon2Rad * 180) / Math.PI;
   return { lat: lat2, lng: lon2 };
 }
+
+// --- AUTO REFRESH LOGIC ---
+// Memperbarui Dropdown Race dan Capture Results secara otomatis setiap 3 detik
+setInterval(async () => {
+  const raceSelector = document.getElementById('race-selector');
+  if (!raceSelector) return;
+
+  const currentValue = raceSelector.value;
+
+  // 1. Auto Refresh Dropdown Race
+  try {
+    const response = await fetch(`${SERVER_IP}/api/races`);
+    if (response.ok) {
+      const races = await response.json();
+
+      // Update dropdown HANYA jika jumlah race berubah (ada race baru)
+      if (races.length > 0 && races.length !== (raceSelector.options.length - 1)) {
+        raceSelector.innerHTML = '<option value="">Pilih Race</option>';
+        races.forEach(race => {
+          const option = document.createElement('option');
+          option.value = race.id;
+          option.textContent = race.name;
+          raceSelector.appendChild(option);
+        });
+
+        // Otomatis pilih race terbaru jika ada perubahan
+        const latestRace = races.reduce((prev, current) => {
+          return (parseInt(prev.id) > parseInt(current.id)) ? prev : current;
+        });
+        raceSelector.value = latestRace.id;
+
+        // Langsung muat data galeri untuk race terbaru ini
+        loadRace(latestRace.id);
+      }
+    }
+  } catch (e) { }
+
+  // 2. Auto Refresh Gallery (Pilih race yang saat ini sedang aktif di dropdown)
+  const activeValue = raceSelector.value;
+  if (activeValue) {
+    try {
+      const response = await fetch(`${SERVER_IP}/api/get-race-data?race_id=${activeValue}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.captures) {
+          renderGallery(data.captures, activeValue);
+        }
+      }
+    } catch (e) { }
+  }
+}, 3000);

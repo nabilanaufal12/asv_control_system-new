@@ -119,6 +119,15 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         # --- Sidebar Kiri (Tetap) ---
         layout_sidebar_kiri = QVBoxLayout()
+
+        # Tambahkan tombol kontrol stream di atas Camera Capture
+        from PySide6.QtWidgets import QHBoxLayout
+
+        video_ctrl_layout = QHBoxLayout()
+        video_ctrl_layout.addWidget(self.video_view.invert_button)
+        video_ctrl_layout.addWidget(self.video_view.start_stop_button)
+
+        layout_sidebar_kiri.addLayout(video_ctrl_layout)
         layout_sidebar_kiri.addWidget(self.control_panel)
         layout_sidebar_kiri.addWidget(self.settings_panel)
         layout_sidebar_kiri.addStretch()
@@ -185,6 +194,12 @@ class MainWindow(QMainWindow):
 
         self.video_view.toggle_camera_requested.connect(
             self.api_client.request_data_stream
+        )
+
+        self.video_view.inversion_changed.connect(
+            lambda is_swapped: self.api_client.send_command(
+                "SWAP_CAMERAS", {"swapped": is_swapped}
+            )
         )
 
         self.settings_panel.debug_command_sent.connect(self.api_client.send_command)
@@ -276,7 +291,7 @@ class MainWindow(QMainWindow):
         self.setFocus()
 
     def update_button_states(self):
-        # Tombol-tombol kontrol sudah dihapus. Method ini dibiarkan kosong 
+        # Tombol-tombol kontrol sudah dihapus. Method ini dibiarkan kosong
         # atau untuk keperluan tombol masa depan.
         pass
 
