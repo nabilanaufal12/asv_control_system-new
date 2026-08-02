@@ -118,7 +118,7 @@ class NavigationStatusMonitor(QGroupBox):
             self.val_sats.setStyleSheet("font-weight: bold; color: #2ecc71;")
 
         # 3. TARGET WP
-        wp_idx = data.get("nav_target_wp_index", data.get("wp_idx", "-"))
+        wp_idx = data.get("current_waypoint_index", data.get("cur_wp", data.get("wp_idx", "-")))
         self.val_wp_idx.setText(f"#{wp_idx}")
 
         # 4. JARAK WP

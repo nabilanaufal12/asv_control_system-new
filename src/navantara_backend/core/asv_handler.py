@@ -42,7 +42,6 @@ TELEMETRY_KEY_MAP = {
     "mission_time": "time",
     "rc_channels": "rc",
     "is_connected_to_serial": "conn",
-    "use_dummy_counter": "dum",
     "debug_waypoint_counter": "dbg_cnt",
     "vision_target": "vis",
     "esp_status": "esp_sts",
@@ -85,8 +84,7 @@ class AsvState:
     inversion_trigger_wp: int = 8  # Wp 6
     inverse_servo: bool = False
     active_arena: str = "A"
-    debug_waypoint_counter: int = 0
-    use_dummy_counter: bool = False
+
     esp_status: str = None
     vision_target: dict = field(default_factory=lambda: {"active": False})
     gate_target: dict = field(default_factory=lambda: {"active": False})
@@ -435,10 +433,7 @@ class AsvHandler:
                     is_arena_b = True
 
                 # 2. Tentukan Index Waypoint Efektif
-                if self.current_state.use_dummy_counter:
-                    current_effective_index = self.current_state.debug_waypoint_counter
-                else:
-                    current_effective_index = self.current_state.current_waypoint_index
+                current_effective_index = self.current_state.current_waypoint_index
 
                 # 3. Logika Trigger Dinamis
                 # Menggunakan variabel state yang bisa diupdate GUI
@@ -759,23 +754,29 @@ class AsvHandler:
 
     def _handle_debug_counter(self, payload):
         action = payload.get("action")
+        cmd = ""
+        
         with self.state_lock:
-            self.current_state.use_dummy_counter = True
+            max_points = len(self.current_state.waypoints) if self.current_state.waypoints else 99
             if action == "INC":
-                self.current_state.debug_waypoint_counter += 1
+                cmd = "C,INC\n"
+                self.current_state.current_waypoint_index += 1
             elif action == "DEC":
-                self.current_state.debug_waypoint_counter = max(
-                    0, self.current_state.debug_waypoint_counter - 1
-                )
+                cmd = "C,DEC\n"
+                self.current_state.current_waypoint_index = max(0, self.current_state.current_waypoint_index - 1)
             elif action == "RESET":
-                self.current_state.debug_waypoint_counter = 0
-            max_points_in_monitor = 9
-            self.current_state.debug_waypoint_counter = min(
-                self.current_state.debug_waypoint_counter, max_points_in_monitor
+                cmd = "C,RESET\n"
+                self.current_state.current_waypoint_index = 0
+                
+            self.current_state.current_waypoint_index = min(
+                self.current_state.current_waypoint_index, max_points
             )
-            logging.info(
-                f"[AsvHandler] Debug counter diatur ke: {self.current_state.debug_waypoint_counter}"
-            )
+
+        if hasattr(self, "serial_handler") and self.serial_handler.is_connected and cmd:
+            self.serial_handler.send_command(cmd)
+            logging.info(f"[AsvHandler] Mengirim manual waypoint update ke ESP32: {cmd.strip()}")
+        else:
+            logging.warning("[AsvHandler] Gagal mengirim manual wp update, serial tidak terhubung.")
 
     def _handle_vision_target_update(self, payload):
         with self.state_lock:

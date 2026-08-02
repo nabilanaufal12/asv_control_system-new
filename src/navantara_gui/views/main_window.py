@@ -231,9 +231,7 @@ class MainWindow(QMainWindow):
             )
         )
 
-        self.settings_panel.connect_requested.connect(
-            lambda details: self.api_client.send_command("CONFIGURE_SERIAL", details)
-        )
+
         self.waypoints_panel.send_waypoints.connect(
             lambda wps: self.api_client.send_command("SET_WAYPOINTS", wps)
         )
