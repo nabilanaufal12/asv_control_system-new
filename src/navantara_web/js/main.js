@@ -351,7 +351,7 @@ function setupLocalSocketIO(elements, icons) {
 
     // --- Render SSE Gallery Update secara otomatis tanpa setInterval ---
     if (data.captures && Array.isArray(data.captures)) {
-      renderGallery(data.captures, null);
+      renderGallery(data.captures, data.current_race_id);
     }
 
     if (arena && arena !== lastKnownArena) {
@@ -713,3 +713,28 @@ setInterval(async () => {
     } catch (e) { }
   }
 }, 3000);
+
+// --- Auto-Refresh / Auto-Reconnect Video Streams ---
+function connectCameraStream(imgId, streamUrl) {
+  const img = document.getElementById(imgId);
+  if (!img) return;
+
+  img.onload = () => {
+    // Jika berhasil dimuat, biarkan
+  };
+
+  img.onerror = () => {
+    // Jika stream gagal/putus, coba reconnect setelah 2 detik
+    setTimeout(() => {
+      img.src = `${streamUrl}?t=${new Date().getTime()}`;
+    }, 2000);
+  };
+
+  // Inisialisasi awal
+  img.src = `${streamUrl}?t=${new Date().getTime()}`;
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  connectCameraStream("cam1-feed", `${SERVER_IP}/live_video_feed`);
+  connectCameraStream("cam2-feed", `${SERVER_IP}/live_video_feed_cam2`);
+});

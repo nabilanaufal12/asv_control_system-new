@@ -80,6 +80,9 @@ class MainWindow(QMainWindow):
         # Ini akan memperbarui tombol di ControlPanel dan mengirim perintah ke Backend
         self.set_mode("AUTO")
 
+        # Load Lintasan A by default
+        self.load_predefined_mission("A")
+
         print("Memulai koneksi klien API ke server...")
         self.api_client.connect_to_server()
 

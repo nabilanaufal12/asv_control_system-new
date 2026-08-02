@@ -344,16 +344,17 @@ def create_app():
 
                     # Sisipkan nama-nama file gambar terkini ke payload SSE
                     try:
-                        captures_dir = (
-                            current_app.asv_handler.logger.get_current_capture_dir()
-                        )
+                        logger_instance = current_app.asv_handler.logger
+                        captures_dir = logger_instance.get_current_capture_dir()
                         search_path = os.path.join(captures_dir, "*.jpg")
                         full_paths = glob.glob(search_path)
                         filenames = [os.path.basename(f) for f in full_paths]
                         filenames.sort()
                         data["captures"] = filenames
+                        data["current_race_id"] = logger_instance.current_race_id
                     except Exception:
                         data["captures"] = []
+                        data["current_race_id"] = None
 
                     json_data = json.dumps(data)
 

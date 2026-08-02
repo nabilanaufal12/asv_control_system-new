@@ -84,7 +84,7 @@ class AsvState:
     manual_motor_cmd: int = 1500
     inversion_trigger_wp: int = 8  # Wp 6
     inverse_servo: bool = False
-    active_arena: str = "B"
+    active_arena: str = "A"
     debug_waypoint_counter: int = 0
     use_dummy_counter: bool = False
     esp_status: str = None

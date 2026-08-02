@@ -113,9 +113,9 @@ class NavigationStatusMonitor(QGroupBox):
         sats = data.get("nav_gps_sats", data.get("sat", 0))
         self.val_sats.setText(str(sats))
         if int(sats) < 4:
-            self.val_sats.setStyleSheet("color: red")
+            self.val_sats.setStyleSheet("font-weight: bold; color: red;")
         else:
-            self.val_sats.setStyleSheet("color: white")
+            self.val_sats.setStyleSheet("font-weight: bold; color: #2ecc71;")
 
         # 3. TARGET WP
         wp_idx = data.get("nav_target_wp_index", data.get("wp_idx", "-"))
@@ -163,13 +163,19 @@ class SensorDisplay(QGroupBox):
         row1.addWidget(self.val_heading)
         layout.addLayout(row1)
 
-        # Baris Koordinat
+        # Baris Latitude
+        row_lat = QHBoxLayout()
         self.val_lat = QLabel("0.0")
+        row_lat.addWidget(QLabel("Latitude:"))
+        row_lat.addWidget(self.val_lat)
+        layout.addLayout(row_lat)
+
+        # Baris Longitude
+        row_lon = QHBoxLayout()
         self.val_lon = QLabel("0.0")
-        layout.addWidget(QLabel("Latitude:"))
-        layout.addWidget(self.val_lat)
-        layout.addWidget(QLabel("Longitude:"))
-        layout.addWidget(self.val_lon)
+        row_lon.addWidget(QLabel("Longitude:"))
+        row_lon.addWidget(self.val_lon)
+        layout.addLayout(row_lon)
 
         # Baris Speed
         row_spd = QHBoxLayout()
