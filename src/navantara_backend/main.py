@@ -40,20 +40,6 @@ def create_app():
 
     CORS(app)
 
-    # --- [KONFIGURASI FOLDER LOG CSV] ---
-    # Menggunakan os.getcwd() agar konsisten dengan folder captures
-    csv_log_dir = os.path.join(os.getcwd(), "mission_logs")
-    print(f"[Backend] Mencari Log CSV di: {csv_log_dir}")
-
-    # Pastikan folder ada saat server start
-    if not os.path.exists(csv_log_dir):
-        try:
-            os.makedirs(csv_log_dir)
-            print(f"[Server] Folder log CSV dibuat: {csv_log_dir}")
-        except Exception as e:
-            print(f"[Server] Gagal membuat folder log CSV: {e}")
-    # ------------------------------------
-
     # --- [FIX KRITIS CORS: Preflight & Anti-Cache] ---
     @app.before_request
     def handle_options_request():

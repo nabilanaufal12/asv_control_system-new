@@ -12,7 +12,6 @@ from navantara_backend.services.serial_service import SerialHandler
 from navantara_backend.core.navigation import PIDController
 from navantara_backend.core.kalman_filter import SimpleEKF
 from navantara_backend.core.mission_logger import MissionLogger
-from navantara_backend.vision.cloud_utils import send_telemetry_to_firebase
 
 # --- [OPTIMASI KEY MINIFICATION: MAPPING DICTIONARY] ---
 # Format: "Nama Atribut Class AsvState" -> "Kode Pendek JSON"
@@ -401,8 +400,6 @@ class AsvHandler:
                 with self.state_lock:
                     rc_mode_switch = self.current_state.rc_channels[4]
                     control_mode = self.current_state.control_mode
-                    manual_servo_cmd = self.current_state.manual_servo_cmd
-                    manual_motor_cmd = self.current_state.manual_motor_cmd
 
                     waypoints = self.current_state.waypoints
                     current_waypoint_index = self.current_state.current_waypoint_index
@@ -635,9 +632,8 @@ class AsvHandler:
                 # Panggil satu baris ini saja. Logger akan otomatis format ke Day/Date/GPS/dll.
                 self.logger.log_telemetry(state_for_log)
 
-                # Update SocketIO (GUI) & Firebase
+                # Update SocketIO (GUI)
                 self._update_and_emit_state()
-                send_telemetry_to_firebase(state_for_log, self.config)
                 # ----------------------------------------
 
             except Exception as e:
@@ -939,13 +935,6 @@ class AsvHandler:
             logging.warning(
                 f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}"
             )
-
-    def stop(self):
-        self.running = False
-        self.serial_handler.disconnect()
-        self.logger.log_event("AsvHandler dihentikan.")
-        self.logger.stop()
-        logging.info("[AsvHandler] Dihentikan.")
 
     def stop(self):
         self.running = False

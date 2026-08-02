@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QVBoxLayout,
     QPushButton,
-    QHBoxLayout,
     QSizePolicy,
     QSplitter,
 )

@@ -506,7 +506,7 @@ class VisionService:
                 if cap:
                     try:
                         cap.stop()
-                    except:
+                    except Exception:
                         pass
                     cap = None
                 eventlet.sleep(0.5)

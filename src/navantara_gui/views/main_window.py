@@ -285,8 +285,6 @@ class MainWindow(QMainWindow):
         self.current_control_mode = mode
         self.api_client.send_command("CHANGE_MODE", {"mode": mode})
 
-        is_manual = mode == "MANUAL"
-
         self.update_button_states()
         self.setFocus()
 
