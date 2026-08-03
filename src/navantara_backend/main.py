@@ -15,6 +15,7 @@ from flask import (
     Response,
     stream_with_context,
     request,
+    render_template,
 )
 from flask_cors import CORS
 
@@ -33,9 +34,11 @@ def create_app():
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     src_dir = os.path.dirname(backend_dir)
     web_folder_path = os.path.join(src_dir, "navantara_web")
+    template_dir = os.path.join(web_folder_path, "templates")
+    static_dir = os.path.join(web_folder_path, "static")
 
     app = Flask(
-        __name__, template_folder=web_folder_path, static_folder=web_folder_path
+        __name__, template_folder=template_dir, static_folder=static_dir
     )
 
     CORS(app)
@@ -121,29 +124,13 @@ def create_app():
     # Daftarkan blueprint API (yang berisi /live_video_feed)
     app.register_blueprint(api_blueprint)
 
-    # --- TAMBAHAN: Route untuk menyajikan monitor1.html ---
     @app.route("/")
     def index():
-        return send_from_directory(app.template_folder, "monitor1.html")
-
-    # --------------------------------------------------------
-
-    @app.route("/local")
-    def monitor_local():
-        return send_from_directory(app.template_folder, "monitor_local.html")
-
-    # --------------------------------------------------------
+        return render_template("index.html")
 
     @app.route("/debug")
     def debug_telemetry():
-        return send_from_directory(app.template_folder, "debug_telemetry.html")
-
-    # === [FIX AKHIR] Rute untuk menyajikan halaman MapView dari HTTP ===
-    @app.route("/map_page")
-    def serve_map_page():
-        # Mengirim file index.html dari template_folder
-        # Ini penting agar Origin peta menjadi http://127.0.0.1:5000
-        return send_from_directory(app.template_folder, "index.html")
+        return render_template("debug_telemetry.html")
 
     # === AKHIR FIX AKHIR ===
 

@@ -5,12 +5,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NAVANTARA - ASV Dashboard (LOKAL - SSE)</title>
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
   <link
     href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700;800&family=Inter:wght@400;500;700;800&family=Rajdhani:wght@500;600;700&display=swap"
     rel="stylesheet" />
 
-  <link rel="stylesheet" href="lib/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='lib/leaflet/leaflet.css') }}" />
   <style>
     /* ── Inline overrides (dark tactical theme) ── */
 
@@ -66,17 +66,17 @@
   <div class="dashboard">
     <header class="header">
       <div class="header-logos-left">
-        <img src="images/umrah.png" alt="UMRAH Logo" class="logo" />
-        <img src="images/src.png" alt="SRC Logo" class="logo" />
+        <img src="{{ url_for('static', filename='images/umrah.png') }}" alt="UMRAH Logo" class="logo" />
+        <img src="{{ url_for('static', filename='images/src.png') }}" alt="SRC Logo" class="logo" />
       </div>
       <div class="header-title">
         <h1>NAVANTARA</h1>
         <h2>Universitas Maritim Raja Ali Haji</h2>
       </div>
       <div class="header-logos">
-        <img src="images/logo-kompetisi.png" alt="Competition Logo" class="logo" />
-        <img src="images/logo-kki.png" alt="KKI Logo" class="logo" />
-        <img src="images/polbeng-logo.png" alt="UMM Logo" class="logo" />
+        <img src="{{ url_for('static', filename='images/logo-kompetisi.png') }}" alt="Competition Logo" class="logo" />
+        <img src="{{ url_for('static', filename='images/logo-kki.png') }}" alt="KKI Logo" class="logo" />
+        <img src="{{ url_for('static', filename='images/polbeng-logo.png') }}" alt="UMM Logo" class="logo" />
       </div>
     </header>
 
@@ -210,8 +210,8 @@
     </div>
   </div>
 
-  <script src="lib/leaflet/leaflet.js"></script>
-  <script src="js/main.js"></script>
+  <script src="{{ url_for('static', filename='lib/leaflet/leaflet.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 
   <script>
     document.addEventListener("DOMContentLoaded", function () {
@@ -330,7 +330,7 @@
           backgroundCtx.textAlign = 'center';
           backgroundCtx.fillText('KKI 2026 — ASV TRACK', 400, 250);
         };
-        img.src = `images/Arena_${currentArena}.png`;
+        img.src = "{{ url_for('static', filename='images/') }}" + `Arena_${currentArena}.png`;
       }
 
       function drawGrid() {
