@@ -147,6 +147,7 @@ class ThreadedCamera:
 
 class VisionService:
     # --- Variabel Class untuk menyimpan frame terbaru & locks ---
+    _latest_raw_frame_cam1 = None
     _latest_processed_frame_cam1 = None
     _frame_lock_cam1 = threading.Lock()
     _latest_raw_frame_cam2 = None
@@ -580,6 +581,8 @@ class VisionService:
 
             # 1. PROSES AI (Inference)
             if apply_detection:
+                with frame_lock:
+                    VisionService._latest_raw_frame_cam1 = frame_to_process.copy()
                 try:
                     processed_frame_ai = self.process_and_control(
                         frame_to_process, is_auto
@@ -642,11 +645,10 @@ class VisionService:
         # 1. Mengambil Frame yang Tepat (Thread-Safe)
         if capture_type == "surface":
             with VisionService._frame_lock_cam1:
-                # Gunakan frame processed jika ada, tapi ini adalah gambar "bersih" dari output deteksi
-                # sebelum digambar kotak-kotak visualisasi (jika arsitekturnya benar).
-                # Jika ingin benar-benar RAW dari kamera, gunakan logika pengambilan frame mentah jika tersedia.
-                # Untuk saat ini, kita gunakan _latest_processed_frame_cam1.
-                if VisionService._latest_processed_frame_cam1 is not None:
+                # Gunakan frame mentah jika raw_mode, jika tidak gunakan processed frame
+                if raw_mode and VisionService._latest_raw_frame_cam1 is not None:
+                    frame_source = VisionService._latest_raw_frame_cam1.copy()
+                elif VisionService._latest_processed_frame_cam1 is not None:
                     frame_source = VisionService._latest_processed_frame_cam1.copy()
                 else:
                     return {

@@ -900,25 +900,30 @@ class AsvHandler:
                 arena_id = "Arena_A"
         # ----------------------------------
 
-        if not isinstance(waypoints_data, list):
-            logging.warning("[AsvHandler] Gagal set waypoints: Data tidak valid.")
-            return
+        # ----------------------------------
 
         with self.state_lock:
-            self.current_state.waypoints = waypoints_data
-            # Reset index selalu ke 0 saat load misi baru
-            self.current_state.current_waypoint_index = 0
-            self.current_state.active_arena = arena_id
-
-            # Jika GUI mengirim trigger khusus, pakai itu. Jika tidak, pertahankan yang ada.
+            # 1. Update Arena jika ada
+            if arena_id is not None:
+                self.current_state.active_arena = arena_id
+                
+            # 2. Update trigger jika ada
             if custom_trigger is not None:
                 self.current_state.inversion_trigger_wp = int(custom_trigger)
-
-            self.logger.log_event(
-                f"Waypoints dimuat (Arena: {arena_id}, Trigger Inversi Index: {self.current_state.inversion_trigger_wp}). Jml: {len(waypoints_data)}"
-            )
+                
+            # 3. Update Waypoints jika ada
+            if waypoints_data is not None:
+                if isinstance(waypoints_data, list):
+                    self.current_state.waypoints = waypoints_data
+                    self.current_state.current_waypoint_index = 0
+                    self.logger.log_event(
+                        f"Waypoints dimuat (Arena: {self.current_state.active_arena}, Trigger: {self.current_state.inversion_trigger_wp}). Jml: {len(waypoints_data)}"
+                    )
+                else:
+                    logging.warning("[AsvHandler] Gagal set waypoints: Data tidak valid (bukan list).")
+                    
             logging.info(
-                f"[Setup] Arena set to: {arena_id} (Raw: {raw_arena}) | Inversi Trigger Index: {self.current_state.inversion_trigger_wp}"
+                f"[Setup] Arena: {self.current_state.active_arena} | Inversi Trigger Index: {self.current_state.inversion_trigger_wp} | Jml Waypoints: {len(self.current_state.waypoints)}"
             )
 
     def _handle_set_photo_mission(self, payload):

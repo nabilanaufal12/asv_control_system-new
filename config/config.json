@@ -70,7 +70,7 @@
     "iou_threshold": 0.5,
     "debug": true,
     "camera_index_1": 0,
-    "camera_index_2": 2,
+    "camera_index_2": 1,
     "known_classes": [
       "bola-merah",
       "bola-hijau",

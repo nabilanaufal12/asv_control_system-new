@@ -188,7 +188,7 @@ function renderGallery(daftarGambar, raceId = null) {
       if (modal && modalImg && downloadBtn) {
         modalImg.src = imgSrc;
         downloadBtn.href = imgSrc;
-        modal.style.display = "block";
+        modal.style.display = "flex";
       }
     });
 
@@ -273,10 +273,16 @@ async function loadRace(raceId) {
         if (dlContainer) {
           const csvUrl = `${SERVER_IP}/api/races/${raceId}/download`;
           dlContainer.innerHTML = `
-            <a href="${csvUrl}" target="_blank" download class="btn-download">
-              <i class="fas fa-file-csv"></i>
-              <span>Unduh mission_data.csv<br><small style="font-size: 0.8em; font-weight: normal;">Race ${raceId}</small></span>
-            </a>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; background: rgba(10, 20, 38, 0.5); padding: 12px 18px; border: 1px solid var(--border-steel); border-radius: 8px;">
+              <div style="text-align: left; line-height: 1.3;">
+                <span style="color: var(--cyan); font-family: var(--font-mono); font-weight: bold; font-size: 1.1em;">mission_data.csv</span><br>
+                <small style="color: var(--text-secondary); font-size: 0.85em;">Data Telemetri Race ${raceId}</small>
+              </div>
+              <a href="${csvUrl}" target="_blank" download class="btn-download" style="padding: 8px 16px; font-size: 0.9em;">
+                <i class="fas fa-download"></i>
+                <span style="margin-left: 8px;">Unduh Log</span>
+              </a>
+            </div>
           `;
         }
       }
