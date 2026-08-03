@@ -803,23 +803,6 @@ class AsvHandler:
         else:
             self.serial_handler.connect(port, baud)
 
-    def _handle_update_inversion_trigger(self, payload):
-        try:
-            trigger_index = int(payload.get("index", 5))
-            trigger_index = max(0, trigger_index)
-
-            with self.state_lock:
-                self.current_state.inversion_trigger_wp = trigger_index
-
-            logging.info(
-                f"[AsvHandler] Inversion Trigger Updated: Index {trigger_index}"
-            )
-            self.logger.log_event(
-                f"Trigger Inversi disetel secara manual ke WP {trigger_index}"
-            )
-        except ValueError:
-            logging.error("[AsvHandler] Error parsing payload trigger inversi.")
-
     def _handle_swap_cameras(self, payload):
         with self.state_lock:
             if hasattr(self, "vision_service") and self.vision_service:
@@ -851,7 +834,6 @@ class AsvHandler:
     def _handle_set_waypoints(self, payload):
         waypoints_data = payload.get("waypoints")
         raw_arena = payload.get("arena") or payload.get("arena_id")
-        custom_trigger = payload.get("inversion_trigger_wp")
 
         arena_id = "Arena_A"
         if raw_arena:
@@ -870,15 +852,12 @@ class AsvHandler:
             if arena_id is not None:
                 self.current_state.active_arena = arena_id
 
-            if custom_trigger is not None:
-                self.current_state.inversion_trigger_wp = int(custom_trigger)
-
             if waypoints_data is not None:
                 if isinstance(waypoints_data, list):
                     self.current_state.waypoints = waypoints_data
                     self.current_state.current_waypoint_index = 0
                     self.logger.log_event(
-                        f"Waypoints dimuat (Arena: {self.current_state.active_arena}, Trigger: {self.current_state.inversion_trigger_wp}). Jml: {len(waypoints_data)}"
+                        f"Waypoints dimuat (Arena: {self.current_state.active_arena}). Jml: {len(waypoints_data)}"
                     )
 
                     if self.serial_handler.is_connected:
@@ -897,7 +876,7 @@ class AsvHandler:
                     )
 
             logging.info(
-                f"[Setup] Arena: {self.current_state.active_arena} | Inversi Trigger Index: {self.current_state.inversion_trigger_wp} | Jml Waypoints: {len(self.current_state.waypoints)}"
+                f"[Setup] Arena: {self.current_state.active_arena} | Jml Waypoints: {len(self.current_state.waypoints)}"
             )
 
     def _handle_set_photo_mission(self, payload):

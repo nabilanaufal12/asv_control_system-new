@@ -21,7 +21,7 @@ from flask_cors import CORS
 
 from navantara_backend.extensions import socketio
 
-# from navantara_backend.core.asv_handler import AsvHandler
+
 from navantara_backend.services.vision_service import VisionService
 from navantara_backend.api.endpoints import api_blueprint
 
@@ -37,9 +37,7 @@ def create_app():
     template_dir = os.path.join(web_folder_path, "templates")
     static_dir = os.path.join(web_folder_path, "static")
 
-    app = Flask(
-        __name__, template_folder=template_dir, static_folder=static_dir
-    )
+    app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 
     CORS(app)
 

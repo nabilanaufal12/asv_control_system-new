@@ -25,18 +25,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Slot, Qt
 
-# --- [MODIFIKASI] Menghapus import MapView dan LogPanel ---
 from navantara_gui.components.control_panel import ControlPanel
 from navantara_gui.components.dashboard import Dashboard
 from navantara_gui.components.settings_panel import SettingsPanel
 from navantara_gui.components.debug_panel import DebugPanel
 from navantara_gui.components.video_view import VideoView
-
-# MapView dihapus
 from navantara_gui.components.header import Header
 from navantara_gui.components.waypoints_panel import WaypointsPanel
 
-# LogPanel dihapus
 from navantara_gui.missions import get_lintasan_a, get_lintasan_b
 from navantara_gui.api_client import ApiClient
 
@@ -64,10 +60,7 @@ class MainWindow(QMainWindow):
         self.settings_panel = SettingsPanel(config=self.config)
         self.video_view = VideoView(config=self.config)
 
-        # --- [MODIFIKASI] Menghapus inisialisasi MapView dan LogPanel ---
-        # self.map_view = MapView(config=self.config)  <- Dihapus
         self.waypoints_panel = WaypointsPanel(config=self.config)
-        # self.log_panel = LogPanel(config=self.config) <- Dihapus
 
         self.active_manual_keys = set()
 
@@ -156,7 +149,7 @@ class MainWindow(QMainWindow):
         # Sebelumnya: self.tab_tengah = QTabWidget() ...
         # Sekarang: VideoView menjadi widget utama di tengah
 
-        # --- Sidebar Kanan (LogPanel Dihapus) ---
+        # --- Sidebar Kanan ---
         layout_sidebar_kanan = QVBoxLayout()
         layout_sidebar_kanan.setAlignment(Qt.AlignTop)
         layout_sidebar_kanan.addWidget(self.waypoints_panel)

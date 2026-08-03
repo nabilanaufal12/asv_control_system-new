@@ -7,8 +7,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QPushButton,
-    QFormLayout,
-    QLineEdit,
 )
 from PySide6.QtCore import Signal
 

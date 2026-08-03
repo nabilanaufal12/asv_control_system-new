@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QAbstractItemView,
     QFormLayout,
-     
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator, QIntValidator

@@ -145,4 +145,3 @@ class VideoView(QWidget):
 
     def update_ui_controls(self, is_running):
         self.start_stop_button.setText("Stop Stream" if is_running else "Play Stream")
-        self.invert_button.setEnabled(is_running)

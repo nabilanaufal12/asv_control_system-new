@@ -2,14 +2,12 @@
 from PySide6.QtWidgets import (
     QGroupBox,
     QVBoxLayout,
-    QTabWidget,
     QLabel,
     QSlider,
     QHBoxLayout,
     QSpinBox,
 )
 from PySide6.QtCore import Signal, Qt
-
 
 
 class SettingsPanel(QGroupBox):
