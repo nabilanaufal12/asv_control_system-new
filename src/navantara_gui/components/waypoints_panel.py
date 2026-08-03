@@ -91,22 +91,30 @@ class WaypointsPanel(QGroupBox):
         photo_mission_layout = QVBoxLayout()
 
         photo_form_layout = QFormLayout()
-        self.wp_target1_input = QLineEdit()
-        self.wp_target2_input = QLineEdit()
-        self.photo_count_input = QLineEdit()
+        self.surf_wp1_input = QLineEdit("13")
+        self.surf_wp2_input = QLineEdit("14")
+        self.under_wp1_input = QLineEdit("11")
+        self.under_wp2_input = QLineEdit("12")
+        self.photo_count_input = QLineEdit("5")
 
         int_validator = QIntValidator(self)
-        self.wp_target1_input.setValidator(int_validator)
-        self.wp_target2_input.setValidator(int_validator)
+        self.surf_wp1_input.setValidator(int_validator)
+        self.surf_wp2_input.setValidator(int_validator)
+        self.under_wp1_input.setValidator(int_validator)
+        self.under_wp2_input.setValidator(int_validator)
         self.photo_count_input.setValidator(int_validator)
 
-        self.wp_target1_input.setPlaceholderText("Start Index (Contoh: 1)")
-        self.wp_target2_input.setPlaceholderText("Stop Index (Contoh: 3)")
+        self.surf_wp1_input.setPlaceholderText("Surface Start")
+        self.surf_wp2_input.setPlaceholderText("Surface Stop")
+        self.under_wp1_input.setPlaceholderText("Underwater Start")
+        self.under_wp2_input.setPlaceholderText("Underwater Stop")
         self.photo_count_input.setPlaceholderText("Max Total Foto")
 
-        photo_form_layout.addRow("Start WP Index:", self.wp_target1_input)
-        photo_form_layout.addRow("Stop WP Index:", self.wp_target2_input)
-        photo_form_layout.addRow("Max Foto:", self.photo_count_input)
+        photo_form_layout.addRow("Surface Start WP:", self.surf_wp1_input)
+        photo_form_layout.addRow("Surface Stop WP:", self.surf_wp2_input)
+        photo_form_layout.addRow("Underwater Start WP:", self.under_wp1_input)
+        photo_form_layout.addRow("Underwater Stop WP:", self.under_wp2_input)
+        photo_form_layout.addRow("Max Foto (Masing-masing):", self.photo_count_input)
 
         self.set_photo_mission_button = QPushButton("Set Segment Mission")
         self.set_photo_mission_button.setStyleSheet(
@@ -278,33 +286,40 @@ class WaypointsPanel(QGroupBox):
     @Slot()
     def _on_set_photo_mission(self):
         """Handler untuk set misi foto segmen."""
-        wp1_text = self.wp_target1_input.text()
-        wp2_text = self.wp_target2_input.text()
+        surf1_text = self.surf_wp1_input.text()
+        surf2_text = self.surf_wp2_input.text()
+        under1_text = self.under_wp1_input.text()
+        under2_text = self.under_wp2_input.text()
         count_text = self.photo_count_input.text()
 
-        if not wp1_text or not wp2_text or not count_text:
+        if not surf1_text or not surf2_text or not under1_text or not under2_text or not count_text:
             print(
-                "[WaypointsPanel] Error: Harap isi Start Index, Stop Index, dan Jumlah Foto."
+                "[WaypointsPanel] Error: Harap isi semua field indeks dan Jumlah Foto."
             )
             return
 
         try:
-            wp1 = int(wp1_text)
-            wp2 = int(wp2_text)
+            surf1 = int(surf1_text)
+            surf2 = int(surf2_text)
+            under1 = int(under1_text)
+            under2 = int(under2_text)
             count = int(count_text)
 
             if count <= 0:
                 print("[WaypointsPanel] Error: Jumlah Foto harus > 0.")
                 return
 
-            payload = {"wp1": wp1, "wp2": wp2, "count": count}
+            payload = {
+                "surf_wp1": surf1,
+                "surf_wp2": surf2,
+                "under_wp1": under1,
+                "under_wp2": under2,
+                "count": count
+            }
             self.send_photo_mission.emit(payload)
-            print(
-                f"[WaypointsPanel] Misi Segmen dikirim: Start={wp1}, Stop={wp2}, Max={count}"
-            )
-
+            print(f"[WaypointsPanel] Sinyal send_photo_mission dipancarkan: {payload}")
         except ValueError:
-            print("[WaypointsPanel] Error: Input harus berupa angka bulat.")
+            print("[WaypointsPanel] Error: Input indeks / jumlah foto tidak valid.")
 
     # --- [HANDLER BARU] ---
     @Slot()

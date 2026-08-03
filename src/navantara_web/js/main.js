@@ -357,7 +357,11 @@ function setupLocalSocketIO(elements, icons) {
 
     // --- Render SSE Gallery Update secara otomatis tanpa setInterval ---
     if (data.captures && Array.isArray(data.captures)) {
-      renderGallery(data.captures, data.current_race_id);
+      const raceSelector = document.getElementById('race-selector');
+      // Hanya perbarui galeri dari telemetri jika user sedang tidak melihat history lama
+      if (!raceSelector || raceSelector.value == data.current_race_id || !raceSelector.value) {
+        renderGallery(data.captures, data.current_race_id);
+      }
     }
 
     if (arena && arena !== lastKnownArena) {
@@ -605,9 +609,9 @@ function setupLocalSocketIO(elements, icons) {
 
     if (elements.cogValue) {
       elements.cogValue.textContent =
-        data.nav_heading_error !== undefined
-          ? `${Math.round(Math.abs(parseFloat(data.nav_heading_error)))}°`
-          : "N/A";
+        data.heading !== undefined
+          ? `${parseFloat(data.heading).toFixed(1)}°`
+          : "0.0°";
     }
 
     updateDateTime(elements);
@@ -642,7 +646,15 @@ function setupLocalSocketIO(elements, icons) {
 
 function updateDateTime(elements) {
   const now = new Date();
-  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const days = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
   const dateOptions = { day: "2-digit", month: "2-digit", year: "numeric" };
   const timeOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
 
@@ -685,6 +697,8 @@ setInterval(async () => {
 
       // Update dropdown HANYA jika jumlah race berubah (ada race baru)
       if (races.length > 0 && races.length !== (raceSelector.options.length - 1)) {
+        const previousValue = raceSelector.value; // Simpan pilihan user
+        
         raceSelector.innerHTML = '<option value="">Pilih Race</option>';
         races.forEach(race => {
           const option = document.createElement('option');
@@ -693,14 +707,19 @@ setInterval(async () => {
           raceSelector.appendChild(option);
         });
 
-        // Otomatis pilih race terbaru jika ada perubahan
-        const latestRace = races.reduce((prev, current) => {
-          return (parseInt(prev.id) > parseInt(current.id)) ? prev : current;
-        });
-        raceSelector.value = latestRace.id;
+        const oldOptionExists = races.some(r => String(r.id) === String(previousValue));
 
-        // Langsung muat data galeri untuk race terbaru ini
-        loadRace(latestRace.id);
+        if (oldOptionExists && previousValue !== "") {
+          // Jika user sedang melihat race lama, kembalikan ke pilihannya
+          raceSelector.value = previousValue;
+        } else {
+          // Jika tidak ada pilihan atau pilihan lama hilang, pilih race terbaru
+          const latestRace = races.reduce((prev, current) => {
+            return (parseInt(prev.id) > parseInt(current.id)) ? prev : current;
+          });
+          raceSelector.value = latestRace.id;
+          loadRace(latestRace.id);
+        }
       }
     }
   } catch (e) { }

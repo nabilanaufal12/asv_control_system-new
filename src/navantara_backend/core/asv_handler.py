@@ -99,9 +99,12 @@ class AsvState:
     last_avoidance_time: float = 0.0
     last_pixel_error: float = 0.0
     resume_waypoint_on_clear: bool = False
-    photo_mission_target_wp1: int = -1
-    photo_mission_target_wp2: int = -1
-    photo_mission_qty_requested: int = 0
+    # Photo Mission Parameters
+    photo_mission_surf_wp1: int = 13
+    photo_mission_surf_wp2: int = 14
+    photo_mission_under_wp1: int = 11
+    photo_mission_under_wp2: int = 12
+    photo_mission_qty_requested: int = 5
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
     vision_auto_motor_cmd: int = 1300
@@ -833,29 +836,22 @@ class AsvHandler:
             if is_active:
                 self.current_state.vision_target.update(payload)
 
-    # ... metode-metode lain ...
-
     def _handle_manual_capture(self, payload):
         """
         Menangani perintah manual capture (Surface/Underwater)
         dengan opsi RAW (tanpa overlay).
         """
-        # Pastikan vision_service sudah di-inject dari main.py
         if not hasattr(self, "vision_service"):
             logging.error("[AsvHandler] Gagal Capture: Vision Service belum terhubung.")
             return
 
-        # --- [KODE YANG ANDA MINTA] ---
         capture_type = payload.get("type", "surface")
-        is_raw = payload.get("raw", False)  # Ambil nilai boolean, default False
+        is_raw = payload.get("raw", False)
 
-        # Panggil fungsi vision service dengan parameter baru
         result = self.vision_service.trigger_manual_capture(
             capture_type, raw_mode=is_raw
         )
-        # ------------------------------
 
-        # (Opsional) Log hasil untuk debugging
         if result.get("status") == "success":
             logging.info(
                 f"[AsvHandler] Capture Berhasil: {result.get('file')} (Mode: {result.get('mode', 'Overlaid')})"
@@ -886,10 +882,8 @@ class AsvHandler:
         else:
             self.serial_handler.connect(port, baud)
 
-    # [BARU] Handler untuk mengubah titik trigger inversi secara dinamis
     def _handle_update_inversion_trigger(self, payload):
         try:
-            # Terima input murni 0-indexed dari GUI (Strict 0-Indexed Data Contract)
             trigger_index = int(payload.get("index", 5))
             trigger_index = max(0, trigger_index)
 
@@ -906,7 +900,6 @@ class AsvHandler:
             logging.error("[AsvHandler] Error parsing payload trigger inversi.")
 
     def _handle_arm_replace_wp(self, payload):
-        """Memproses permintaan untuk membidik index tertentu via RC."""
         try:
             index = int(payload.get("index", -1))
             if index >= 0:
@@ -923,14 +916,10 @@ class AsvHandler:
         raw_arena = payload.get("arena") or payload.get("arena_id")
         custom_trigger = payload.get("inversion_trigger_wp")
 
-        # --- [FIX KRITIS DETEKSI ARENA] ---
-        # Masalah Lama: Kata "ARENA" mengandung huruf "A", jadi logika lama gagal.
-        arena_id = "Arena_A"  # Default
+        arena_id = "Arena_A"
         if raw_arena:
             clean_arena = str(raw_arena).strip().upper().replace(" ", "_")
 
-            # Logika deteksi yang lebih kuat
-            # Menangkap: "B", "ARENA_B", "LINTASAN_B", "ARENA B"
             if (
                 clean_arena == "B"
                 or clean_arena.endswith("_B")
@@ -939,20 +928,14 @@ class AsvHandler:
                 arena_id = "Arena_B"
             else:
                 arena_id = "Arena_A"
-        # ----------------------------------
-
-        # ----------------------------------
 
         with self.state_lock:
-            # 1. Update Arena jika ada
             if arena_id is not None:
                 self.current_state.active_arena = arena_id
                 
-            # 2. Update trigger jika ada
             if custom_trigger is not None:
                 self.current_state.inversion_trigger_wp = int(custom_trigger)
                 
-            # 3. Update Waypoints jika ada
             if waypoints_data is not None:
                 if isinstance(waypoints_data, list):
                     self.current_state.waypoints = waypoints_data
@@ -961,7 +944,6 @@ class AsvHandler:
                         f"Waypoints dimuat (Arena: {self.current_state.active_arena}, Trigger: {self.current_state.inversion_trigger_wp}). Jml: {len(waypoints_data)}"
                     )
                     
-                    # [SYNC KE ESP32]
                     if self.serial_handler.is_connected:
                         self.serial_handler.send_command("P,CLEAR\n")
                         for wp in waypoints_data:
@@ -976,32 +958,29 @@ class AsvHandler:
             )
 
     def _handle_set_photo_mission(self, payload):
+        """Menerima konfigurasi rentang waypoint untuk misi foto segment."""
         try:
-            wp1 = int(payload.get("wp1", -1))
-            wp2 = int(payload.get("wp2", -1))
-            count = int(payload.get("count", 0))
+            surf_wp1 = payload.get("surf_wp1", 13)
+            surf_wp2 = payload.get("surf_wp2", 14)
+            under_wp1 = payload.get("under_wp1", 11)
+            under_wp2 = payload.get("under_wp2", 12)
+            count = payload.get("count", 5)
 
             with self.state_lock:
-                self.current_state.photo_mission_target_wp1 = wp1  # Start Index
-                self.current_state.photo_mission_target_wp2 = wp2  # Stop Index
+                self.current_state.photo_mission_surf_wp1 = surf_wp1
+                self.current_state.photo_mission_surf_wp2 = surf_wp2
+                self.current_state.photo_mission_under_wp1 = under_wp1
+                self.current_state.photo_mission_under_wp2 = under_wp2
                 self.current_state.photo_mission_qty_requested = count
                 # Reset counter
-                self.current_state.photo_mission_qty_taken_1 = (
-                    0  # Kita pakai ini sebagai counter utama
-                )
-                self.current_state.photo_mission_qty_taken_2 = (
-                    0  # Tidak dipakai di mode segmen
-                )
+                self.current_state.photo_mission_qty_taken_1 = 0
+                self.current_state.photo_mission_qty_taken_2 = 0
 
-            logging.info(
-                f"[AsvHandler] Misi Segmen Foto diatur: Start WP={wp1}, Stop WP={wp2}, Max={count} foto."
+            self.logger.log_event(
+                f"[GUI Command] Set Photo Mission -> Surf: {surf_wp1}-{surf_wp2}, Under: {under_wp1}-{under_wp2}, Qty: {count}"
             )
-            self.logger.log_event(f"Misi Foto Segmen: {wp1}-{wp2}, max {count}.")
-
         except Exception as e:
-            logging.warning(
-                f"[AsvHandler] Gagal mengatur Misi Foto: {e}. Payload: {payload}"
-            )
+            logging.error(f"Error handling SET_PHOTO_MISSION: {e}")
 
     def stop(self):
         self.running = False

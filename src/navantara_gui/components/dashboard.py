@@ -63,6 +63,10 @@ class NavigationStatusMonitor(QGroupBox):
         self.val_xte = QLabel("0.0 m")
         self.val_xte.setStyleSheet("font-weight: bold;")
 
+        # Kanan: Target Bearing
+        self.lbl_tgt_brg = QLabel("Tgt Bearing:")
+        self.val_tgt_brg = QLabel("0.0°")
+
         # Menambahkan ke Layout Grid (row, col)
         # Kolom Kiri (0, 1)
         self.layout.addWidget(self.lbl_mode, 0, 0)
@@ -92,6 +96,9 @@ class NavigationStatusMonitor(QGroupBox):
 
         self.layout.addWidget(self.lbl_vision, 2, 3)
         self.layout.addWidget(self.val_vision, 2, 4)
+
+        self.layout.addWidget(self.lbl_tgt_brg, 3, 3)
+        self.layout.addWidget(self.val_tgt_brg, 3, 4)
 
         self.setLayout(self.layout)
 
@@ -136,6 +143,10 @@ class NavigationStatusMonitor(QGroupBox):
         # 5. ERROR HEADING
         err = data.get("nav_heading_error", data.get("err_hdg", 0.0))
         self.val_err_hdg.setText(f"{float(err):.1f}°")
+        
+        # 6. TARGET BEARING
+        tgt_brg = data.get("nav_target_bearing", data.get("tgt_brg", 0.0))
+        self.val_tgt_brg.setText(f"{float(tgt_brg):.1f}°")
 
         if abs(float(err)) > 20.0:
             self.val_err_hdg.setStyleSheet("font-weight: bold; color: #e74c3c;")

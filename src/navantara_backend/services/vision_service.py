@@ -914,26 +914,24 @@ class VisionService:
             current_wp = self.asv_handler.current_state.nav_target_wp_index
 
             # Ambil Konfigurasi Segmen & Kuota
-            start_wp = self.asv_handler.current_state.photo_mission_target_wp1
-            stop_wp = self.asv_handler.current_state.photo_mission_target_wp2
+            surf_wp1 = self.asv_handler.current_state.photo_mission_surf_wp1
+            surf_wp2 = self.asv_handler.current_state.photo_mission_surf_wp2
+            under_wp1 = self.asv_handler.current_state.photo_mission_under_wp1
+            under_wp2 = self.asv_handler.current_state.photo_mission_under_wp2
             qty_req = self.asv_handler.current_state.photo_mission_qty_requested
 
             # Ambil Counter Saat Ini
-            taken_1 = (
-                self.asv_handler.current_state.photo_mission_qty_taken_1
-            )  # Surface
-            taken_2 = (
-                self.asv_handler.current_state.photo_mission_qty_taken_2
-            )  # Underwater
+            taken_1 = self.asv_handler.current_state.photo_mission_qty_taken_1  # Surface
+            taken_2 = self.asv_handler.current_state.photo_mission_qty_taken_2  # Underwater
 
-            # Kondisi Dasar: Misi Aktif & Dalam Segmen
-            mission_active = start_wp != -1 and stop_wp != -1
-            in_segment = (start_wp <= current_wp) and (current_wp < stop_wp)
+            # Evaluasi In Segment
+            in_segment_surf = (surf_wp1 != -1 and surf_wp2 != -1) and (surf_wp1 <= current_wp < surf_wp2)
+            in_segment_under = (under_wp1 != -1 and under_wp2 != -1) and (under_wp1 <= current_wp < under_wp2)
 
             current_state_photo = self.asv_handler.current_state
 
-        if mission_active and in_segment:
-            # --- CEK 1: TRIGGER SURFACE (CAM1) ---
+        # --- CEK 1: TRIGGER SURFACE (CAM1) ---
+        if in_segment_surf:
             cooldown_surf_ok = (
                 current_time - self.last_auto_photo_time_surface
                 > self.photo_mission_cooldown_sec
@@ -948,12 +946,9 @@ class VisionService:
                     self.asv_handler.current_state.photo_mission_qty_taken_1 += 1
 
                 self.last_auto_photo_time_surface = current_time
-                print(
-                    f"[Mission] Auto Surface ({taken_1 + 1}/{qty_req}) di WP {current_wp}"
-                )
 
-            # --- CEK 2: TRIGGER UNDERWATER (CAM2) ---
-            # Berjalan independen dari Cek 1
+        # --- CEK 2: TRIGGER UNDERWATER (CAM2) ---
+        if in_segment_under:
             cooldown_under_ok = (
                 current_time - self.last_auto_photo_time_underwater
                 > self.photo_mission_cooldown_sec
