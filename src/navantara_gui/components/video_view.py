@@ -1,7 +1,6 @@
 # src/navantara_gui/components/video_view.py
 import cv2
 import numpy as np
-import os
 import base64
 from PySide6.QtWidgets import (
     QWidget,
@@ -31,15 +30,23 @@ class VideoView(QWidget):
 
         # --- UI SETUP ---
         self.start_stop_button = QPushButton("Stop Stream")
-        self.invert_button = QPushButton("Swap Camera")
+        self.start_stop_button.setStyleSheet(
+            "background-color: #e74c3c; color: white; font-weight: bold; padding: 5px;"
+        )
+
+        self.invert_button = QPushButton("Swap Camera (Surface ↔ UW)")
         self.invert_button.setCheckable(True)
         self.invert_button.setEnabled(True)
+        self.invert_button.setStyleSheet(
+            "background-color: #34495e; color: white; font-weight: bold; padding: 5px;"
+        )
 
-
-        self.label_video_1 = QLabel("Menunggu stream...")
+        self.label_video_1 = QLabel("SURFACE CAMERA (CAM 1)\n\n[ OFFLINE / NO SIGNAL ]")
         self._style_label(self.label_video_1)
 
-        self.label_video_2 = QLabel("Menunggu stream...")
+        self.label_video_2 = QLabel(
+            "UNDERWATER CAMERA (CAM 2)\n\n[ OFFLINE / NO SIGNAL ]"
+        )
         self._style_label(self.label_video_2)
 
         video_splitter = QSplitter(Qt.Horizontal)
@@ -56,7 +63,14 @@ class VideoView(QWidget):
     def _style_label(self, label):
         label.setAlignment(Qt.AlignCenter)
         label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        label.setStyleSheet("background-color: black; color: white; font-size: 16px;")
+        label.setStyleSheet(
+            "background-color: #1a1a1a;"
+            "color: #e74c3c;"
+            "font-family: 'Courier New', Courier, monospace;"
+            "font-size: 16px;"
+            "font-weight: bold;"
+            "border: 2px dashed #333;"
+        )
 
     @Slot(object)
     def update_frame_1(self, frame_data):

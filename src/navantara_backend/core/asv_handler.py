@@ -85,8 +85,6 @@ class AsvState:
     nav_gps_sats: int = 0
     manual_servo_cmd: int = 90
     manual_motor_cmd: int = 1500
-    inversion_trigger_wp: int = 8  # Wp 6
-    inverse_servo: bool = False
     active_arena: str = "A"
 
     esp_status: str = None
@@ -142,7 +140,7 @@ class AsvHandler:
         # Dictionary ini menyimpan value terakhir berdasarkan NAMA ASLI (long key)
         # agar logika deteksi perubahan (delta) tetap konsisten.
         self.last_emitted_state = {}
-        
+
         # Buffer untuk menerima sinkronisasi waypoint dari ESP32
         self._sync_waypoints_buffer = []
 
@@ -206,7 +204,6 @@ class AsvHandler:
             nav_target_wp_index = self.current_state.nav_target_wp_index
             rc_mode_switch = self.current_state.rc_channels[4]
             active_arena = self.current_state.active_arena
-            is_inverted = self.current_state.inverse_servo
 
             # Update status koneksi internal
             self.current_state.is_connected_to_serial = is_serial_connected
@@ -217,8 +214,7 @@ class AsvHandler:
             elif rc_mode_switch < 1500:
                 processed_status = "RC MANUAL OVERRIDE"
             elif vision_target_active:
-                inv_label = "INV" if is_inverted else "NRM"
-                processed_status = f"AI: AVOID ({active_arena}|{inv_label})"
+                processed_status = f"AI: AVOID ({active_arena})"
             elif recovering:
                 processed_status = "RECOVERING: STRAIGHTENING COURSE"
             elif control_mode == "AUTO":
@@ -285,26 +281,36 @@ class AsvHandler:
                 # Proses data secepat mungkin
                 # Logging RAW bisa dimatikan jika beban CPU terlalu tinggi
                 # logging.info(f"[Serial RAW] {line}")
-                
+
                 # [FIX SYNC] Deteksi data sinkronisasi waypoint dari ESP32
                 if line.startswith("SYNC_WP"):
                     if line == "SYNC_WP_START":
                         self._sync_waypoints_buffer = []
-                        logging.info("[AsvHandler] Mulai menerima sync waypoint dari ESP32...")
+                        logging.info(
+                            "[AsvHandler] Mulai menerima sync waypoint dari ESP32..."
+                        )
                     elif line == "SYNC_WP_END":
                         with self.state_lock:
-                            self.current_state.waypoints = list(self._sync_waypoints_buffer)
-                        
+                            self.current_state.waypoints = list(
+                                self._sync_waypoints_buffer
+                            )
+
                         # [FIX] PENTING: Emit event ke GUI agar tabel diperbarui!
-                        self.socketio.emit("sync_waypoints", self._sync_waypoints_buffer)
-                        logging.info(f"[AsvHandler] Selesai sync waypoint. Total: {len(self.current_state.waypoints)}")
+                        self.socketio.emit(
+                            "sync_waypoints", self._sync_waypoints_buffer
+                        )
+                        logging.info(
+                            f"[AsvHandler] Selesai sync waypoint. Total: {len(self.current_state.waypoints)}"
+                        )
                     else:
                         parts = line.split(",")
                         if len(parts) >= 4:
                             try:
                                 lat = float(parts[2])
                                 lon = float(parts[3])
-                                self._sync_waypoints_buffer.append({"lat": lat, "lon": lon})
+                                self._sync_waypoints_buffer.append(
+                                    {"lat": lat, "lon": lon}
+                                )
                             except ValueError:
                                 pass
                     continue
@@ -334,9 +340,7 @@ class AsvHandler:
     def _parse_json_telemetry(self, data):
         try:
             with self.state_lock:
-                self.current_state.heading = data.get(
-                    "hdg", self.current_state.heading
-                )
+                self.current_state.heading = data.get("hdg", self.current_state.heading)
                 self.current_state.speed = data.get("spd", 0.0) / 3.6
                 self.current_state.nav_gps_sats = data.get(
                     "sat", self.current_state.nav_gps_sats
@@ -374,16 +378,14 @@ class AsvHandler:
                     if status == "WAYPOINT":
                         self.current_state.nav_dist_to_wp = data.get("w_dst")
                         self.current_state.nav_xte_m = data.get("xte", 0.0)
-                        self.current_state.nav_target_bearing = data.get(
-                            "w_brg"
-                        )
+                        self.current_state.nav_target_bearing = data.get("w_brg")
                         self.current_state.nav_heading_error = data.get("w_err")
                         self.current_state.nav_servo_cmd = data.get("srv")
                         self.current_state.nav_motor_cmd = data.get("mot")
                     elif status == "AI_ACTIVE":
                         self.current_state.nav_servo_cmd = data.get("srv")
                         self.current_state.nav_motor_cmd = data.get("mot")
-                
+
                 # Sinkronisasi WP Index selalu dilakukan di semua mode
                 if "w_id" in data:
                     new_idx = data.get("w_id")
@@ -460,52 +462,6 @@ class AsvHandler:
                 actuator_config = self.config.get("actuators", {})
                 servo_default = actuator_config.get("servo_default_angle", 90)
 
-                # -----------------------------------------------------------
-                # [FIX INVERSI SERVO] LOGIKA DETEKSI TRIGGER WAYPOINT
-                # -----------------------------------------------------------
-
-                # 1. Normalisasi Status Arena (Fix Bug "ARENA" contains "A")
-                raw_arena_val = (
-                    str(self.current_state.active_arena or "").strip().upper()
-                )
-                is_arena_b = False
-                # Cek apakah string diakhiri dengan B atau sama dengan B
-                if raw_arena_val == "B" or raw_arena_val.endswith("_B"):
-                    is_arena_b = True
-
-                # 2. Tentukan Index Waypoint Efektif
-                current_effective_index = self.current_state.current_waypoint_index
-
-                # 3. Logika Trigger Dinamis
-                # Menggunakan variabel state yang bisa diupdate GUI
-                trigger_threshold_index = self.current_state.inversion_trigger_wp
-
-                # Trigger aktif jika kita SEDANG MENUJU atau SUDAH LEWAT waypoint trigger
-                # Misal Trigger WP 6 (index 5). Saat current_index = 5, artinya kita OTW ke WP 6.
-                is_wp_triggered = current_effective_index >= trigger_threshold_index
-
-                # 4. Kalkulasi XOR (Exclusive OR)
-                # Arena A (0) ^ Triggered (0) = 0 (Normal)
-                # Arena A (0) ^ Triggered (1) = 1 (Inverted) -> Misal mau inversi di akhir lintasan A
-                # Arena B (1) ^ Triggered (0) = 1 (Inverted Awal)
-                # Arena B (1) ^ Triggered (1) = 0 (Normal Kembali)
-                final_inversion_state = is_arena_b ^ is_wp_triggered
-
-                # 5. Update State
-                with self.state_lock:
-                    prev_inversion = self.current_state.inverse_servo
-                    if prev_inversion != final_inversion_state:
-                        self.current_state.inverse_servo = final_inversion_state
-
-                        mode_lbl = "INVERTED" if final_inversion_state else "NORMAL"
-                        arena_lbl = "B" if is_arena_b else "A"
-                        logging.info(
-                            f"[Logic Inversi] CHANGE -> {mode_lbl} (Arena={arena_lbl}, CurrWP={current_effective_index}, TrigWP={trigger_threshold_index+1})"
-                        )
-
-                    self.current_state.inverse_servo = final_inversion_state
-                # -----------------------------------------------------------
-
                 command_to_send = None
 
                 if rc_mode_switch < 1500:
@@ -537,29 +493,16 @@ class AsvHandler:
                         turn_direction = "STRAIGHT"
                         desc = "Neutral"
 
-                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek & Inversi)
-                        if final_inversion_state:
-                            # --- ARENA B (INVERTED) ---
-                            if obj_class in ["bola-hijau", "kotak-hijau"]:
-                                turn_direction = "RIGHT"
-                                desc = f"{obj_class} -> Menghindar Kanan (INV)"
-                            elif obj_class in ["bola-merah", "kotak-biru"]:
-                                turn_direction = "LEFT"
-                                desc = f"{obj_class} -> Menghindar Kiri (INV)"
-                            elif obj_class == "bola-biru":
-                                turn_direction = "STRAIGHT"
-                                desc = f"{obj_class} -> Target Docking (Lurus)"
-                        else:
-                            # --- ARENA A (NORMAL) ---
-                            if obj_class in ["bola-hijau", "kotak-hijau"]:
-                                turn_direction = "LEFT"
-                                desc = f"{obj_class} -> Menghindar Kiri (NRM)"
-                            elif obj_class in ["bola-merah", "kotak-biru"]:
-                                turn_direction = "RIGHT"
-                                desc = f"{obj_class} -> Menghindar Kanan (NRM)"
-                            elif obj_class == "bola-biru":
-                                turn_direction = "STRAIGHT"
-                                desc = f"{obj_class} -> Target Docking (Lurus)"
+                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek)
+                        if obj_class in ["bola-hijau", "kotak-hijau"]:
+                            turn_direction = "LEFT"
+                            desc = f"{obj_class} -> Menghindar Kiri (NRM)"
+                        elif obj_class in ["bola-merah", "kotak-biru"]:
+                            turn_direction = "RIGHT"
+                            desc = f"{obj_class} -> Menghindar Kanan (NRM)"
+                        elif obj_class == "bola-biru":
+                            turn_direction = "STRAIGHT"
+                            desc = f"{obj_class} -> Target Docking (Lurus)"
 
                         # 2. LOGIKA KEMUDI (SERVO BELAKANG & MOTOR DEPAN)
                         # Ambil tenaga motor belakang dari GUI
@@ -688,10 +631,7 @@ class AsvHandler:
             "UPDATE_VISION_SERVO": self._handle_update_vision_servo,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "SWAP_CAMERAS": self._handle_swap_cameras,
-            "INVERSE_SERVO": self._handle_inverse_servo,
-            "SET_INVERSION": self._handle_set_inversion,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
-            "UPDATE_INVERSION_TRIGGER": self._handle_update_inversion_trigger,
             "ARM_REPLACE_WP": self._handle_arm_replace_wp,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
             "MANUAL_CAPTURE": self._handle_manual_capture,
@@ -765,60 +705,41 @@ class AsvHandler:
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
 
-    def _handle_set_inversion(self, payload):
-        with self.state_lock:
-            new_state = payload.get("inverted", False)
-            if self.current_state.inverse_servo != new_state:
-                self.current_state.inverse_servo = new_state
-                logging.info(f"[AsvHandler] Kontrol Inversi diatur ke: {new_state}")
-
-    def _handle_swap_cameras(self, payload):
-        with self.state_lock:
-            if hasattr(self, "vision_service") and self.vision_service:
-                self.vision_service.set_camera_swap(payload.get("swapped", False))
-                logging.info(
-                    f"[AsvHandler] Perintah Swap Kamera diteruskan ke VisionService: {payload}"
-                )
-            else:
-                logging.warning(
-                    "[AsvHandler] vision_service belum di-inject, gagal swap kamera"
-                )
-
-    def _handle_inverse_servo(self, payload):
-        with self.state_lock:
-            if payload.get("toggle"):
-                self.current_state.inverse_servo = not self.current_state.inverse_servo
-            elif "value" in payload:
-                self.current_state.inverse_servo = bool(payload["value"])
-            logging.info(
-                f"[AsvHandler] inverse_servo diubah ke: {self.current_state.inverse_servo}"
-            )
-
     def _handle_debug_counter(self, payload):
         action = payload.get("action")
         cmd = ""
-        
+
         with self.state_lock:
-            max_points = len(self.current_state.waypoints) if self.current_state.waypoints else 99
+            max_points = (
+                len(self.current_state.waypoints)
+                if self.current_state.waypoints
+                else 99
+            )
             if action == "INC":
                 cmd = "C,INC\n"
                 self.current_state.current_waypoint_index += 1
             elif action == "DEC":
                 cmd = "C,DEC\n"
-                self.current_state.current_waypoint_index = max(0, self.current_state.current_waypoint_index - 1)
+                self.current_state.current_waypoint_index = max(
+                    0, self.current_state.current_waypoint_index - 1
+                )
             elif action == "RESET":
                 cmd = "C,RESET\n"
                 self.current_state.current_waypoint_index = 0
-                
+
             self.current_state.current_waypoint_index = min(
                 self.current_state.current_waypoint_index, max_points
             )
 
         if hasattr(self, "serial_handler") and self.serial_handler.is_connected and cmd:
             self.serial_handler.send_command(cmd)
-            logging.info(f"[AsvHandler] Mengirim manual waypoint update ke ESP32: {cmd.strip()}")
+            logging.info(
+                f"[AsvHandler] Mengirim manual waypoint update ke ESP32: {cmd.strip()}"
+            )
         else:
-            logging.warning("[AsvHandler] Gagal mengirim manual wp update, serial tidak terhubung.")
+            logging.warning(
+                "[AsvHandler] Gagal mengirim manual wp update, serial tidak terhubung."
+            )
 
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
@@ -899,15 +820,31 @@ class AsvHandler:
         except ValueError:
             logging.error("[AsvHandler] Error parsing payload trigger inversi.")
 
+    def _handle_swap_cameras(self, payload):
+        with self.state_lock:
+            if hasattr(self, "vision_service") and self.vision_service:
+                self.vision_service.set_camera_swap(payload.get("swapped", False))
+                logging.info(
+                    f"[AsvHandler] Perintah Swap Kamera diteruskan ke VisionService: {payload}"
+                )
+            else:
+                logging.warning(
+                    "[AsvHandler] vision_service belum di-inject, gagal swap kamera"
+                )
+
     def _handle_arm_replace_wp(self, payload):
         try:
             index = int(payload.get("index", -1))
             if index >= 0:
                 if self.serial_handler.is_connected:
                     self.serial_handler.send_command(f"P,ARM,{index}\n")
-                    logging.info(f"[AsvHandler] Target bidikan WP {index} dikirim ke ESP32.")
+                    logging.info(
+                        f"[AsvHandler] Target bidikan WP {index} dikirim ke ESP32."
+                    )
                 else:
-                    logging.warning("[AsvHandler] Gagal arming: Serial tidak terhubung.")
+                    logging.warning(
+                        "[AsvHandler] Gagal arming: Serial tidak terhubung."
+                    )
         except Exception as e:
             logging.error(f"[AsvHandler] Error saat arming replace wp: {e}")
 
@@ -932,10 +869,10 @@ class AsvHandler:
         with self.state_lock:
             if arena_id is not None:
                 self.current_state.active_arena = arena_id
-                
+
             if custom_trigger is not None:
                 self.current_state.inversion_trigger_wp = int(custom_trigger)
-                
+
             if waypoints_data is not None:
                 if isinstance(waypoints_data, list):
                     self.current_state.waypoints = waypoints_data
@@ -943,16 +880,22 @@ class AsvHandler:
                     self.logger.log_event(
                         f"Waypoints dimuat (Arena: {self.current_state.active_arena}, Trigger: {self.current_state.inversion_trigger_wp}). Jml: {len(waypoints_data)}"
                     )
-                    
+
                     if self.serial_handler.is_connected:
                         self.serial_handler.send_command("P,CLEAR\n")
                         for wp in waypoints_data:
-                            self.serial_handler.send_command(f"P,ADD,{wp['lat']:.6f},{wp['lon']:.6f}\n")
+                            self.serial_handler.send_command(
+                                f"P,ADD,{wp['lat']:.6f},{wp['lon']:.6f}\n"
+                            )
                         self.serial_handler.send_command("P,SAVE\n")
-                        logging.info("[AsvHandler] Waypoints kustom berhasil disinkronkan ke ESP32.")
+                        logging.info(
+                            "[AsvHandler] Waypoints kustom berhasil disinkronkan ke ESP32."
+                        )
                 else:
-                    logging.warning("[AsvHandler] Gagal set waypoints: Data tidak valid (bukan list).")
-                    
+                    logging.warning(
+                        "[AsvHandler] Gagal set waypoints: Data tidak valid (bukan list)."
+                    )
+
             logging.info(
                 f"[Setup] Arena: {self.current_state.active_arena} | Inversi Trigger Index: {self.current_state.inversion_trigger_wp} | Jml Waypoints: {len(self.current_state.waypoints)}"
             )

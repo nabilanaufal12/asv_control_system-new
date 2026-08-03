@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QAbstractItemView,
     QFormLayout,
-    QSpinBox,  # [BARU] Untuk input angka trigger
+     
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator, QIntValidator
@@ -24,12 +24,12 @@ class WaypointsPanel(QGroupBox):
     load_mission_requested = Signal(str)
     send_photo_mission = Signal(dict)
 
-    # [BARU] Sinyal untuk update trigger inversi secara dinamis
-    update_inversion_trigger = Signal(dict)
+    send_photo_mission = Signal(dict)
+
     replace_with_live_gps_requested = Signal(int)
     arm_replace_rc_requested = Signal(int)
 
-    def __init__(self, config, title="Waypoints"):
+    def __init__(self, config, title="Navigation & Waypoint Setup"):
         super().__init__(title)
         self.config = config
         self.current_arena = None  # Menyimpan arena yang sedang aktif (A/B)
@@ -37,7 +37,7 @@ class WaypointsPanel(QGroupBox):
         main_layout = QVBoxLayout()
 
         # --- 1. Predefined Missions ---
-        mission_box = QGroupBox("Predefined Missions")
+        mission_box = QGroupBox("Mission Trajectory Templates")
         mission_layout = QHBoxLayout()
         self.load_a_button = QPushButton("Load Lintasan A")
         self.load_b_button = QPushButton("Load Lintasan B")
@@ -77,17 +77,19 @@ class WaypointsPanel(QGroupBox):
         button_layout.addWidget(self.add_manual_button)
         button_layout.addWidget(self.add_current_pos_button)
         button_layout.addWidget(self.delete_button)
-        
+
         edit_button_layout = QHBoxLayout()
         self.replace_gui_button = QPushButton("Replace (Live GPS)")
-        self.replace_gui_button.setStyleSheet("background-color: #2E8B57; color: white;")
+        self.replace_gui_button.setStyleSheet(
+            "background-color: #2E8B57; color: white;"
+        )
         self.arm_rc_button = QPushButton("Arm Replace (RC)")
         self.arm_rc_button.setStyleSheet("background-color: #DC143C; color: white;")
         edit_button_layout.addWidget(self.replace_gui_button)
         edit_button_layout.addWidget(self.arm_rc_button)
 
         # --- 4. Photo Mission Box (Segmen) ---
-        photo_mission_box = QGroupBox("Misi Fotografi (Segmen)")
+        photo_mission_box = QGroupBox("Photography Mission Segments")
         photo_mission_layout = QVBoxLayout()
 
         photo_form_layout = QFormLayout()
@@ -125,23 +127,8 @@ class WaypointsPanel(QGroupBox):
         photo_mission_layout.addWidget(self.set_photo_mission_button)
         photo_mission_box.setLayout(photo_mission_layout)
 
-        # --- 5. [BARU] Konfigurasi Trigger Inversi ---
-        inversion_box = QGroupBox("Konfigurasi Inversi Servo")
-        inversion_layout = QHBoxLayout()
-
-        self.trigger_wp_input = QSpinBox()
-        self.trigger_wp_input.setRange(1, 100)
-        self.trigger_wp_input.setValue(8)  # Default ke WP 6
-        self.trigger_wp_input.setPrefix("Trigger Inv di WP: ")
-
-        self.set_trigger_btn = QPushButton("Set Trigger")
-        self.set_trigger_btn.setStyleSheet(
-            "background-color: #6A5ACD; color: white; font-weight: bold;"
-        )
-
-        inversion_layout.addWidget(self.trigger_wp_input)
-        inversion_layout.addWidget(self.set_trigger_btn)
-        inversion_box.setLayout(inversion_layout)
+        # --- 5. [DIHAPUS] Konfigurasi Trigger Inversi ---
+        # Fitur ini dihapus sesuai instruksi
 
         # --- 6. Send All Button ---
         send_layout = QHBoxLayout()
@@ -158,11 +145,10 @@ class WaypointsPanel(QGroupBox):
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
         main_layout.addLayout(edit_button_layout)
-        
-        main_layout.addLayout(send_layout)  # Dipindah ke atas misi fotografi
-        
+
+        main_layout.addLayout(send_layout)
+
         main_layout.addWidget(photo_mission_box)
-        main_layout.addWidget(inversion_box)
 
         self.setLayout(main_layout)
 
@@ -175,12 +161,9 @@ class WaypointsPanel(QGroupBox):
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
         self.set_photo_mission_button.clicked.connect(self._on_set_photo_mission)
-        
+
         self.replace_gui_button.clicked.connect(self._on_replace_gui)
         self.arm_rc_button.clicked.connect(self._on_arm_rc)
-
-        # [BARU] Koneksi tombol trigger inversi
-        self.set_trigger_btn.clicked.connect(self._on_set_inversion_trigger)
 
     def _on_replace_gui(self):
         selected = self.waypoints_list.currentRow()
@@ -292,7 +275,13 @@ class WaypointsPanel(QGroupBox):
         under2_text = self.under_wp2_input.text()
         count_text = self.photo_count_input.text()
 
-        if not surf1_text or not surf2_text or not under1_text or not under2_text or not count_text:
+        if (
+            not surf1_text
+            or not surf2_text
+            or not under1_text
+            or not under2_text
+            or not count_text
+        ):
             print(
                 "[WaypointsPanel] Error: Harap isi semua field indeks dan Jumlah Foto."
             )
@@ -314,20 +303,9 @@ class WaypointsPanel(QGroupBox):
                 "surf_wp2": surf2,
                 "under_wp1": under1,
                 "under_wp2": under2,
-                "count": count
+                "count": count,
             }
             self.send_photo_mission.emit(payload)
             print(f"[WaypointsPanel] Sinyal send_photo_mission dipancarkan: {payload}")
         except ValueError:
             print("[WaypointsPanel] Error: Input indeks / jumlah foto tidak valid.")
-
-    # --- [HANDLER BARU] ---
-    @Slot()
-    def _on_set_inversion_trigger(self):
-        """Handler untuk mengirim konfigurasi trigger inversi."""
-        # Ambil nilai (1-based dari UI)
-        wp_target = self.trigger_wp_input.value()
-
-        payload = {"index": wp_target}
-        self.update_inversion_trigger.emit(payload)
-        print(f"[WaypointsPanel] Request update trigger inversi ke WP {wp_target}")

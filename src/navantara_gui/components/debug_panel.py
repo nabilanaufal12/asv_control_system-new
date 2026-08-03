@@ -28,7 +28,7 @@ class DebugPanel(QWidget):
         main_layout = QVBoxLayout(self)
 
         # === Manual Waypoint Update ===
-        wp_control_group = QGroupBox("Manual Waypoint Update")
+        wp_control_group = QGroupBox("Mission Waypoint Override")
         wp_layout = QHBoxLayout()
 
         self.counter_plus_btn = QPushButton("Counter Plus")
@@ -43,7 +43,6 @@ class DebugPanel(QWidget):
 
         # Tambahkan ke layout utama
         main_layout.addWidget(wp_control_group)
-        main_layout.addStretch()
 
         # Hubungkan tombol ke fungsi yang memancarkan sinyal
         self.counter_plus_btn.clicked.connect(

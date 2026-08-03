@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QApplication,
     QSplitter,
+    QLabel,
 )
 from PySide6.QtCore import Slot, Qt
 
@@ -28,6 +29,7 @@ from PySide6.QtCore import Slot, Qt
 from navantara_gui.components.control_panel import ControlPanel
 from navantara_gui.components.dashboard import Dashboard
 from navantara_gui.components.settings_panel import SettingsPanel
+from navantara_gui.components.debug_panel import DebugPanel
 from navantara_gui.components.video_view import VideoView
 
 # MapView dihapus
@@ -42,7 +44,7 @@ from navantara_gui.api_client import ApiClient
 class MainWindow(QMainWindow):
     def __init__(self, config):
         super().__init__()
-        self.setWindowTitle("ASV Control System - Navantara Client (Lite Version)")
+        self.setWindowTitle("ASV Ground Control Station - Navantara")
         self.config = config
 
         self.api_client = ApiClient(config=self.config)
@@ -58,6 +60,7 @@ class MainWindow(QMainWindow):
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
         self.system_status_panel = Dashboard(config=self.config)
+        self.debug_panel = DebugPanel(config=self.config)
         self.settings_panel = SettingsPanel(config=self.config)
         self.video_view = VideoView(config=self.config)
 
@@ -122,16 +125,21 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         # --- Sidebar Kiri (Tetap) ---
         layout_sidebar_kiri = QVBoxLayout()
+        layout_sidebar_kiri.setAlignment(Qt.AlignTop)  # Pastikan semua merapat ke atas
 
-        # Tambahkan tombol kontrol stream di atas Camera Capture
-        from PySide6.QtWidgets import QHBoxLayout
+        # Tambahkan tombol kontrol stream ke dalam GroupBox
+        from PySide6.QtWidgets import QHBoxLayout, QGroupBox
 
         video_ctrl_layout = QHBoxLayout()
         video_ctrl_layout.addWidget(self.video_view.invert_button)
         video_ctrl_layout.addWidget(self.video_view.start_stop_button)
 
-        layout_sidebar_kiri.addLayout(video_ctrl_layout)
+        video_group = QGroupBox("Live Video Stream")
+        video_group.setLayout(video_ctrl_layout)
+
+        layout_sidebar_kiri.addWidget(video_group)
         layout_sidebar_kiri.addWidget(self.control_panel)
+        layout_sidebar_kiri.addWidget(self.debug_panel)
         layout_sidebar_kiri.addWidget(self.settings_panel)
         layout_sidebar_kiri.addStretch()
 
@@ -150,10 +158,9 @@ class MainWindow(QMainWindow):
 
         # --- Sidebar Kanan (LogPanel Dihapus) ---
         layout_sidebar_kanan = QVBoxLayout()
+        layout_sidebar_kanan.setAlignment(Qt.AlignTop)
         layout_sidebar_kanan.addWidget(self.waypoints_panel)
         layout_sidebar_kanan.addWidget(self.system_status_panel)
-        # layout_sidebar_kanan.addWidget(self.log_panel) <- Dihapus
-        layout_sidebar_kanan.addStretch()
 
         widget_sidebar_kanan = QWidget()
         widget_sidebar_kanan.setLayout(layout_sidebar_kanan)
@@ -164,10 +171,23 @@ class MainWindow(QMainWindow):
         scroll_area_kanan.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kanan.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
+        # --- Layout Tengah (Video & Fitur Masa Depan) ---
+        layout_tengah = QVBoxLayout()
+        layout_tengah.setAlignment(Qt.AlignTop)
+
+        # Tetapkan tinggi minimum agar video tidak menyusut saat ditarik ke atas
+        self.video_view.setMinimumHeight(450)
+
+        layout_tengah.addWidget(self.video_view)
+        layout_tengah.addStretch()  # Mendorong video ke atas, menyisakan ruang kosong di bawah
+
+        widget_tengah = QWidget()
+        widget_tengah.setLayout(layout_tengah)
+
         # --- Splitter Utama ---
         main_splitter = QSplitter(Qt.Horizontal)
         main_splitter.addWidget(scroll_area_kiri)
-        main_splitter.addWidget(self.video_view)  # Menggunakan VideoView langsung
+        main_splitter.addWidget(widget_tengah)  # Menggunakan Container Tengah
         main_splitter.addWidget(scroll_area_kanan)
 
         gui_settings = self.config.get("gui_settings", {})
@@ -187,6 +207,18 @@ class MainWindow(QMainWindow):
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+
+        # --- Persistent Status Bar Labels ---
+        self.backend_status_lbl = QLabel("GCS Backend Server: DISCONNECTED")
+        self.backend_status_lbl.setStyleSheet(
+            "font-weight: bold; color: red; margin-right: 20px;"
+        )
+
+        self.esp_status_lbl = QLabel("ASV Serial Link (ESP32): DISCONNECTED")
+        self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red;")
+
+        self.status_bar.addWidget(self.backend_status_lbl)
+        self.status_bar.addWidget(self.esp_status_lbl)
         self.status_bar.showMessage(
             "Aplikasi Siap (Lite Mode). Menunggu koneksi ke backend..."
         )
@@ -205,7 +237,7 @@ class MainWindow(QMainWindow):
             )
         )
 
-        self.settings_panel.debug_command_sent.connect(self.api_client.send_command)
+        self.debug_panel.debug_command_sent.connect(self.api_client.send_command)
 
         self.settings_panel.vision_speed_updated.connect(
             lambda val: self.api_client.send_command(
@@ -231,7 +263,6 @@ class MainWindow(QMainWindow):
             )
         )
 
-
         self.waypoints_panel.send_waypoints.connect(
             lambda wps: self.api_client.send_command("SET_WAYPOINTS", wps)
         )
@@ -240,15 +271,17 @@ class MainWindow(QMainWindow):
             self.on_connection_status_change
         )
         self.api_client.data_updated.connect(self.on_data_updated)
-        
+
         # Koneksi untuk sinkronisasi waypoint 2-arah
         self.api_client.sync_waypoints_received.connect(
             self.waypoints_panel.sync_waypoints_from_backend
         )
-        
-        self.waypoints_panel.replace_with_live_gps_requested.connect(self.on_replace_live_gps)
+
+        self.waypoints_panel.replace_with_live_gps_requested.connect(
+            self.on_replace_live_gps
+        )
         self.waypoints_panel.arm_replace_rc_requested.connect(self.on_arm_replace_rc)
-        
+
         self.waypoints_panel.load_mission_requested.connect(
             self.load_predefined_mission
         )
@@ -257,10 +290,6 @@ class MainWindow(QMainWindow):
 
         self.waypoints_panel.send_photo_mission.connect(
             lambda payload: self.api_client.send_command("SET_PHOTO_MISSION", payload)
-        )
-
-        self.waypoints_panel.update_inversion_trigger.connect(
-            lambda p: self.api_client.send_command("UPDATE_INVERSION_TRIGGER", p)
         )
 
         # --- Koneksi Capture RAW/Overlay ---
@@ -306,11 +335,24 @@ class MainWindow(QMainWindow):
     @Slot(dict)
     def on_data_updated(self, data):
         # Mendukung baik key asli maupun short-key (minified)
-        self.current_latitude = data.get("lat", data.get("latitude", self.current_latitude))
-        self.current_longitude = data.get("lon", data.get("longitude", self.current_longitude))
+        self.current_latitude = data.get(
+            "lat", data.get("latitude", self.current_latitude)
+        )
+        self.current_longitude = data.get(
+            "lon", data.get("longitude", self.current_longitude)
+        )
 
         status_text = data.get("status", "")
         self.is_rc_override = "RC MANUAL OVERRIDE" in status_text.upper()
+
+        # Update ESP32 status
+        is_esp_connected = data.get("conn", data.get("is_connected_to_serial", False))
+        if is_esp_connected:
+            self.esp_status_lbl.setText("ASV Serial Link (ESP32): CONNECTED")
+            self.esp_status_lbl.setStyleSheet("font-weight: bold; color: #2ecc71;")
+        else:
+            self.esp_status_lbl.setText("ASV Serial Link (ESP32): DISCONNECTED")
+            self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red;")
 
         # Perbarui semua panel
         self.system_status_panel.update_data(data)
@@ -326,14 +368,20 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def on_replace_live_gps(self, index):
-        if self.current_latitude is not None and self.current_longitude is not None and self.current_latitude != 0.0:
+        if (
+            self.current_latitude is not None
+            and self.current_longitude is not None
+            and self.current_latitude != 0.0
+        ):
             # Ganti baris di tabel
-            waypoint_text = f"Lat: {self.current_latitude:.6f}, Lon: {self.current_longitude:.6f}"
+            waypoint_text = (
+                f"Lat: {self.current_latitude:.6f}, Lon: {self.current_longitude:.6f}"
+            )
             item = self.waypoints_panel.waypoints_list.item(index)
             if item:
                 item.setText(waypoint_text)
                 self.waypoints_panel._emit_updated_waypoints()
-                self.waypoints_panel.send_all_waypoints() # Langsung sync ke ESP32
+                self.waypoints_panel.send_all_waypoints()  # Langsung sync ke ESP32
                 print(f"[GUI] Titik {index} diganti dengan Live GPS dan disinkronkan.")
         else:
             print("[GUI] Error: Posisi kapal belum valid untuk replace.")
@@ -344,12 +392,23 @@ class MainWindow(QMainWindow):
 
     @Slot(bool, str)
     def on_connection_status_change(self, is_connected, message):
-        self.status_bar.showMessage(message)
-        status_text = "CONNECTED" if is_connected else "DISCONNECTED"
-        status_prop = "connected" if is_connected else "disconnected"
-        self.header.connection_status_label.setText(status_text)
-        self.header.connection_status_label.setProperty("status", status_prop)
-        self.style().polish(self.header.connection_status_label)
+        # Update Backend status label
+        if is_connected:
+            self.backend_status_lbl.setText("GCS Backend Server: CONNECTED")
+            self.backend_status_lbl.setStyleSheet(
+                "font-weight: bold; color: #2ecc71; margin-right: 20px;"
+            )
+        else:
+            self.backend_status_lbl.setText("GCS Backend Server: DISCONNECTED")
+            self.backend_status_lbl.setStyleSheet(
+                "font-weight: bold; color: red; margin-right: 20px;"
+            )
+
+            # Jika backend putus, ESP32 pasti putus
+            self.esp_status_lbl.setText("ASV Serial Link (ESP32): DISCONNECTED")
+            self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red;")
+
+        self.status_bar.showMessage(message, 3000)  # Tampilkan pesan sementara 3 detik
 
     @Slot()
     def on_request_manual_capture_surface(self):

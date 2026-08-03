@@ -921,12 +921,20 @@ class VisionService:
             qty_req = self.asv_handler.current_state.photo_mission_qty_requested
 
             # Ambil Counter Saat Ini
-            taken_1 = self.asv_handler.current_state.photo_mission_qty_taken_1  # Surface
-            taken_2 = self.asv_handler.current_state.photo_mission_qty_taken_2  # Underwater
+            taken_1 = (
+                self.asv_handler.current_state.photo_mission_qty_taken_1
+            )  # Surface
+            taken_2 = (
+                self.asv_handler.current_state.photo_mission_qty_taken_2
+            )  # Underwater
 
             # Evaluasi In Segment
-            in_segment_surf = (surf_wp1 != -1 and surf_wp2 != -1) and (surf_wp1 <= current_wp < surf_wp2)
-            in_segment_under = (under_wp1 != -1 and under_wp2 != -1) and (under_wp1 <= current_wp < under_wp2)
+            in_segment_surf = (surf_wp1 != -1 and surf_wp2 != -1) and (
+                surf_wp1 <= current_wp < surf_wp2
+            )
+            in_segment_under = (under_wp1 != -1 and under_wp2 != -1) and (
+                under_wp1 <= current_wp < under_wp2
+            )
 
             current_state_photo = self.asv_handler.current_state
 

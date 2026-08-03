@@ -20,7 +20,7 @@ class NavigationStatusMonitor(QGroupBox):
     """
 
     def __init__(self):
-        super().__init__("Quick Status Monitor")
+        super().__init__("Navigation & System Status")
 
         # Gunakan Grid Layout:
         # Kolom 0: Label Kiri, Kolom 1: Nilai Kiri
@@ -132,7 +132,9 @@ class NavigationStatusMonitor(QGroupBox):
             self.val_sats.setStyleSheet("font-weight: bold; color: #2ecc71;")
 
         # 3. TARGET WP
-        wp_idx = data.get("current_waypoint_index", data.get("cur_wp", data.get("wp_idx", "-")))
+        wp_idx = data.get(
+            "current_waypoint_index", data.get("cur_wp", data.get("wp_idx", "-"))
+        )
         wp_tot = data.get("nav_esp_total_wp", data.get("wp_tot", "?"))
         self.val_wp_idx.setText(f"#{wp_idx} / {wp_tot}")
 
@@ -143,7 +145,7 @@ class NavigationStatusMonitor(QGroupBox):
         # 5. ERROR HEADING
         err = data.get("nav_heading_error", data.get("err_hdg", 0.0))
         self.val_err_hdg.setText(f"{float(err):.1f}°")
-        
+
         # 6. TARGET BEARING
         tgt_brg = data.get("nav_target_bearing", data.get("tgt_brg", 0.0))
         self.val_tgt_brg.setText(f"{float(tgt_brg):.1f}°")
@@ -168,13 +170,14 @@ class NavigationStatusMonitor(QGroupBox):
         xte = data.get("nav_xte_m", data.get("xte", 0.0))
         self.val_xte.setText(f"{float(xte):.2f} m")
 
+
 class SensorDisplay(QGroupBox):
     """
     [COMPONENT LAMA] Menampilkan data sensor mentah (Compass, GPS, Speed).
     """
 
     def __init__(self):
-        super().__init__("Sensor Data")
+        super().__init__("Telemetry & Sensor Data")
         layout = QVBoxLayout()
 
         # Baris Heading
@@ -242,9 +245,6 @@ class Dashboard(QWidget):
         # 2. Widget Monitoring Cepat (BARU)
         self.status_monitor = NavigationStatusMonitor()
         self.main_layout.addWidget(self.status_monitor)
-
-        # Spacer agar widget terdorong ke atas
-        self.main_layout.addStretch()
 
     def update_data(self, data):
         """

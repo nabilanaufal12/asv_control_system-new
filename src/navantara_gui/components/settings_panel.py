@@ -9,17 +9,14 @@ from PySide6.QtWidgets import (
     QSpinBox,
 )
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QFont
 
-from .debug_panel import DebugPanel
+
 
 class SettingsPanel(QGroupBox):
     """
-    Panel pengaturan yang menggunakan Tab untuk mengorganisir
-    berbagai macam pengaturan.
+    Panel pengaturan AI Vision.
     """
 
-    debug_command_sent = Signal(str, object)
     vision_speed_updated = Signal(int)
     vision_front_motor_updated = Signal(
         dict
@@ -27,13 +24,13 @@ class SettingsPanel(QGroupBox):
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
 
-    def __init__(self, config, title="Settings"):
+    def __init__(self, config, title="System Configuration"):
         super().__init__(title)
         self.config = config
         main_layout = QVBoxLayout()
 
         # --- [BAGIAN KONTROL AI VISION & MISI] ---
-        ai_control_group = QGroupBox("AI Vision & Mission Control")
+        ai_control_group = QGroupBox("AI Engine & Thruster Parameters")
         ai_layout = QVBoxLayout()
 
         # 1. Slider Kecepatan Motor Bawah (Utama)
@@ -107,23 +104,9 @@ class SettingsPanel(QGroupBox):
         ai_control_group.setLayout(ai_layout)
         main_layout.addWidget(ai_control_group)
 
-        # --- TAB WIDGET ---
-        self.tab_widget = QTabWidget()
-        tab_font = QFont()
-        tab_font.setPointSize(9)
-        self.tab_widget.setFont(tab_font)
-        self.tab_widget.tabBar().setUsesScrollButtons(True)
-
-        self.debug_tab = DebugPanel(config=self.config)
-
-        self.tab_widget.addTab(self.debug_tab, "Debug")
-
-        main_layout.addWidget(self.tab_widget)
         self.setLayout(main_layout)
 
         # --- KONEKSI SINYAL ---
-        self.debug_tab.debug_command_sent.connect(self.debug_command_sent.emit)
-
         # Koneksi Kontrol AI
         self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
 

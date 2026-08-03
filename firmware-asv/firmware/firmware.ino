@@ -52,7 +52,7 @@ Servo dirBawahKanan;
 double Kp = 2.0, Ki = 0.0, Kd = 0.5; // Konstanta PID
 
 // --- Waypoint Inversion Control for AI Mode ---
-const int AI_SERVO_INVERSION_INDEX = 7; 
+// Fitur inversi servo dihapus
 
 double error, lastError = 0, integral = 0;
 
@@ -549,22 +549,14 @@ void loop() {
     if (serialCommand == 'A') {
       int calculatedServoVal = ai_servo_val;
       
-      if (counter >= AI_SERVO_INVERSION_INDEX) {
-        calculatedServoVal = 180 - ai_servo_val; 
-        
-        if (calculatedServoVal > 180) calculatedServoVal = 180;
-        if (calculatedServoVal < 0) calculatedServoVal = 0;
-        
-        status = "AI_INVERTED"; 
-      } else {
-        status = "AI_ACTIVE";
-      }
-
-      // Terapkan semua nilai yang diterima dari Serial Jetson
-      finalServo           = calculatedServoVal;
-      finalMotor           = ai_motor_val; 
-      finalMotorDepanKiri  = ai_motor_depan_kiri_val;
+      // Pada mode AUTO, kontrol motor sepenuhnya dari Jetson via Serial
+      // Inversi servo otomatis berdasarkan waypoint index DITIADAKAN
+      finalServo = ai_servo_val;
+      finalMotor = ai_motor_val;
+      finalDir = 1500;
+      finalMotorDepanKiri = ai_motor_depan_kiri_val;
       finalMotorDepanKanan = ai_motor_depan_kanan_val;
+      status = "AI_ACTIVE";
       
     } 
     else if (serialCommand == 'W') {
@@ -682,9 +674,7 @@ void loop() {
   jsonDoc["m_dr"] = finalMotorDepanKanan;
   
   if (serialCommand == 'A') {
-    jsonDoc["ai_i"] = (counter >= AI_SERVO_INVERSION_INDEX);
-    jsonDoc["ai_wt"] = counter;
-    jsonDoc["ai_ws"] = AI_SERVO_INVERSION_INDEX;
+    // Mode Auto: Data inversi telah dihapus untuk menghemat bandwidth
   }
 
   jsonDoc["w_id"] = counter;

@@ -27,7 +27,7 @@ class ControlPanel(QWidget):
         layout = QVBoxLayout(self)
 
         # --- [MODIFIKASI UTAMA] Camera Capture Controls ---
-        capture_group = QGroupBox("Camera Capture")
+        capture_group = QGroupBox("Photo Capture Configuration")
         # Menggunakan Grid Layout untuk 4 tombol
         capture_layout = QGridLayout()
 
@@ -66,8 +66,6 @@ class ControlPanel(QWidget):
         capture_group.setLayout(capture_layout)
         layout.addWidget(capture_group)
         # --------------------------------------------------
-
-        layout.addStretch()
 
         # [MODIFIKASI] Koneksi tombol baru
         self.btn_surf_overlay.clicked.connect(self.surface_overlay_clicked.emit)

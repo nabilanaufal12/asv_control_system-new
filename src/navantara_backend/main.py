@@ -194,7 +194,7 @@ def create_app():
             race_dir = os.path.join(os.getcwd(), "logs", f"race_{race_id}")
             if not os.path.exists(os.path.join(race_dir, filename)):
                 return jsonify({"error": "CSV file not found"}), 404
-                
+
             return send_from_directory(race_dir, filename, as_attachment=True)
         except Exception as e:
             return jsonify({"error": str(e)}), 500

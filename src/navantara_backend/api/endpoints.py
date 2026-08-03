@@ -204,8 +204,12 @@ def handle_socket_command(json_data):
             capture_type = payload.get("type")
             is_raw = payload.get("raw", False)
             if capture_type:
-                print(f"[API] Memanggil trigger_manual_capture untuk: {capture_type} (RAW: {is_raw})")
-                current_app.vision_service.trigger_manual_capture(capture_type, raw_mode=is_raw)
+                print(
+                    f"[API] Memanggil trigger_manual_capture untuk: {capture_type} (RAW: {is_raw})"
+                )
+                current_app.vision_service.trigger_manual_capture(
+                    capture_type, raw_mode=is_raw
+                )
             else:
                 print("[API] Perintah MANUAL_CAPTURE diterima, tapi 'type' tidak ada.")
 
