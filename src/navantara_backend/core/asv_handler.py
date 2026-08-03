@@ -139,6 +139,9 @@ class AsvHandler:
         # Dictionary ini menyimpan value terakhir berdasarkan NAMA ASLI (long key)
         # agar logika deteksi perubahan (delta) tetap konsisten.
         self.last_emitted_state = {}
+        
+        # Buffer untuk menerima sinkronisasi waypoint dari ESP32
+        self._sync_waypoints_buffer = []
 
         pid_config = self.config.get("navigation", {}).get("heading_pid", {})
         self.pid_controller = PIDController(
@@ -279,6 +282,29 @@ class AsvHandler:
                 # Proses data secepat mungkin
                 # Logging RAW bisa dimatikan jika beban CPU terlalu tinggi
                 # logging.info(f"[Serial RAW] {line}")
+                
+                # [FIX SYNC] Deteksi data sinkronisasi waypoint dari ESP32
+                if line.startswith("SYNC_WP"):
+                    if line == "SYNC_WP_START":
+                        self._sync_waypoints_buffer = []
+                        logging.info("[AsvHandler] Mulai menerima sync waypoint dari ESP32...")
+                    elif line == "SYNC_WP_END":
+                        with self.state_lock:
+                            self.current_state.waypoints = list(self._sync_waypoints_buffer)
+                        
+                        # [FIX] PENTING: Emit event ke GUI agar tabel diperbarui!
+                        self.socketio.emit("sync_waypoints", self._sync_waypoints_buffer)
+                        logging.info(f"[AsvHandler] Selesai sync waypoint. Total: {len(self.current_state.waypoints)}")
+                    else:
+                        parts = line.split(",")
+                        if len(parts) >= 4:
+                            try:
+                                lat = float(parts[2])
+                                lon = float(parts[3])
+                                self._sync_waypoints_buffer.append({"lat": lat, "lon": lon})
+                            except ValueError:
+                                pass
+                    continue
 
                 try:
                     data = json.loads(line)
@@ -663,6 +689,7 @@ class AsvHandler:
             "SET_INVERSION": self._handle_set_inversion,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
             "UPDATE_INVERSION_TRIGGER": self._handle_update_inversion_trigger,
+            "ARM_REPLACE_WP": self._handle_arm_replace_wp,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
             "MANUAL_CAPTURE": self._handle_manual_capture,
         }
@@ -872,10 +899,24 @@ class AsvHandler:
             logging.info(
                 f"[AsvHandler] Inversion Trigger Updated: Index {trigger_index}"
             )
-            self.logger.log_event(f"Trigger Inversi diubah ke Index {trigger_index}")
-
+            self.logger.log_event(
+                f"Trigger Inversi disetel secara manual ke WP {trigger_index}"
+            )
         except ValueError:
-            logging.warning("[AsvHandler] Payload inversion trigger tidak valid")
+            logging.error("[AsvHandler] Error parsing payload trigger inversi.")
+
+    def _handle_arm_replace_wp(self, payload):
+        """Memproses permintaan untuk membidik index tertentu via RC."""
+        try:
+            index = int(payload.get("index", -1))
+            if index >= 0:
+                if self.serial_handler.is_connected:
+                    self.serial_handler.send_command(f"P,ARM,{index}\n")
+                    logging.info(f"[AsvHandler] Target bidikan WP {index} dikirim ke ESP32.")
+                else:
+                    logging.warning("[AsvHandler] Gagal arming: Serial tidak terhubung.")
+        except Exception as e:
+            logging.error(f"[AsvHandler] Error saat arming replace wp: {e}")
 
     def _handle_set_waypoints(self, payload):
         waypoints_data = payload.get("waypoints")
@@ -919,6 +960,14 @@ class AsvHandler:
                     self.logger.log_event(
                         f"Waypoints dimuat (Arena: {self.current_state.active_arena}, Trigger: {self.current_state.inversion_trigger_wp}). Jml: {len(waypoints_data)}"
                     )
+                    
+                    # [SYNC KE ESP32]
+                    if self.serial_handler.is_connected:
+                        self.serial_handler.send_command("P,CLEAR\n")
+                        for wp in waypoints_data:
+                            self.serial_handler.send_command(f"P,ADD,{wp['lat']:.6f},{wp['lon']:.6f}\n")
+                        self.serial_handler.send_command("P,SAVE\n")
+                        logging.info("[AsvHandler] Waypoints kustom berhasil disinkronkan ke ESP32.")
                 else:
                     logging.warning("[AsvHandler] Gagal set waypoints: Data tidak valid (bukan list).")
                     

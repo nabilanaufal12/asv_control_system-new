@@ -18,6 +18,9 @@ class ApiClient(QObject):
     # Sinyal untuk frame video (tetap menggunakan np.ndarray agar kompatibel dengan VideoView lama)
     frame_cam1_updated = Signal(np.ndarray)
     frame_cam2_updated = Signal(np.ndarray)
+    
+    # Sinyal untuk sinkronisasi waypoint dua arah
+    sync_waypoints_received = Signal(list)
 
     def __init__(self, config):
         super().__init__()
@@ -67,6 +70,14 @@ class ApiClient(QObject):
                 self.data_updated.emit(self.full_gui_state.copy())
             except Exception as e:
                 print(f"[ApiClient] Gagal memproses telemetry_update: {e}")
+                
+        @self.sio.on("sync_waypoints")
+        def on_sync_waypoints(data):
+            try:
+                self.sync_waypoints_received.emit(data)
+                print(f"[ApiClient] Menerima sync_waypoints dari ESP32 dengan {len(data)} titik.")
+            except Exception as e:
+                print(f"[ApiClient] Gagal memproses sync_waypoints: {e}")
 
         # --- [PERBAIKAN HANDLER VIDEO] ---
         @self.sio.on("frame_cam1")

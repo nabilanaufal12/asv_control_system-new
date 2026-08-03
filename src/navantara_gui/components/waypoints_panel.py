@@ -26,6 +26,8 @@ class WaypointsPanel(QGroupBox):
 
     # [BARU] Sinyal untuk update trigger inversi secara dinamis
     update_inversion_trigger = Signal(dict)
+    replace_with_live_gps_requested = Signal(int)
+    arm_replace_rc_requested = Signal(int)
 
     def __init__(self, config, title="Waypoints"):
         super().__init__(title)
@@ -75,6 +77,14 @@ class WaypointsPanel(QGroupBox):
         button_layout.addWidget(self.add_manual_button)
         button_layout.addWidget(self.add_current_pos_button)
         button_layout.addWidget(self.delete_button)
+        
+        edit_button_layout = QHBoxLayout()
+        self.replace_gui_button = QPushButton("Replace (Live GPS)")
+        self.replace_gui_button.setStyleSheet("background-color: #2E8B57; color: white;")
+        self.arm_rc_button = QPushButton("Arm Replace (RC)")
+        self.arm_rc_button.setStyleSheet("background-color: #DC143C; color: white;")
+        edit_button_layout.addWidget(self.replace_gui_button)
+        edit_button_layout.addWidget(self.arm_rc_button)
 
         # --- 4. Photo Mission Box (Segmen) ---
         photo_mission_box = QGroupBox("Misi Fotografi (Segmen)")
@@ -139,9 +149,12 @@ class WaypointsPanel(QGroupBox):
         main_layout.addLayout(input_form_layout)
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(button_layout)
+        main_layout.addLayout(edit_button_layout)
+        
+        main_layout.addLayout(send_layout)  # Dipindah ke atas misi fotografi
+        
         main_layout.addWidget(photo_mission_box)
-        main_layout.addWidget(inversion_box)  # [BARU] Tambahkan ke layout
-        main_layout.addLayout(send_layout)
+        main_layout.addWidget(inversion_box)
 
         self.setLayout(main_layout)
 
@@ -154,9 +167,27 @@ class WaypointsPanel(QGroupBox):
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
         self.set_photo_mission_button.clicked.connect(self._on_set_photo_mission)
+        
+        self.replace_gui_button.clicked.connect(self._on_replace_gui)
+        self.arm_rc_button.clicked.connect(self._on_arm_rc)
 
         # [BARU] Koneksi tombol trigger inversi
         self.set_trigger_btn.clicked.connect(self._on_set_inversion_trigger)
+
+    def _on_replace_gui(self):
+        selected = self.waypoints_list.currentRow()
+        if selected >= 0:
+            self.replace_with_live_gps_requested.emit(selected)
+        else:
+            print("[GUI] Error: Silakan pilih waypoint di tabel terlebih dahulu.")
+
+    def _on_arm_rc(self):
+        selected = self.waypoints_list.currentRow()
+        if selected >= 0:
+            self.arm_replace_rc_requested.emit(selected)
+            print(f"[GUI] Target bidikan WP {selected} diaktifkan untuk RC.")
+        else:
+            print("[GUI] Error: Silakan pilih waypoint di tabel terlebih dahulu.")
 
     def _on_load_mission(self, arena_id):
         self.current_arena = arena_id
@@ -174,6 +205,12 @@ class WaypointsPanel(QGroupBox):
     def _emit_updated_waypoints(self):
         current_waypoints = self._get_all_waypoints_from_list()
         self.waypoints_updated.emit(current_waypoints)
+
+    @Slot(list)
+    def sync_waypoints_from_backend(self, waypoints):
+        """Menerima data sinkronisasi waypoint dari backend (ESP32) dan mengisinya ke UI."""
+        print(f"[GUI] Sinkronisasi {len(waypoints)} waypoint dari ESP32...")
+        self.load_waypoints_to_list(waypoints)
 
     @Slot(float, float)
     def add_waypoint_from_pos(self, lat, lon):

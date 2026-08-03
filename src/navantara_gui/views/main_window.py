@@ -240,6 +240,15 @@ class MainWindow(QMainWindow):
             self.on_connection_status_change
         )
         self.api_client.data_updated.connect(self.on_data_updated)
+        
+        # Koneksi untuk sinkronisasi waypoint 2-arah
+        self.api_client.sync_waypoints_received.connect(
+            self.waypoints_panel.sync_waypoints_from_backend
+        )
+        
+        self.waypoints_panel.replace_with_live_gps_requested.connect(self.on_replace_live_gps)
+        self.waypoints_panel.arm_replace_rc_requested.connect(self.on_arm_replace_rc)
+        
         self.waypoints_panel.load_mission_requested.connect(
             self.load_predefined_mission
         )
@@ -296,8 +305,9 @@ class MainWindow(QMainWindow):
 
     @Slot(dict)
     def on_data_updated(self, data):
-        self.current_latitude = data.get("latitude", self.current_latitude)
-        self.current_longitude = data.get("longitude", self.current_longitude)
+        # Mendukung baik key asli maupun short-key (minified)
+        self.current_latitude = data.get("lat", data.get("latitude", self.current_latitude))
+        self.current_longitude = data.get("lon", data.get("longitude", self.current_longitude))
 
         status_text = data.get("status", "")
         self.is_rc_override = "RC MANUAL OVERRIDE" in status_text.upper()
@@ -313,6 +323,24 @@ class MainWindow(QMainWindow):
         self.waypoints_panel.add_waypoint_from_pos(
             self.current_latitude, self.current_longitude
         )
+
+    @Slot(int)
+    def on_replace_live_gps(self, index):
+        if self.current_latitude is not None and self.current_longitude is not None and self.current_latitude != 0.0:
+            # Ganti baris di tabel
+            waypoint_text = f"Lat: {self.current_latitude:.6f}, Lon: {self.current_longitude:.6f}"
+            item = self.waypoints_panel.waypoints_list.item(index)
+            if item:
+                item.setText(waypoint_text)
+                self.waypoints_panel._emit_updated_waypoints()
+                self.waypoints_panel.send_all_waypoints() # Langsung sync ke ESP32
+                print(f"[GUI] Titik {index} diganti dengan Live GPS dan disinkronkan.")
+        else:
+            print("[GUI] Error: Posisi kapal belum valid untuk replace.")
+
+    @Slot(int)
+    def on_arm_replace_rc(self, index):
+        self.api_client.send_command("ARM_REPLACE_WP", {"index": index})
 
     @Slot(bool, str)
     def on_connection_status_change(self, is_connected, message):

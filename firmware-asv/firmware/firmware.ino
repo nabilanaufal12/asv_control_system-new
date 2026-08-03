@@ -71,6 +71,7 @@ float latitudes[MAX_DATA];
 float longitudes[MAX_DATA]; 
 int dataIndex = 0; 
 int counter = 0; 
+int targetCaptureIndex = -1; // Target index untuk Replace WP via RC
 
 bool captureTriggered = false; 
 bool wasInCaptureMode = false; 
@@ -283,6 +284,37 @@ void checkSerialInput() {
               counter = 0;
             }
           }
+        } else if (serialCommand == 'P') {
+          int comma1 = serialInputBuffer.indexOf(',');
+          if (comma1 > 0) {
+            String subCmd = serialInputBuffer.substring(comma1 + 1);
+            if (subCmd == "CLEAR") {
+              clearAllData();
+              counter = 0;
+            } else if (subCmd == "SAVE") {
+              saveDataToMemory();
+              displayAllData();
+            } else if (subCmd.startsWith("ADD,")) {
+              int comma2 = subCmd.indexOf(',');
+              int comma3 = subCmd.indexOf(',', comma2 + 1);
+              if (comma2 > 0 && comma3 > 0) {
+                String latStr = subCmd.substring(comma2 + 1, comma3);
+                String lonStr = subCmd.substring(comma3 + 1);
+                if (dataIndex < MAX_DATA) {
+                  latitudes[dataIndex] = latStr.toFloat();
+                  longitudes[dataIndex] = lonStr.toFloat();
+                  dataIndex++;
+                }
+              }
+            } else if (subCmd.startsWith("ARM,")) {
+              int comma2 = subCmd.indexOf(',');
+              if (comma2 > 0) {
+                String idxStr = subCmd.substring(comma2 + 1);
+                targetCaptureIndex = idxStr.toInt();
+                Serial.println("Target bidikan RC disetel ke: " + String(targetCaptureIndex));
+              }
+            }
+          }
         }
       }
       serialInputBuffer = "";
@@ -434,27 +466,42 @@ void loop() {
     int ch8 = readChannel(7);
     finalDir = ch8;
 
-    if (ch6 >= 1400 && ch6 <= 1600) { 
+    if (ch6 > 1900) { 
+      // Posisi 3 (Bawah) - Siap-siap merekam
       if (!wasInCaptureMode) {
         Serial.println("🟡 MODE REKAM: Siap merekam waypoint baru.");
         wasInCaptureMode = true;
         captureTriggered = false;
       }
-    } else if (ch6 > 1900) { 
+    } else if (ch6 >= 1400 && ch6 <= 1600) { 
+      // Posisi 2 (Tengah) - Merekam (Capture) 1 titik
       if (wasInCaptureMode && !captureTriggered) {
         if (wasInSaveMode) {
-          clearAllData();
+          if (targetCaptureIndex == -1) {
+            clearAllData();
+            Serial.println("♻ Memulai sesi perekaman baru (Data lama dihapus).");
+          } else {
+            Serial.println("✏ Mode Replace aktif: Tidak menghapus data lama.");
+          }
           wasInSaveMode = false;
         }
         if (dataIndex >= MAX_DATA) {
           Serial.println("⚠ Memori penuh. Tidak bisa menambah titik lagi.");
         } else {
           if (myGPS.getFixType() > 0) { 
-            latitudes[dataIndex] = lat;
-            longitudes[dataIndex] = lon;
-            dataIndex++;
-            saveDataToMemory();
-            Serial.println("📍 Titik ke-" + String(dataIndex) + " direkam.");
+            if (targetCaptureIndex >= 0 && targetCaptureIndex < dataIndex) {
+              latitudes[targetCaptureIndex] = lat;
+              longitudes[targetCaptureIndex] = lon;
+              saveDataToMemory();
+              Serial.println("📍 Titik ke-" + String(targetCaptureIndex) + " diganti (Replace).");
+              targetCaptureIndex = -1; // Reset target
+            } else {
+              latitudes[dataIndex] = lat;
+              longitudes[dataIndex] = lon;
+              dataIndex++;
+              saveDataToMemory();
+              Serial.println("📍 Titik ke-" + String(dataIndex) + " direkam.");
+            }
           } else {
             Serial.println("❌ GPS belum lock. Tidak dapat menambah data.");
           }
@@ -463,10 +510,24 @@ void loop() {
       }
       wasInCaptureMode = false;
     } else if (ch6 < 1100) { 
+      // Posisi 1 (Atas) - Save semua & Sync ke GUI
       if (!wasInSaveMode) {
         saveDataToMemory();
         Serial.println("✅ Semua waypoint tersimpan.");
         displayAllData();
+        
+        // [SYNC KE JETSON] Mengirimkan semua waypoint ke Jetson untuk GUI
+        Serial.println("SYNC_WP_START");
+        for (int i = 0; i < dataIndex; i++) {
+          Serial.print("SYNC_WP,");
+          Serial.print(i);
+          Serial.print(",");
+          Serial.print(latitudes[i], 6);
+          Serial.print(",");
+          Serial.println(longitudes[i], 6);
+        }
+        Serial.println("SYNC_WP_END");
+        
         wasInSaveMode = true;
       }
       wasInCaptureMode = false;
