@@ -377,18 +377,23 @@ class MainWindow(QMainWindow):
             and self.current_longitude is not None
             and self.current_latitude != 0.0
         ):
-            # Ganti baris di tabel
-            waypoint_text = (
-                f"[{index}] Lat: {self.current_latitude:.6f}, Lon: {self.current_longitude:.6f}"
-            )
+            # Ganti baris di tabel GUI
+            waypoint_text = f"[{index}] Lat: {self.current_latitude:.6f}, Lon: {self.current_longitude:.6f}"
             item = self.waypoints_panel.waypoints_list.item(index)
             if item:
                 item.setText(waypoint_text)
                 self.waypoints_panel._emit_updated_waypoints()
-                self.waypoints_panel.send_all_waypoints()  # Langsung sync ke ESP32
-                print(f"[GUI] Titik {index} diganti dengan Live GPS dan disinkronkan.")
+
+                # Kirim sinyal spesifik REPLACE ke backend
+                waypoint = {"lat": self.current_latitude, "lon": self.current_longitude}
+                self.api_client.send_command(
+                    "REPLACE_WAYPOINT", {"index": index, "waypoint": waypoint}
+                )
+                print(f"[GUI] Titik {index} diganti satuan via Live GPS.")
         else:
-            print("[GUI] Error: Posisi kapal belum valid untuk replace.")
+            print(
+                "[GUI] Error: Posisi kapal belum valid untuk replace (GPS tidak lock)."
+            )
 
     @Slot(int)
     def on_arm_replace_rc(self, index):

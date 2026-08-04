@@ -699,7 +699,9 @@ class AsvHandler:
         """Meminta data waypoint secara paksa dari ESP32."""
         if self.serial_handler.is_connected:
             self.serial_handler.send_command("P,GET_WP\n")
-            logging.info("[AsvHandler] Mengirim permintaan sinkronisasi waypoint (P,GET_WP) ke ESP32.")
+            logging.info(
+                "[AsvHandler] Mengirim permintaan sinkronisasi waypoint (P,GET_WP) ke ESP32."
+            )
         else:
             logging.warning("[AsvHandler] Tidak bisa meminta sync WP, serial terputus.")
 
@@ -956,10 +958,12 @@ class AsvHandler:
 
                     if self.serial_handler.is_connected:
                         self.serial_handler.send_command("P,CLEAR\n")
+                        time.sleep(0.1)  # Beri waktu ESP32 menghapus memori
                         for wp in waypoints_data:
                             self.serial_handler.send_command(
                                 f"P,ADD,{wp['lat']:.6f},{wp['lon']:.6f}\n"
                             )
+                            time.sleep(0.05)  # Cegah buffer overflow ESP32
                         self.serial_handler.send_command("P,SAVE\n")
                         logging.info(
                             "[AsvHandler] Waypoints kustom berhasil disinkronkan ke ESP32."
@@ -971,6 +975,29 @@ class AsvHandler:
 
             logging.info(
                 f"[Setup] Arena: {self.current_state.active_arena} | Jml Waypoints: {len(self.current_state.waypoints)}"
+            )
+
+    def _handle_replace_waypoint(self, payload):
+        idx = payload.get("index", -1)
+        wp = payload.get("waypoint", {})
+        lat = wp.get("lat")
+        lon = wp.get("lon")
+
+        if idx >= 0 and lat is not None and lon is not None:
+            with self.state_lock:
+                if idx < len(self.current_state.waypoints):
+                    self.current_state.waypoints[idx] = {"lat": lat, "lon": lon}
+
+            if self.serial_handler.is_connected:
+                self.serial_handler.send_command(
+                    f"P,REPLACE,{idx},{lat:.6f},{lon:.6f}\n"
+                )
+                logging.info(
+                    f"[AsvHandler] Waypoint index {idx} berhasil direplace via Live GPS."
+                )
+        else:
+            logging.warning(
+                "[AsvHandler] Gagal replace waypoint: Payload tidak lengkap."
             )
 
     def _handle_set_photo_mission(self, payload):
