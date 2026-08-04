@@ -493,13 +493,27 @@ class AsvHandler:
                         turn_direction = "STRAIGHT"
                         desc = "Neutral"
 
-                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek)
+                        # Ambil nilai arena yang aktif dari state
+                        with self.state_lock:
+                            current_arena = self.current_state.active_arena
+
+                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek & Arena)
                         if obj_class in ["bola-hijau", "kotak-hijau"]:
-                            turn_direction = "LEFT"
-                            desc = f"{obj_class} -> Menghindar Kiri (NRM)"
+                            if current_arena == "Arena_B":
+                                turn_direction = "RIGHT"
+                                desc = f"{obj_class} -> Menghindar Kanan (Arena B)"
+                            else:  # Default Arena A
+                                turn_direction = "LEFT"
+                                desc = f"{obj_class} -> Menghindar Kiri (Arena A)"
+
                         elif obj_class in ["bola-merah", "kotak-biru"]:
-                            turn_direction = "RIGHT"
-                            desc = f"{obj_class} -> Menghindar Kanan (NRM)"
+                            if current_arena == "Arena_B":
+                                turn_direction = "LEFT"
+                                desc = f"{obj_class} -> Menghindar Kiri (Arena B)"
+                            else:  # Default Arena A
+                                turn_direction = "RIGHT"
+                                desc = f"{obj_class} -> Menghindar Kanan (Arena A)"
+
                         elif obj_class == "bola-biru":
                             turn_direction = "STRAIGHT"
                             desc = f"{obj_class} -> Target Docking (Lurus)"
