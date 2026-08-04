@@ -126,10 +126,6 @@ def create_app():
     def index():
         return render_template("index.html")
 
-    @app.route("/debug")
-    def debug_telemetry():
-        return render_template("debug_telemetry.html")
-
     # === AKHIR FIX AKHIR ===
 
     # --- MODIFIKASI: RUTE BARU UNTUK MENYAJIKAN GAMBAR/CSV GALERI ---

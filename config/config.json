@@ -65,7 +65,7 @@
     "obstacle_cost_gain": 1.5
   },
   "vision": {
-    "device": "cpu",
+    "device": "cuda:0",
     "conf_threshold": 0.55,
     "iou_threshold": 0.5,
     "debug": true,

@@ -230,6 +230,10 @@ def handle_socket_command(json_data):
             else:
                 print("[API] Error: Vision Service tidak tersedia.")
 
+        elif command == "UPDATE_VISION_MODEL":
+            print(f"[API] Mengganti model AI Vision: {payload}")
+            current_app.asv_handler.process_command(command, payload)
+
         # 3. Perintah Lainnya (Navigasi, dll)
         else:
             current_app.asv_handler.process_command(command, payload)
@@ -259,4 +263,20 @@ def http_manual_capture(cam_type):
 
     except Exception as e:
         traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@api_blueprint.route("/api/state", methods=["GET"])
+def get_state():
+    """
+    Mengembalikan state ASV terkini dalam format JSON.
+    Berguna untuk inspeksi, debugging, atau integrasi dengan tools eksternal.
+    Contoh: curl http://localhost:5000/api/state
+    """
+    try:
+        from dataclasses import asdict
+
+        state = asdict(current_app.asv_handler.current_state)
+        return jsonify({"status": "ok", "state": state}), 200
+    except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

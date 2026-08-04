@@ -256,6 +256,10 @@ class MainWindow(QMainWindow):
             )
         )
 
+        self.settings_panel.vision_model_updated.connect(
+            lambda m: self.api_client.send_command("UPDATE_VISION_MODEL", {"model": m})
+        )
+
         self.waypoints_panel.send_waypoints.connect(
             lambda wps: self.api_client.send_command("SET_WAYPOINTS", wps)
         )

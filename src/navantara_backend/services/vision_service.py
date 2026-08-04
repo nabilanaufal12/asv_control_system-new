@@ -179,9 +179,23 @@ class VisionService:
         self.conf_thres = float(vision_cfg.get("conf_threshold", 0.25))
         self.iou_thres = float(vision_cfg.get("iou_threshold", 0.45))
 
+        # Ambil device dari config (cuda:0 untuk GPU, cpu untuk CPU)
+        self.infer_device = vision_cfg.get("device", "cuda:0")
+
         # --- [MIGRASI: Panggil pemuat model Ultralytics] ---
         self.model = self._load_yolo_model(config)
         # ---------------------------------------------------
+
+        # Flag: apakah model yang dimuat adalah TensorRT engine?
+        self.is_tensorrt = (
+            getattr(self.model, "_is_tensorrt", False) if self.model else False
+        )
+        if self.is_tensorrt:
+            print(
+                "[VisionService] Mode: TensorRT FP16 — inferensi di GPU (device terkunci di engine)."
+            )
+        else:
+            print(f"[VisionService] Mode: PyTorch — inferensi di {self.infer_device}.")
 
         self.settings_lock = threading.Lock()
 
@@ -239,57 +253,124 @@ class VisionService:
         print("[VisionService] Layanan Visi (YOLOv11 + TensorRT Ready) diinisialisasi.")
 
     # --- [REFACTOR: SMART MODEL LOADER - BERSIH] ---
-    def _load_yolo_model(self, config):
+    def _load_yolo_model(self, config, selected_model_name=None):
         """
         Memuat model dengan urutan prioritas:
         1. best.engine (TensorRT - Tercepat)
-        2. best.pt (PyTorch Standard)
+        2. best100.engine (TensorRT Fallback)
+        3. best.pt (PyTorch Standard)
+        4. best100.pt (PyTorch Fallback)
         """
         try:
             # Path relatif ke folder src/navantara_backend/vision/
             vision_dir = Path(__file__).parent.parent / "vision"
 
             engine_path = vision_dir / "best.engine"
+            engine100_path = vision_dir / "best100.engine"
             pt_path = vision_dir / "best.pt"
+            pt100_path = vision_dir / "best100.pt"
 
             model_path = None
             task_msg = ""
 
-            # 1. Cek TensorRT (.engine) - PRIORITAS UTAMA
-            if engine_path.exists():
-                print(f"[VisionService] MENEMUKAN MODEL TENSORRT: {engine_path}")
-                print(
-                    "[VisionService] Menggunakan akselerasi hardware Jetson (CUDA/TensorRT)."
-                )
-                model_path = str(engine_path)
-                task_msg = "TensorRT Engine"
+            # Cek jika ada model spesifik yang diminta
+            if selected_model_name and selected_model_name != "Auto":
+                specific_path = vision_dir / selected_model_name
+                if specific_path.exists():
+                    model_path = str(specific_path)
+                    task_msg = f"Model Pilihan: {selected_model_name}"
+                    print(f"[VisionService] MENEMUKAN MODEL PILIHAN: {specific_path}")
+                else:
+                    print(f"[VisionService] WARNING: Model pilihan {selected_model_name} tidak ditemukan. Fallback ke prioritas.")
+            
+            # Jika belum ditemukan, jalankan prioritas
+            if not model_path:
+                # 1. Cek TensorRT (.engine) - PRIORITAS UTAMA
+                if engine_path.exists():
+                    print(f"[VisionService] MENEMUKAN MODEL TENSORRT: {engine_path}")
+                    print(
+                        "[VisionService] Menggunakan akselerasi hardware Jetson (CUDA/TensorRT)."
+                    )
+                    model_path = str(engine_path)
+                    task_msg = "TensorRT Engine (best.engine)"
 
-            # 2. Fallback ke PyTorch (.pt)
-            elif pt_path.exists():
-                print(
-                    f"[VisionService] Warning: .engine tidak ditemukan. Fallback ke .pt: {pt_path}"
-                )
-                print(
-                    "[VisionService] Performa mungkin lebih lambat dibandingkan TensorRT."
-                )
-                model_path = str(pt_path)
-                task_msg = "PyTorch Model"
+                # 2. Cek TensorRT (.engine) - FALLBACK
+                elif engine100_path.exists():
+                    print(
+                        f"[VisionService] MENEMUKAN MODEL TENSORRT FALLBACK: {engine100_path}"
+                    )
+                    print(
+                        "[VisionService] Menggunakan akselerasi hardware Jetson (CUDA/TensorRT)."
+                    )
+                    model_path = str(engine100_path)
+                    task_msg = "TensorRT Engine (best100.engine)"
 
-            else:
-                print(
-                    f"[VisionService] KRITIS: Tidak ada model 'best.engine' atau 'best.pt' di {vision_dir}"
-                )
-                return None
+                # 3. Fallback ke PyTorch (.pt)
+                elif pt_path.exists():
+                    print(
+                        f"[VisionService] Warning: .engine tidak ditemukan. Fallback ke .pt: {pt_path}"
+                    )
+                    print(
+                        "[VisionService] Performa mungkin lebih lambat dibandingkan TensorRT."
+                    )
+                    model_path = str(pt_path)
+                    task_msg = "PyTorch Model (best.pt)"
+
+                # 4. Fallback ke PyTorch (.pt) - FALLBACK 2
+                elif pt100_path.exists():
+                    print(
+                        f"[VisionService] Warning: .engine dan best.pt tidak ditemukan. Fallback ke .pt: {pt100_path}"
+                    )
+                    print(
+                        "[VisionService] Performa mungkin lebih lambat dibandingkan TensorRT."
+                    )
+                    model_path = str(pt100_path)
+                    task_msg = "PyTorch Model (best100.pt)"
+
+                else:
+                    print(
+                        f"[VisionService] KRITIS: Tidak ada model yang valid di {vision_dir}"
+                    )
+                    return None
 
             # Muat Model menggunakan Ultralytics
             print(f"[VisionService] Memuat {task_msg}...")
             model = YOLO(model_path, task="detect")
+            # Tandai apakah model ini TensorRT atau PyTorch
+            model._is_tensorrt = model_path.endswith(".engine")
+
+            # Tentukan device: prioritas CUDA, fallback CPU jika tidak tersedia
+            import torch
+
+            infer_device = config.get("vision", {}).get("device", "cuda:0")
+            if infer_device != "cpu" and not torch.cuda.is_available():
+                print(
+                    "[VisionService] WARNING: CUDA tidak tersedia! Fallback ke CPU. Performa akan menurun."
+                )
+                infer_device = "cpu"
+            else:
+                print(
+                    f"[VisionService] Menggunakan device: {infer_device} | CUDA: {torch.cuda.is_available()}"
+                )
 
             # Pemanasan awal (Warmup)
+            # Catatan: TensorRT engine sudah hardcoded ke GPU saat export,
+            # tidak perlu dan tidak boleh set device= saat warmup/predict.
             print("[VisionService] Melakukan warmup model...")
-            model.predict(
-                source=np.zeros((640, 640, 3), dtype=np.uint8), verbose=False, device=0
-            )
+            if model._is_tensorrt:
+                model.predict(
+                    source=np.zeros((640, 640, 3), dtype=np.uint8),
+                    verbose=False,
+                )
+                print(
+                    "[VisionService] TensorRT Engine: device GPU sudah terkunci di engine."
+                )
+            else:
+                model.predict(
+                    source=np.zeros((640, 640, 3), dtype=np.uint8),
+                    verbose=False,
+                    device=infer_device,
+                )
 
             print("[VisionService] Model berhasil dimuat dan siap.")
             return model
@@ -298,6 +379,21 @@ class VisionService:
             print(f"[VisionService] KRITIS: Gagal memuat model YOLOv11: {e}")
             traceback.print_exc()
             return None
+
+    def change_model(self, model_filename):
+        """Mengganti model AI secara dinamis"""
+        print(f"[VisionService] Permintaan ganti model ke: {model_filename}")
+        with self.settings_lock:
+            new_model = self._load_yolo_model(self.config, selected_model_name=model_filename)
+            if new_model:
+                self.model = new_model
+                self.is_tensorrt = getattr(self.model, "_is_tensorrt", False)
+                if self.is_tensorrt:
+                    print(f"[VisionService] Mode diubah: TensorRT FP16 (device terkunci).")
+                else:
+                    print(f"[VisionService] Mode diubah: PyTorch di {self.infer_device}.")
+            else:
+                print("[VisionService] Gagal mengganti model, tetap menggunakan model lama.")
 
     # -----------------------------------------
 
@@ -794,6 +890,8 @@ class VisionService:
                 conf=self.conf_thres,
                 iou=self.iou_thres,
                 verbose=False,
+                # TensorRT engine sudah hardcoded ke GPU — tidak perlu set device
+                **({} if self.is_tensorrt else {"device": self.infer_device}),
             )
             result = results[0]
 

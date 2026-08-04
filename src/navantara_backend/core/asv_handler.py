@@ -629,6 +629,8 @@ class AsvHandler:
             "UPDATE_VISION_SPEED": self._handle_update_vision_speed,
             "UPDATE_VISION_FRONT_MOTOR": self._handle_update_vision_front_motor,
             "UPDATE_VISION_SERVO": self._handle_update_vision_servo,
+            "UPDATE_VISION_DISTANCE": self._handle_update_vision_distance,
+            "UPDATE_VISION_MODEL": self._handle_update_vision_model,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "SWAP_CAMERAS": self._handle_swap_cameras,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
@@ -802,6 +804,23 @@ class AsvHandler:
             self.serial_handler.find_and_connect_esp32(baud)
         else:
             self.serial_handler.connect(port, baud)
+
+    def _handle_update_vision_distance(self, payload):
+        dist = payload.get("distance", 165)
+        self.config["camera_detection"]["obstacle_activation_distance_cm"] = float(dist)
+        self._save_config()
+        if hasattr(self, "vision_service") and self.vision_service:
+            # Bisa ditambahkan metode di vision_service untuk update distance runtime
+            pass
+        print(f"[AsvHandler] Diperbarui: Vision Distance = {dist} cm")
+
+    def _handle_update_vision_model(self, payload):
+        model_name = payload.get("model", "Auto")
+        print(f"[AsvHandler] Menerima request ganti model AI: {model_name}")
+        if hasattr(self, "vision_service") and self.vision_service:
+            self.vision_service.change_model(model_name)
+        else:
+            print("[AsvHandler] vision_service tidak tersedia untuk ganti model.")
 
     def _handle_swap_cameras(self, payload):
         with self.state_lock:

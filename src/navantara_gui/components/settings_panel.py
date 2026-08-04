@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QHBoxLayout,
     QSpinBox,
+    QComboBox,
 )
 from PySide6.QtCore import Signal, Qt
 
@@ -21,6 +22,7 @@ class SettingsPanel(QGroupBox):
     )  # [UBAH] Sekarang mengirim dict (Kiri & Kanan)
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
+    vision_model_updated = Signal(str)
 
     def __init__(self, config, title="System Configuration"):
         super().__init__(title)
@@ -93,11 +95,21 @@ class SettingsPanel(QGroupBox):
         dist_layout.addWidget(QLabel("AI Activation:"))
         dist_layout.addWidget(self.spin_obs_dist)
 
+        # 4. Pilihan Model AI
+        model_layout = QHBoxLayout()
+        self.combo_model = QComboBox()
+        self.combo_model.addItems(
+            ["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"]
+        )
+        model_layout.addWidget(QLabel("AI Model:"))
+        model_layout.addWidget(self.combo_model)
+
         # --- GABUNGKAN SEMUA KE AI LAYOUT ---
         ai_layout.addLayout(speed_layout)
         ai_layout.addLayout(front_speed_layout)
         ai_layout.addLayout(servo_layout)
         ai_layout.addLayout(dist_layout)
+        ai_layout.addLayout(model_layout)
 
         ai_control_group.setLayout(ai_layout)
         main_layout.addWidget(ai_control_group)
@@ -115,6 +127,11 @@ class SettingsPanel(QGroupBox):
         self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
+        self.combo_model.currentTextChanged.connect(self._on_model_changed)
+
+    # --- SLOT ACTIONS ---
+    def _on_model_changed(self, text):
+        self.vision_model_updated.emit(text)
 
     # --- SLOT HANDLERS ---
     def _on_ai_speed_changed(self, value):
