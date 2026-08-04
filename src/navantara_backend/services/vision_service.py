@@ -281,8 +281,10 @@ class VisionService:
                     task_msg = f"Model Pilihan: {selected_model_name}"
                     print(f"[VisionService] MENEMUKAN MODEL PILIHAN: {specific_path}")
                 else:
-                    print(f"[VisionService] WARNING: Model pilihan {selected_model_name} tidak ditemukan. Fallback ke prioritas.")
-            
+                    print(
+                        f"[VisionService] WARNING: Model pilihan {selected_model_name} tidak ditemukan. Fallback ke prioritas."
+                    )
+
             # Jika belum ditemukan, jalankan prioritas
             if not model_path:
                 # 1. Cek TensorRT (.engine) - PRIORITAS UTAMA
@@ -384,16 +386,24 @@ class VisionService:
         """Mengganti model AI secara dinamis"""
         print(f"[VisionService] Permintaan ganti model ke: {model_filename}")
         with self.settings_lock:
-            new_model = self._load_yolo_model(self.config, selected_model_name=model_filename)
+            new_model = self._load_yolo_model(
+                self.config, selected_model_name=model_filename
+            )
             if new_model:
                 self.model = new_model
                 self.is_tensorrt = getattr(self.model, "_is_tensorrt", False)
                 if self.is_tensorrt:
-                    print(f"[VisionService] Mode diubah: TensorRT FP16 (device terkunci).")
+                    print(
+                        f"[VisionService] Mode diubah: TensorRT FP16 (device terkunci)."
+                    )
                 else:
-                    print(f"[VisionService] Mode diubah: PyTorch di {self.infer_device}.")
+                    print(
+                        f"[VisionService] Mode diubah: PyTorch di {self.infer_device}."
+                    )
             else:
-                print("[VisionService] Gagal mengganti model, tetap menggunakan model lama.")
+                print(
+                    "[VisionService] Gagal mengganti model, tetap menggunakan model lama."
+                )
 
     # -----------------------------------------
 
@@ -1092,6 +1102,8 @@ class VisionService:
         if current_state.control_mode != "AUTO":
             return
 
+        current_wp = current_state.nav_target_wp_index
+
         valid_buoys = []
 
         for det in detections:
@@ -1102,16 +1114,25 @@ class VisionService:
             if conf < self.poi_confidence_threshold:
                 continue
 
-            # --- [PERBAIKAN] Kumpulkan semua 5 kelas baru ---
-            if cls in [
-                "bola-merah",
-                "bola-hijau",
-                "bola-biru",
-                "kotak-hijau",
-                "kotak-biru",
-                "kotak-merah",
-            ]:
-                valid_buoys.append(det)
+            # --- [PERBAIKAN] Logika Filter Target Berbasis Waypoint (WP) ---
+            vision_cfg = self.config.get("vision", {})
+            range_bola = vision_cfg.get("wp_range_bola", [0, 10])
+            range_kotak_biru = vision_cfg.get("wp_range_kotak_biru", [11, 12])
+            range_kotak_hijau = vision_cfg.get("wp_range_kotak_hijau", [13, 14])
+
+            if range_bola[0] <= current_wp <= range_bola[1]:
+                # Mode Avoidance (Bola)
+                if cls in ["bola-merah", "bola-hijau", "bola-biru"]:
+                    valid_buoys.append(det)
+            elif range_kotak_biru[0] <= current_wp <= range_kotak_biru[1]:
+                # Mode Tracking Underwater (Kotak Biru)
+                if cls == "kotak-biru":
+                    valid_buoys.append(det)
+            elif range_kotak_hijau[0] <= current_wp <= range_kotak_hijau[1]:
+                # Mode Tracking Surface (Kotak Hijau)
+                if cls == "kotak-hijau":
+                    valid_buoys.append(det)
+            # Jika WP di luar range, valid_buoys tetap kosong, AI idle.
 
         if valid_buoys:
             # Cari objek yang paling dekat dengan kapal

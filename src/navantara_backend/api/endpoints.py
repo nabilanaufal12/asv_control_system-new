@@ -188,6 +188,20 @@ def handle_request_stream(json_data):
     try:
         current_app.vision_service.set_gui_listening(status)
         current_app.asv_handler.set_streaming_status(status)
+
+        # [FIX] Jika GUI baru tersambung, kirimkan ulang waypoints dan paksa full telemetry
+        if status and hasattr(current_app, "asv_handler"):
+            with current_app.asv_handler.state_lock:
+                current_wps = current_app.asv_handler.current_state.waypoints
+                # Kosongkan cache emitted state agar iterasi berikutnya mengirim FULL PAYLOAD
+                current_app.asv_handler.last_emitted_state.clear()
+
+            if current_wps:
+                socketio.emit("sync_waypoints", current_wps)
+                print(
+                    f"[API] Mengirim {len(current_wps)} waypoint yang tersimpan ke GUI yang baru terhubung."
+                )
+
     except Exception as e:
         print(f"[API] Error saat set streaming status: {e}")
 
@@ -232,6 +246,10 @@ def handle_socket_command(json_data):
 
         elif command == "UPDATE_VISION_MODEL":
             print(f"[API] Mengganti model AI Vision: {payload}")
+            current_app.asv_handler.process_command(command, payload)
+
+        elif command == "UPDATE_VISION_WP_RANGES":
+            print(f"[API] Mengupdate setting WP Ranges: {payload}")
             current_app.asv_handler.process_command(command, payload)
 
         # 3. Perintah Lainnya (Navigasi, dll)

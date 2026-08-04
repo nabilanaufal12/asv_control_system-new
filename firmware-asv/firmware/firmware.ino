@@ -294,6 +294,14 @@ void checkSerialInput() {
             } else if (subCmd == "SAVE") {
               saveDataToMemory();
               displayAllData();
+            } else if (subCmd == "GET_WP") {
+              Serial.println("WP_SYNC_START");
+              for (int i = 0; i < dataIndex; i++) {
+                Serial.print(latitudes[i], 6);
+                Serial.print(",");
+                Serial.println(longitudes[i], 6);
+              }
+              Serial.println("WP_SYNC_END");
             } else if (subCmd.startsWith("ADD,")) {
               int comma2 = subCmd.indexOf(',');
               int comma3 = subCmd.indexOf(',', comma2 + 1);

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QSlider,
     QHBoxLayout,
+    QFormLayout,
     QSpinBox,
     QComboBox,
 )
@@ -23,6 +24,7 @@ class SettingsPanel(QGroupBox):
     vision_servo_updated = Signal(dict)
     vision_distance_updated = Signal(float)
     vision_model_updated = Signal(str)
+    vision_wp_ranges_updated = Signal(dict)
 
     def __init__(self, config, title="System Configuration"):
         super().__init__(title)
@@ -31,43 +33,46 @@ class SettingsPanel(QGroupBox):
 
         # --- [BAGIAN KONTROL AI VISION & MISI] ---
         ai_control_group = QGroupBox("AI Engine & Thruster Parameters")
-        ai_layout = QVBoxLayout()
+        ai_layout = QFormLayout()
 
         # 1. Slider Kecepatan Motor Bawah (Utama)
-        speed_layout = QHBoxLayout()
-        self.lbl_ai_speed = QLabel("PWM Motor Utama: 1300")
+        speed_widget_layout = QHBoxLayout()
+        self.spin_ai_speed = QSpinBox()
+        self.spin_ai_speed.setRange(1000, 2000)
+        self.spin_ai_speed.setValue(1300)
         self.slider_ai_speed = QSlider(Qt.Horizontal)
-        self.slider_ai_speed.setRange(1100, 1800)
+        self.slider_ai_speed.setRange(1000, 2000)
         self.slider_ai_speed.setValue(1300)
-        speed_layout.addWidget(self.lbl_ai_speed)
-        speed_layout.addWidget(self.slider_ai_speed)
-
-        # 1.5 [UBAH] 2 Slider Kecepatan Motor Depan (Kemudi Kiri & Kanan)
-        front_speed_layout = QVBoxLayout()
+        speed_widget_layout.addWidget(self.slider_ai_speed)
+        speed_widget_layout.addWidget(self.spin_ai_speed)
+        ai_layout.addRow("PWM Motor Utama:", speed_widget_layout)
 
         # --- Motor Depan Kiri ---
-        left_front_layout = QHBoxLayout()
-        self.lbl_front_left = QLabel("PWM Depan Kiri: 1500")
+        left_front_widget_layout = QHBoxLayout()
+        self.spin_front_left = QSpinBox()
+        self.spin_front_left.setRange(1000, 2000)
+        self.spin_front_left.setValue(1500)
         self.slider_front_left = QSlider(Qt.Horizontal)
-        self.slider_front_left.setRange(1000, 1900)
+        self.slider_front_left.setRange(1000, 2000)
         self.slider_front_left.setValue(1500)
-        left_front_layout.addWidget(self.lbl_front_left)
-        left_front_layout.addWidget(self.slider_front_left)
+        left_front_widget_layout.addWidget(self.slider_front_left)
+        left_front_widget_layout.addWidget(self.spin_front_left)
+        ai_layout.addRow("PWM Depan Kiri:", left_front_widget_layout)
 
         # --- Motor Depan Kanan ---
-        right_front_layout = QHBoxLayout()
-        self.lbl_front_right = QLabel("PWM Depan Kanan: 1500")
+        right_front_widget_layout = QHBoxLayout()
+        self.spin_front_right = QSpinBox()
+        self.spin_front_right.setRange(1000, 2000)
+        self.spin_front_right.setValue(1500)
         self.slider_front_right = QSlider(Qt.Horizontal)
-        self.slider_front_right.setRange(1000, 1900)
+        self.slider_front_right.setRange(1000, 2000)
         self.slider_front_right.setValue(1500)
-        right_front_layout.addWidget(self.lbl_front_right)
-        right_front_layout.addWidget(self.slider_front_right)
-
-        front_speed_layout.addLayout(left_front_layout)
-        front_speed_layout.addLayout(right_front_layout)
+        right_front_widget_layout.addWidget(self.slider_front_right)
+        right_front_widget_layout.addWidget(self.spin_front_right)
+        ai_layout.addRow("PWM Depan Kanan:", right_front_widget_layout)
 
         # 2. Input Servo Kiri & Kanan
-        servo_layout = QHBoxLayout()
+        servo_widget_layout = QHBoxLayout()
         self.spin_left = QSpinBox()
         self.spin_left.setRange(0, 90)
         self.spin_left.setValue(70)
@@ -80,43 +85,88 @@ class SettingsPanel(QGroupBox):
         self.spin_right.setPrefix("Right: ")
         self.spin_right.setSuffix("°")
 
-        servo_layout.addWidget(QLabel("Avoidance Angle:"))
-        servo_layout.addWidget(self.spin_left)
-        servo_layout.addWidget(self.spin_right)
+        servo_widget_layout.addWidget(self.spin_left)
+        servo_widget_layout.addWidget(self.spin_right)
+        ai_layout.addRow("Avoidance Angle:", servo_widget_layout)
 
         # 3. Input Jarak Obstacle (cm)
-        dist_layout = QHBoxLayout()
         self.spin_obs_dist = QSpinBox()
         self.spin_obs_dist.setRange(0, 500)
         self.spin_obs_dist.setValue(165)
         self.spin_obs_dist.setSingleStep(10)
         self.spin_obs_dist.setPrefix("Trigger Dist: ")
         self.spin_obs_dist.setSuffix(" cm")
-        dist_layout.addWidget(QLabel("AI Activation:"))
-        dist_layout.addWidget(self.spin_obs_dist)
+        ai_layout.addRow("AI Activation:", self.spin_obs_dist)
 
         # 4. Pilihan Model AI
-        model_layout = QHBoxLayout()
         self.combo_model = QComboBox()
         self.combo_model.addItems(
             ["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"]
         )
-        model_layout.addWidget(QLabel("AI Model:"))
-        model_layout.addWidget(self.combo_model)
-
-        # --- GABUNGKAN SEMUA KE AI LAYOUT ---
-        ai_layout.addLayout(speed_layout)
-        ai_layout.addLayout(front_speed_layout)
-        ai_layout.addLayout(servo_layout)
-        ai_layout.addLayout(dist_layout)
-        ai_layout.addLayout(model_layout)
+        ai_layout.addRow("AI Model:", self.combo_model)
 
         ai_control_group.setLayout(ai_layout)
         main_layout.addWidget(ai_control_group)
 
+        # --- [BAGIAN WP RANGES] ---
+        wp_ranges_group = QGroupBox("Vision Waypoint Ranges")
+        wp_ranges_layout = QFormLayout()
+
+        # Bola (Avoidance)
+        bola_layout = QHBoxLayout()
+        self.spin_wp_bola_start = QSpinBox()
+        self.spin_wp_bola_start.setRange(0, 100)
+        self.spin_wp_bola_end = QSpinBox()
+        self.spin_wp_bola_end.setRange(0, 100)
+        bola_layout.addWidget(QLabel("Start:"))
+        bola_layout.addWidget(self.spin_wp_bola_start)
+        bola_layout.addWidget(QLabel("End:"))
+        bola_layout.addWidget(self.spin_wp_bola_end)
+        wp_ranges_layout.addRow("Avoidance (Bola):", bola_layout)
+
+        # Kotak Biru (Underwater)
+        kotak_biru_layout = QHBoxLayout()
+        self.spin_wp_biru_start = QSpinBox()
+        self.spin_wp_biru_start.setRange(0, 100)
+        self.spin_wp_biru_end = QSpinBox()
+        self.spin_wp_biru_end.setRange(0, 100)
+        kotak_biru_layout.addWidget(QLabel("Start:"))
+        kotak_biru_layout.addWidget(self.spin_wp_biru_start)
+        kotak_biru_layout.addWidget(QLabel("End:"))
+        kotak_biru_layout.addWidget(self.spin_wp_biru_end)
+        wp_ranges_layout.addRow("Track UW (K. Biru):", kotak_biru_layout)
+
+        # Kotak Hijau (Surface)
+        kotak_hijau_layout = QHBoxLayout()
+        self.spin_wp_hijau_start = QSpinBox()
+        self.spin_wp_hijau_start.setRange(0, 100)
+        self.spin_wp_hijau_end = QSpinBox()
+        self.spin_wp_hijau_end.setRange(0, 100)
+        kotak_hijau_layout.addWidget(QLabel("Start:"))
+        kotak_hijau_layout.addWidget(self.spin_wp_hijau_start)
+        kotak_hijau_layout.addWidget(QLabel("End:"))
+        kotak_hijau_layout.addWidget(self.spin_wp_hijau_end)
+        wp_ranges_layout.addRow("Track Sfc (K. Hijau):", kotak_hijau_layout)
+
+        wp_ranges_group.setLayout(wp_ranges_layout)
+        main_layout.addWidget(wp_ranges_group)
+
+        # Set default values from config if available
+        self._load_wp_ranges_from_config()
+
         self.setLayout(main_layout)
 
         # --- KONEKSI SINYAL ---
+        # Sinkronisasi SpinBox dan Slider
+        self.slider_ai_speed.valueChanged.connect(self.spin_ai_speed.setValue)
+        self.spin_ai_speed.valueChanged.connect(self.slider_ai_speed.setValue)
+
+        self.slider_front_left.valueChanged.connect(self.spin_front_left.setValue)
+        self.spin_front_left.valueChanged.connect(self.slider_front_left.setValue)
+
+        self.slider_front_right.valueChanged.connect(self.spin_front_right.setValue)
+        self.spin_front_right.valueChanged.connect(self.slider_front_right.setValue)
+
         # Koneksi Kontrol AI
         self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
 
@@ -129,20 +179,53 @@ class SettingsPanel(QGroupBox):
         self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
         self.combo_model.currentTextChanged.connect(self._on_model_changed)
 
+        # Koneksi wp ranges
+        self.spin_wp_bola_start.valueChanged.connect(self._on_wp_ranges_changed)
+        self.spin_wp_bola_end.valueChanged.connect(self._on_wp_ranges_changed)
+        self.spin_wp_biru_start.valueChanged.connect(self._on_wp_ranges_changed)
+        self.spin_wp_biru_end.valueChanged.connect(self._on_wp_ranges_changed)
+        self.spin_wp_hijau_start.valueChanged.connect(self._on_wp_ranges_changed)
+        self.spin_wp_hijau_end.valueChanged.connect(self._on_wp_ranges_changed)
+
+    def _load_wp_ranges_from_config(self):
+        vision_cfg = self.config.get("vision", {})
+        rb = vision_cfg.get("wp_range_bola", [0, 10])
+        rbb = vision_cfg.get("wp_range_kotak_biru", [11, 12])
+        rbh = vision_cfg.get("wp_range_kotak_hijau", [13, 14])
+
+        # Supaya tidak men-trigger event terus menerus saat set
+        self.spin_wp_bola_start.blockSignals(True)
+        self.spin_wp_bola_end.blockSignals(True)
+        self.spin_wp_biru_start.blockSignals(True)
+        self.spin_wp_biru_end.blockSignals(True)
+        self.spin_wp_hijau_start.blockSignals(True)
+        self.spin_wp_hijau_end.blockSignals(True)
+
+        self.spin_wp_bola_start.setValue(rb[0])
+        self.spin_wp_bola_end.setValue(rb[1])
+        self.spin_wp_biru_start.setValue(rbb[0])
+        self.spin_wp_biru_end.setValue(rbb[1])
+        self.spin_wp_hijau_start.setValue(rbh[0])
+        self.spin_wp_hijau_end.setValue(rbh[1])
+
+        self.spin_wp_bola_start.blockSignals(False)
+        self.spin_wp_bola_end.blockSignals(False)
+        self.spin_wp_biru_start.blockSignals(False)
+        self.spin_wp_biru_end.blockSignals(False)
+        self.spin_wp_hijau_start.blockSignals(False)
+        self.spin_wp_hijau_end.blockSignals(False)
+
     # --- SLOT ACTIONS ---
     def _on_model_changed(self, text):
         self.vision_model_updated.emit(text)
 
     # --- SLOT HANDLERS ---
     def _on_ai_speed_changed(self, value):
-        self.lbl_ai_speed.setText(f"PWM Motor Utama: {value}")
         self.vision_speed_updated.emit(value)
 
     def _on_front_speed_changed(self):
         val_l = self.slider_front_left.value()
         val_r = self.slider_front_right.value()
-        self.lbl_front_left.setText(f"PWM Depan Kiri: {val_l}")
-        self.lbl_front_right.setText(f"PWM Depan Kanan: {val_r}")
         # Kirim payload data ke backend
         self.vision_front_motor_updated.emit({"left": val_l, "right": val_r})
 
@@ -152,3 +235,20 @@ class SettingsPanel(QGroupBox):
 
     def _on_obs_dist_changed(self, value):
         self.vision_distance_updated.emit(float(value))
+
+    def _on_wp_ranges_changed(self):
+        payload = {
+            "wp_range_bola": [
+                self.spin_wp_bola_start.value(),
+                self.spin_wp_bola_end.value(),
+            ],
+            "wp_range_kotak_biru": [
+                self.spin_wp_biru_start.value(),
+                self.spin_wp_biru_end.value(),
+            ],
+            "wp_range_kotak_hijau": [
+                self.spin_wp_hijau_start.value(),
+                self.spin_wp_hijau_end.value(),
+            ],
+        }
+        self.vision_wp_ranges_updated.emit(payload)

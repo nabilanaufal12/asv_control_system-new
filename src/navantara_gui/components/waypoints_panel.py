@@ -11,24 +11,24 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QFormLayout,
     QMessageBox,
+    QGridLayout,
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator, QIntValidator
 
 MAX_WAYPOINTS = 20
 
+
 class WaypointsPanel(QGroupBox):
     # Sinyal komunikasi ke MainWindow/Backend
     send_waypoints = Signal(dict)  # Mengirim {'waypoints': [...], 'arena': 'A'/'B'}
     add_current_pos_requested = Signal()
-    waypoints_updated = Signal(list)
-    load_mission_requested = Signal(str)
-    send_photo_mission = Signal(dict)
-
-    send_photo_mission = Signal(dict)
-
     replace_with_live_gps_requested = Signal(int)
     arm_replace_rc_requested = Signal(int)
+    load_mission_requested = Signal(str)
+    request_wp_sync = Signal()  # Sinyal baru untuk meminta sync dari ESP32
+    waypoints_updated = Signal(list)
+    send_photo_mission = Signal(dict)
 
     def __init__(self, config, title="Navigation & Waypoint Setup"):
         super().__init__(title)
@@ -70,24 +70,50 @@ class WaypointsPanel(QGroupBox):
         # --- 3. Waypoints List & Buttons ---
         self.waypoints_list = QListWidget()
         self.waypoints_list.setSelectionMode(QAbstractItemView.SingleSelection)
-
-        button_layout = QHBoxLayout()
         self.add_manual_button = QPushButton("Add Manual")
+        self.add_manual_button.setStyleSheet("background-color: #2a82da; color: white;")
+
+        self.replace_manual_button = QPushButton("Replace Manual")
+        self.replace_manual_button.setStyleSheet(
+            "background-color: #DAA520; color: white;"
+        )
         self.add_current_pos_button = QPushButton("Add Current Pos")
         self.delete_button = QPushButton("Delete")
-        button_layout.addWidget(self.add_manual_button)
-        button_layout.addWidget(self.add_current_pos_button)
-        button_layout.addWidget(self.delete_button)
 
-        edit_button_layout = QHBoxLayout()
         self.replace_gui_button = QPushButton("Replace (Live GPS)")
         self.replace_gui_button.setStyleSheet(
             "background-color: #2E8B57; color: white;"
         )
         self.arm_rc_button = QPushButton("Arm Replace (RC)")
         self.arm_rc_button.setStyleSheet("background-color: #DC143C; color: white;")
-        edit_button_layout.addWidget(self.replace_gui_button)
-        edit_button_layout.addWidget(self.arm_rc_button)
+
+        self.send_all_button = QPushButton("Send All Waypoints")
+        self.send_all_button.setStyleSheet(
+            "background-color: #2a82da; color: white; font-weight: bold;"
+        )
+
+        self.request_sync_button = QPushButton("Request Sync")
+        self.request_sync_button.setStyleSheet(
+            "background-color: #8A2BE2; color: white; font-weight: bold;"
+        )
+
+        grid_layout = QGridLayout()
+
+        # Baris 0: Penambahan Titik Baru
+        grid_layout.addWidget(self.add_manual_button, 0, 0)
+        grid_layout.addWidget(self.add_current_pos_button, 0, 1)
+
+        # Baris 1: Penggantian (Replace)
+        grid_layout.addWidget(self.replace_manual_button, 1, 0)
+        grid_layout.addWidget(self.replace_gui_button, 1, 1)
+
+        # Baris 2: Hapus & RC Overide
+        grid_layout.addWidget(self.delete_button, 2, 0)
+        grid_layout.addWidget(self.arm_rc_button, 2, 1)
+
+        # Baris 3: Kirim Data / Sinkronisasi
+        grid_layout.addWidget(self.send_all_button, 3, 0)
+        grid_layout.addWidget(self.request_sync_button, 3, 1)
 
         # --- 4. Photo Mission Box (Segmen) ---
         photo_mission_box = QGroupBox("Photography Mission Segments")
@@ -131,23 +157,11 @@ class WaypointsPanel(QGroupBox):
         # --- 5. [DIHAPUS] Konfigurasi Trigger Inversi ---
         # Fitur ini dihapus sesuai instruksi
 
-        # --- 6. Send All Button ---
-        send_layout = QHBoxLayout()
-        self.send_all_button = QPushButton("Send All Waypoints")
-        self.send_all_button.setStyleSheet(
-            "background-color: #2a82da; color: white; font-weight: bold;"
-        )
-        send_layout.addStretch()
-        send_layout.addWidget(self.send_all_button)
-
         # --- Menyusun Layout Utama ---
         main_layout.addWidget(mission_box)
         main_layout.addLayout(input_form_layout)
         main_layout.addWidget(self.waypoints_list)
-        main_layout.addLayout(button_layout)
-        main_layout.addLayout(edit_button_layout)
-
-        main_layout.addLayout(send_layout)
+        main_layout.addLayout(grid_layout)
 
         main_layout.addWidget(photo_mission_box)
 
@@ -158,9 +172,11 @@ class WaypointsPanel(QGroupBox):
         self.load_b_button.clicked.connect(lambda: self._on_load_mission("B"))
 
         self.add_manual_button.clicked.connect(self.add_manual_waypoint)
+        self.replace_manual_button.clicked.connect(self.replace_manual_waypoint)
         self.add_current_pos_button.clicked.connect(self.add_current_pos_requested.emit)
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
+        self.request_sync_button.clicked.connect(self.request_wp_sync.emit)
         self.set_photo_mission_button.clicked.connect(self._on_set_photo_mission)
 
         self.replace_gui_button.clicked.connect(self._on_replace_gui)
@@ -189,15 +205,15 @@ class WaypointsPanel(QGroupBox):
     def load_waypoints_to_list(self, waypoints):
         """Menghapus daftar saat ini dan mengisinya dengan waypoint baru."""
         self.waypoints_list.clear()
-        
+
         if len(waypoints) > MAX_WAYPOINTS:
             QMessageBox.warning(
-                self, 
-                "Batas Waypoint", 
-                f"Jumlah waypoint melebihi batas maksimum ({MAX_WAYPOINTS}). Hanya {MAX_WAYPOINTS} waypoint pertama yang akan dimuat."
+                self,
+                "Batas Waypoint",
+                f"Jumlah waypoint melebihi batas maksimum ({MAX_WAYPOINTS}). Hanya {MAX_WAYPOINTS} waypoint pertama yang akan dimuat.",
             )
             waypoints = waypoints[:MAX_WAYPOINTS]
-            
+
         for i, wp in enumerate(waypoints):
             waypoint_text = f"[{i}] Lat: {wp['lat']:.6f}, Lon: {wp['lon']:.6f}"
             self.waypoints_list.addItem(waypoint_text)
@@ -216,9 +232,13 @@ class WaypointsPanel(QGroupBox):
     @Slot(float, float)
     def add_waypoint_from_pos(self, lat, lon):
         if self.waypoints_list.count() >= MAX_WAYPOINTS:
-            QMessageBox.warning(self, "Batas Waypoint", f"Maksimal {MAX_WAYPOINTS} waypoint telah tercapai.")
+            QMessageBox.warning(
+                self,
+                "Batas Waypoint",
+                f"Maksimal {MAX_WAYPOINTS} waypoint telah tercapai.",
+            )
             return
-            
+
         if lat is not None and lon is not None and lat != 0.0:
             idx = self.waypoints_list.count()
             waypoint_text = f"[{idx}] Lat: {lat:.6f}, Lon: {lon:.6f}"
@@ -229,9 +249,13 @@ class WaypointsPanel(QGroupBox):
 
     def add_manual_waypoint(self):
         if self.waypoints_list.count() >= MAX_WAYPOINTS:
-            QMessageBox.warning(self, "Batas Waypoint", f"Maksimal {MAX_WAYPOINTS} waypoint telah tercapai.")
+            QMessageBox.warning(
+                self,
+                "Batas Waypoint",
+                f"Maksimal {MAX_WAYPOINTS} waypoint telah tercapai.",
+            )
             return
-            
+
         lat_text = self.lat_input.text().replace(",", ".")
         lon_text = self.lon_input.text().replace(",", ".")
         if lat_text and lon_text:
@@ -248,6 +272,39 @@ class WaypointsPanel(QGroupBox):
             except ValueError:
                 print("[GUI] Error: Input waypoint manual tidak valid.")
 
+    def replace_manual_waypoint(self):
+        selected_row = self.waypoints_list.currentRow()
+        if selected_row < 0:
+            QMessageBox.warning(
+                self,
+                "Pilih Waypoint",
+                "Silakan pilih indeks waypoint di tabel terlebih dahulu.",
+            )
+            return
+
+        lat_text = self.lat_input.text().replace(",", ".")
+        lon_text = self.lon_input.text().replace(",", ".")
+        if lat_text and lon_text:
+            try:
+                lat_float = float(lat_text)
+                lon_float = float(lon_text)
+                waypoint_text = (
+                    f"[{selected_row}] Lat: {lat_float:.6f}, Lon: {lon_float:.6f}"
+                )
+
+                item = self.waypoints_list.item(selected_row)
+                item.setText(waypoint_text)
+
+                self.lat_input.clear()
+                self.lon_input.clear()
+                self._emit_updated_waypoints()
+                self.send_all_waypoints()  # Langsung sync ke ESP32
+                print(
+                    f"[GUI] Titik {selected_row} diganti dengan Manual Input dan disinkronkan."
+                )
+            except ValueError:
+                print("[GUI] Error: Input waypoint manual tidak valid.")
+
     def delete_waypoint(self):
         selected_items = self.waypoints_list.selectedItems()
         if not selected_items:
@@ -256,6 +313,8 @@ class WaypointsPanel(QGroupBox):
             self.waypoints_list.takeItem(self.waypoints_list.row(item))
         self._reindex_waypoints()
         self._emit_updated_waypoints()
+        self.send_all_waypoints()  # Langsung sync ke ESP32
+        print("[GUI] Titik waypoint dihapus dan disinkronkan.")
 
     def _get_all_waypoints_from_list(self):
         all_waypoints = []

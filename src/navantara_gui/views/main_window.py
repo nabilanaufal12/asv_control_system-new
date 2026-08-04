@@ -260,8 +260,15 @@ class MainWindow(QMainWindow):
             lambda m: self.api_client.send_command("UPDATE_VISION_MODEL", {"model": m})
         )
 
+        self.settings_panel.vision_wp_ranges_updated.connect(
+            lambda p: self.api_client.send_command("UPDATE_VISION_WP_RANGES", p)
+        )
+
         self.waypoints_panel.send_waypoints.connect(
             lambda wps: self.api_client.send_command("SET_WAYPOINTS", wps)
+        )
+        self.waypoints_panel.request_wp_sync.connect(
+            lambda: self.api_client.send_command("REQUEST_WP_SYNC", {})
         )
         self.waypoints_panel.add_current_pos_requested.connect(self.on_add_current_pos)
         self.api_client.connection_status_changed.connect(
@@ -372,7 +379,7 @@ class MainWindow(QMainWindow):
         ):
             # Ganti baris di tabel
             waypoint_text = (
-                f"Lat: {self.current_latitude:.6f}, Lon: {self.current_longitude:.6f}"
+                f"[{index}] Lat: {self.current_latitude:.6f}, Lon: {self.current_longitude:.6f}"
             )
             item = self.waypoints_panel.waypoints_list.item(index)
             if item:

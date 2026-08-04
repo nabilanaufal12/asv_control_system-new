@@ -53,6 +53,11 @@ class VideoView(QWidget):
         video_splitter.addWidget(self.label_video_1)
         video_splitter.addWidget(self.label_video_2)
 
+        # Paksa rasio splitter agar 50:50 merata
+        video_splitter.setStretchFactor(0, 1)
+        video_splitter.setStretchFactor(1, 1)
+        video_splitter.setSizes([1000, 1000])
+
         layout = QVBoxLayout(self)
         layout.addWidget(video_splitter, 1)
         self.setLayout(layout)

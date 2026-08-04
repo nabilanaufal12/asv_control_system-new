@@ -81,7 +81,10 @@
     "poi_confidence_threshold": 0.65,
     "poi_validation_frames": 5,
     "obstacle_activation_distance_cm": 120.0,
-    "gate_activation_distance_cm": 300.0
+    "gate_activation_distance_cm": 300.0,
+    "wp_range_bola": [0, 10],
+    "wp_range_kotak_biru": [11, 12],
+    "wp_range_kotak_hijau": [13, 14]
   },
   "api_urls": {},
   "gui_settings": {

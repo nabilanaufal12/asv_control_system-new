@@ -451,6 +451,12 @@ class AsvHandler:
                     vision_target_obj_class = self.current_state.vision_target.get(
                         "obstacle_class", ""
                     )
+                    vision_target_center_x = self.current_state.vision_target.get(
+                        "object_center_x", 0
+                    )
+                    vision_target_frame_width = self.current_state.vision_target.get(
+                        "frame_width", 640
+                    )
 
                     resume_waypoint_on_clear = (
                         self.current_state.resume_waypoint_on_clear
@@ -497,34 +503,7 @@ class AsvHandler:
                         with self.state_lock:
                             current_arena = self.current_state.active_arena
 
-                        # 1. TENTUKAN ARAH MENGHINDAR (Berdasarkan Warna Objek & Arena)
-                        if obj_class in ["bola-hijau", "kotak-hijau"]:
-                            if current_arena == "Arena_B":
-                                turn_direction = "RIGHT"
-                                desc = f"{obj_class} -> Menghindar Kanan (Arena B)"
-                            else:  # Default Arena A
-                                turn_direction = "LEFT"
-                                desc = f"{obj_class} -> Menghindar Kiri (Arena A)"
-
-                        elif obj_class in ["bola-merah", "kotak-biru"]:
-                            if current_arena == "Arena_B":
-                                turn_direction = "LEFT"
-                                desc = f"{obj_class} -> Menghindar Kiri (Arena B)"
-                            else:  # Default Arena A
-                                turn_direction = "RIGHT"
-                                desc = f"{obj_class} -> Menghindar Kanan (Arena A)"
-
-                        elif obj_class == "bola-biru":
-                            turn_direction = "STRAIGHT"
-                            desc = f"{obj_class} -> Target Docking (Lurus)"
-
-                        # 2. LOGIKA KEMUDI (SERVO BELAKANG & MOTOR DEPAN)
-                        # Ambil tenaga motor belakang dari GUI
-                        pwm_cmd = current_ai_pwm
-
-                        motor_depan_kiri = 1000
-                        motor_depan_kanan = 1000
-
+                        # 1. TENTUKAN ARAH MENGHINDAR ATAU TRACKING
                         # Ambil nilai servo dan motor depan dari GUI secara realtime
                         with self.state_lock:
                             pwm_depan_kiri_aktif = (
@@ -538,22 +517,76 @@ class AsvHandler:
                                 self.current_state.vision_servo_right_cmd
                             )
 
-                        if turn_direction == "LEFT":
-                            # Belok Kiri: Menggunakan settingan servo kiri dari GUI
-                            servo_cmd = servo_kiri_aktif
-                            motor_depan_kanan = pwm_depan_kanan_aktif
-                            desc += f" | Belok KIRI (Servo: {servo_kiri_aktif}, M.Kanan: {pwm_depan_kanan_aktif})"
+                        pwm_cmd = current_ai_pwm
+                        motor_depan_kiri = 1000
+                        motor_depan_kanan = 1000
+                        servo_cmd = servo_default
 
-                        elif turn_direction == "RIGHT":
-                            # Belok Kanan: Menggunakan settingan servo kanan dari GUI
-                            servo_cmd = servo_kanan_aktif
-                            motor_depan_kiri = pwm_depan_kiri_aktif
-                            desc += f" | Belok KANAN (Servo: {servo_kanan_aktif}, M.Kiri: {pwm_depan_kiri_aktif})"
+                        if obj_class in ["bola-hijau", "bola-merah", "bola-biru"]:
+                            # --- LOGIKA AVOIDANCE (BOLA) ---
+                            if obj_class == "bola-hijau":
+                                if current_arena == "Arena_B":
+                                    turn_direction = "RIGHT"
+                                else:
+                                    turn_direction = "LEFT"
+                            elif obj_class == "bola-merah":
+                                if current_arena == "Arena_B":
+                                    turn_direction = "LEFT"
+                                else:
+                                    turn_direction = "RIGHT"
+                            elif obj_class == "bola-biru":
+                                turn_direction = "STRAIGHT"
 
+                            desc = f"{obj_class} -> Avoidance {turn_direction}"
+
+                            if turn_direction == "LEFT":
+                                servo_cmd = servo_kiri_aktif
+                                motor_depan_kanan = pwm_depan_kanan_aktif
+                            elif turn_direction == "RIGHT":
+                                servo_cmd = servo_kanan_aktif
+                                motor_depan_kiri = pwm_depan_kiri_aktif
+                            else:
+                                servo_cmd = servo_default
+
+                        elif obj_class in ["kotak-hijau", "kotak-biru", "kotak-merah"]:
+                            # --- LOGIKA TRACKING (KOTAK) ---
+                            center_x = vision_target_frame_width / 2
+                            error_x = vision_target_center_x - center_x
+
+                            # Tolerance deadband (px)
+                            tolerance = 40
+
+                            # Max servo deflection allowed for tracking (from 90)
+                            max_tracking_deflection = 30  # Servo bergeser halus
+
+                            if error_x < -tolerance:
+                                # Kotak di kiri layar -> Kapal perlu belok kiri
+                                turn_direction = "TRACKING_LEFT"
+                                offset = (error_x / center_x) * max_tracking_deflection
+                                servo_cmd = int(90 + offset)
+                                motor_depan_kanan = pwm_depan_kanan_aktif
+                                desc = f"{obj_class} -> Track Kiri (Err: {error_x:.1f})"
+                            elif error_x > tolerance:
+                                # Kotak di kanan layar -> Kapal perlu belok kanan
+                                turn_direction = "TRACKING_RIGHT"
+                                offset = (error_x / center_x) * max_tracking_deflection
+                                servo_cmd = int(90 + offset)
+                                motor_depan_kiri = pwm_depan_kiri_aktif
+                                desc = (
+                                    f"{obj_class} -> Track Kanan (Err: {error_x:.1f})"
+                                )
+                            else:
+                                # Kotak sudah di tengah layar
+                                turn_direction = "TRACKING_CENTER"
+                                servo_cmd = servo_default
+                                desc = f"{obj_class} -> Track Tengah"
+
+                            # Clamp servo value safely
+                            servo_cmd = max(40, min(140, servo_cmd))
                         else:
-                            # Lurus: Servo Netral
+                            turn_direction = "STRAIGHT"
                             servo_cmd = servo_default
-                            desc += f" | LURUS (Servo: {servo_default})"
+                            desc = f"Unknown -> Lurus"
 
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
                         if nav_dist_to_wp < 1.5:
@@ -645,10 +678,12 @@ class AsvHandler:
             "UPDATE_VISION_SERVO": self._handle_update_vision_servo,
             "UPDATE_VISION_DISTANCE": self._handle_update_vision_distance,
             "UPDATE_VISION_MODEL": self._handle_update_vision_model,
+            "UPDATE_VISION_WP_RANGES": self._handle_update_vision_wp_ranges,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "SWAP_CAMERAS": self._handle_swap_cameras,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
             "ARM_REPLACE_WP": self._handle_arm_replace_wp,
+            "REQUEST_WP_SYNC": self._handle_request_wp_sync,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
             "MANUAL_CAPTURE": self._handle_manual_capture,
         }
@@ -659,6 +694,14 @@ class AsvHandler:
             logging.warning(
                 f"[AsvHandler] Peringatan: Perintah tidak dikenal '{command}'"
             )
+
+    def _handle_request_wp_sync(self, payload):
+        """Meminta data waypoint secara paksa dari ESP32."""
+        if self.serial_handler.is_connected:
+            self.serial_handler.send_command("P,GET_WP\n")
+            logging.info("[AsvHandler] Mengirim permintaan sinkronisasi waypoint (P,GET_WP) ke ESP32.")
+        else:
+            logging.warning("[AsvHandler] Tidak bisa meminta sync WP, serial terputus.")
 
     def _handle_toggle_csv_logging(self, payload):
         """Mengaktifkan/mematikan log CSV kustom user."""
@@ -835,6 +878,19 @@ class AsvHandler:
             self.vision_service.change_model(model_name)
         else:
             print("[AsvHandler] vision_service tidak tersedia untuk ganti model.")
+
+    def _handle_update_vision_wp_ranges(self, payload):
+        """Memperbarui rentang deteksi WP dari GUI"""
+        vision_cfg = self.config.get("vision", {})
+        if "wp_range_bola" in payload:
+            vision_cfg["wp_range_bola"] = payload["wp_range_bola"]
+        if "wp_range_kotak_biru" in payload:
+            vision_cfg["wp_range_kotak_biru"] = payload["wp_range_kotak_biru"]
+        if "wp_range_kotak_hijau" in payload:
+            vision_cfg["wp_range_kotak_hijau"] = payload["wp_range_kotak_hijau"]
+
+        self.config["vision"] = vision_cfg
+        logging.info(f"[AsvHandler] Vision WP Ranges diperbarui: {payload}")
 
     def _handle_swap_cameras(self, payload):
         with self.state_lock:
