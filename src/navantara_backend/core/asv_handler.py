@@ -854,6 +854,11 @@ class AsvHandler:
 
             if waypoints_data is not None:
                 if isinstance(waypoints_data, list):
+                    if len(waypoints_data) > 20:
+                        logging.warning(
+                            f"[AsvHandler] Waypoints melebih batas (20). Dipotong dari {len(waypoints_data)} menjadi 20."
+                        )
+                        waypoints_data = waypoints_data[:20]
                     self.current_state.waypoints = waypoints_data
                     self.current_state.current_waypoint_index = 0
                     self.logger.log_event(

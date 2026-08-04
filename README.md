@@ -56,15 +56,18 @@ navantara/
 │   │   │   └── navigation.py        # PID Controller & navigasi
 │   │   ├── services/
 │   │   │   ├── serial_service.py    # Komunikasi serial ESP32
-│   │   │   └── vision_service.py    # AI Vision (YOLOv8 + OpenCV)
+│   │   │   └── vision_service.py    # AI Vision (YOLOv11 + OpenCV)
 │   │   ├── vision/
-│   │   │   └── best.pt              # Model YOLOv8 terlatih
+│   │   │   ├── best.pt              # Model YOLOv11 terlatih
+│   │   │   └── overlay_utils.py     # Utilitas overlay visual deteksi
 │   │   ├── extensions.py            # Flask-SocketIO instance
 │   │   └── main.py                  # App factory & routing
 │   ├── navantara_gui/
-│   │   ├── assets/resources/        # QSS theme files
+│   │   ├── assets/
+│   │   │   ├── resources/           # QSS theme files (dark/light)
+│   │   │   └── *.png                # Logo sponsor & universitas
 │   │   ├── components/
-│   │   │   ├── control_panel.py     # Panel kontrol mode (AUTO/MANUAL)
+│   │   │   ├── control_panel.py     # Panel kontrol mode (AUTO)
 │   │   │   ├── dashboard.py         # Dashboard telemetri & status
 │   │   │   ├── debug_panel.py       # Panel debug waypoint
 │   │   │   ├── header.py            # Header bar aplikasi
@@ -151,10 +154,9 @@ http://localhost:5000/
 | Fitur | Deskripsi |
 |---|---|
 | **Dual Camera Stream** | Streaming video dari 2 kamera (Surface & Underwater) |
-| **AI Object Detection** | Deteksi objek real-time menggunakan YOLOv8 (bola, kotak) |
+| **AI Object Detection** | Deteksi objek real-time menggunakan YOLOv11 (bola, kotak) |
 | **Waypoint Navigation** | Manajemen waypoint dengan template Arena A/B |
 | **PID Heading Control** | Kontrol heading otomatis dengan PID + Kalman Filter |
-| **Manual Override** | Kontrol manual via keyboard (W/A/S/D) |
 | **Live Telemetry** | Monitoring GPS, heading, speed, battery secara real-time |
 | **Trajectory Visualization** | Visualisasi lintasan di canvas web interaktif |
 | **Photography Mission** | Misi foto otomatis pada segmen waypoint tertentu |

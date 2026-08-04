@@ -135,8 +135,18 @@ class NavigationStatusMonitor(QGroupBox):
         wp_idx = data.get(
             "current_waypoint_index", data.get("cur_wp", data.get("wp_idx", "-"))
         )
-        wp_tot = data.get("nav_esp_total_wp", data.get("wp_tot", "?"))
-        self.val_wp_idx.setText(f"#{wp_idx} / {wp_tot}")
+        wp_tot_raw = data.get("nav_esp_total_wp", data.get("wp_tot", 0))
+        try:
+            wp_tot_int = int(wp_tot_raw)
+            wp_idx_int = int(wp_idx)
+            max_idx = wp_tot_int - 1 if wp_tot_int > 0 else 0
+            if wp_tot_int > 0 and wp_idx_int >= wp_tot_int:
+                # Semua WP tercapai (counter == dataIndex di ESP32)
+                self.val_wp_idx.setText(f"DONE ({wp_tot_int} WP)")
+            else:
+                self.val_wp_idx.setText(f"#{wp_idx_int} / {max_idx}")
+        except (ValueError, TypeError):
+            self.val_wp_idx.setText(f"#{wp_idx} / ?")
 
         # 4. JARAK WP
         dist = data.get("nav_dist_to_wp", data.get("wp_dst", 0.0))

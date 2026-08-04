@@ -10,10 +10,12 @@ from PySide6.QtWidgets import (
     QListWidget,
     QAbstractItemView,
     QFormLayout,
+    QMessageBox,
 )
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QDoubleValidator, QIntValidator
 
+MAX_WAYPOINTS = 20
 
 class WaypointsPanel(QGroupBox):
     # Sinyal komunikasi ke MainWindow/Backend
@@ -187,8 +189,17 @@ class WaypointsPanel(QGroupBox):
     def load_waypoints_to_list(self, waypoints):
         """Menghapus daftar saat ini dan mengisinya dengan waypoint baru."""
         self.waypoints_list.clear()
-        for wp in waypoints:
-            waypoint_text = f"Lat: {wp['lat']:.6f}, Lon: {wp['lon']:.6f}"
+        
+        if len(waypoints) > MAX_WAYPOINTS:
+            QMessageBox.warning(
+                self, 
+                "Batas Waypoint", 
+                f"Jumlah waypoint melebihi batas maksimum ({MAX_WAYPOINTS}). Hanya {MAX_WAYPOINTS} waypoint pertama yang akan dimuat."
+            )
+            waypoints = waypoints[:MAX_WAYPOINTS]
+            
+        for i, wp in enumerate(waypoints):
+            waypoint_text = f"[{i}] Lat: {wp['lat']:.6f}, Lon: {wp['lon']:.6f}"
             self.waypoints_list.addItem(waypoint_text)
         self._emit_updated_waypoints()
 
@@ -204,21 +215,31 @@ class WaypointsPanel(QGroupBox):
 
     @Slot(float, float)
     def add_waypoint_from_pos(self, lat, lon):
+        if self.waypoints_list.count() >= MAX_WAYPOINTS:
+            QMessageBox.warning(self, "Batas Waypoint", f"Maksimal {MAX_WAYPOINTS} waypoint telah tercapai.")
+            return
+            
         if lat is not None and lon is not None and lat != 0.0:
-            waypoint_text = f"Lat: {lat:.6f}, Lon: {lon:.6f}"
+            idx = self.waypoints_list.count()
+            waypoint_text = f"[{idx}] Lat: {lat:.6f}, Lon: {lon:.6f}"
             self.waypoints_list.addItem(waypoint_text)
             self._emit_updated_waypoints()
         else:
             print("[GUI] Gagal menambah waypoint: Posisi saat ini tidak valid.")
 
     def add_manual_waypoint(self):
+        if self.waypoints_list.count() >= MAX_WAYPOINTS:
+            QMessageBox.warning(self, "Batas Waypoint", f"Maksimal {MAX_WAYPOINTS} waypoint telah tercapai.")
+            return
+            
         lat_text = self.lat_input.text().replace(",", ".")
         lon_text = self.lon_input.text().replace(",", ".")
         if lat_text and lon_text:
             try:
                 lat_float = float(lat_text)
                 lon_float = float(lon_text)
-                waypoint_text = f"Lat: {lat_float:.6f}, Lon: {lon_float:.6f}"
+                idx = self.waypoints_list.count()
+                waypoint_text = f"[{idx}] Lat: {lat_float:.6f}, Lon: {lon_float:.6f}"
                 self.waypoints_list.addItem(waypoint_text)
                 self.lat_input.clear()
                 self.lon_input.clear()
@@ -233,6 +254,7 @@ class WaypointsPanel(QGroupBox):
             return
         for item in selected_items:
             self.waypoints_list.takeItem(self.waypoints_list.row(item))
+        self._reindex_waypoints()
         self._emit_updated_waypoints()
 
     def _get_all_waypoints_from_list(self):
@@ -240,13 +262,27 @@ class WaypointsPanel(QGroupBox):
         for i in range(self.waypoints_list.count()):
             item_text = self.waypoints_list.item(i).text()
             try:
-                parts = item_text.replace(" ", "").split(",")
+                # Hapus prefix indeks "[N] " jika ada
+                clean_text = item_text
+                if clean_text.startswith("["):
+                    clean_text = clean_text.split("] ", 1)[1]
+                parts = clean_text.replace(" ", "").split(",")
                 lat = float(parts[0].split(":")[1])
                 lon = float(parts[1].split(":")[1])
                 all_waypoints.append({"lat": lat, "lon": lon})
             except (ValueError, IndexError):
                 print(f"[GUI] Gagal mem-parsing item waypoint: {item_text}")
         return all_waypoints
+
+    def _reindex_waypoints(self):
+        """Perbarui nomor indeks di setiap item waypoint setelah delete."""
+        for i in range(self.waypoints_list.count()):
+            item = self.waypoints_list.item(i)
+            text = item.text()
+            # Hapus prefix lama jika ada
+            if text.startswith("["):
+                text = text.split("] ", 1)[1]
+            item.setText(f"[{i}] {text}")
 
     def send_all_waypoints(self):
         all_waypoints = self._get_all_waypoints_from_list()
