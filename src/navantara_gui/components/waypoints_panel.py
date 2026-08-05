@@ -28,7 +28,6 @@ class WaypointsPanel(QGroupBox):
     load_mission_requested = Signal(str)
     request_wp_sync = Signal()  # Sinyal baru untuk meminta sync dari ESP32
     waypoints_updated = Signal(list)
-    send_photo_mission = Signal(dict)
 
     def __init__(self, config, title="Navigation & Waypoint Setup"):
         super().__init__(title)
@@ -42,6 +41,11 @@ class WaypointsPanel(QGroupBox):
         mission_layout = QHBoxLayout()
         self.load_a_button = QPushButton("Load Lintasan A")
         self.load_b_button = QPushButton("Load Lintasan B")
+        btn_style_teal = (
+            "background-color: #009688; color: white; font-weight: bold; padding: 5px;"
+        )
+        self.load_a_button.setStyleSheet(btn_style_teal)
+        self.load_b_button.setStyleSheet(btn_style_teal)
         mission_layout.addWidget(self.load_a_button)
         mission_layout.addWidget(self.load_b_button)
         mission_box.setLayout(mission_layout)
@@ -71,30 +75,42 @@ class WaypointsPanel(QGroupBox):
         self.waypoints_list = QListWidget()
         self.waypoints_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.add_manual_button = QPushButton("Add Manual")
-        self.add_manual_button.setStyleSheet("background-color: #2a82da; color: white;")
+        self.add_manual_button.setStyleSheet(
+            "background-color: #2196F3; color: white; font-weight: bold; padding: 5px;"
+        )
 
         self.replace_manual_button = QPushButton("Replace Manual")
         self.replace_manual_button.setStyleSheet(
-            "background-color: #DAA520; color: white;"
+            "background-color: #FF9800; color: white; font-weight: bold; padding: 5px;"
         )
+
         self.add_current_pos_button = QPushButton("Add Current Pos")
+        self.add_current_pos_button.setStyleSheet(
+            "background-color: #2196F3; color: white; font-weight: bold; padding: 5px;"
+        )
         self.delete_button = QPushButton("Delete")
+        self.delete_button.setStyleSheet(
+            "background-color: #F44336; color: white; font-weight: bold; padding: 5px;"
+        )
 
         self.replace_gui_button = QPushButton("Replace (Live GPS)")
         self.replace_gui_button.setStyleSheet(
-            "background-color: #2E8B57; color: white;"
+            "background-color: #FF9800; color: white; font-weight: bold; padding: 5px;"
         )
+
         self.arm_rc_button = QPushButton("Arm Replace (RC)")
-        self.arm_rc_button.setStyleSheet("background-color: #DC143C; color: white;")
+        self.arm_rc_button.setStyleSheet(
+            "background-color: #D32F2F; color: white; font-weight: bold; padding: 5px;"
+        )
 
         self.send_all_button = QPushButton("Send All Waypoints")
         self.send_all_button.setStyleSheet(
-            "background-color: #2a82da; color: white; font-weight: bold;"
+            "background-color: #4CAF50; color: white; font-weight: bold; padding: 5px;"
         )
 
         self.request_sync_button = QPushButton("Request Sync")
         self.request_sync_button.setStyleSheet(
-            "background-color: #8A2BE2; color: white; font-weight: bold;"
+            "background-color: #9C27B0; color: white; font-weight: bold; padding: 5px;"
         )
 
         grid_layout = QGridLayout()
@@ -115,55 +131,11 @@ class WaypointsPanel(QGroupBox):
         grid_layout.addWidget(self.send_all_button, 3, 0)
         grid_layout.addWidget(self.request_sync_button, 3, 1)
 
-        # --- 4. Photo Mission Box (Segmen) ---
-        photo_mission_box = QGroupBox("Photography Mission Segments")
-        photo_mission_layout = QVBoxLayout()
-
-        photo_form_layout = QFormLayout()
-        self.surf_wp1_input = QLineEdit("13")
-        self.surf_wp2_input = QLineEdit("14")
-        self.under_wp1_input = QLineEdit("11")
-        self.under_wp2_input = QLineEdit("12")
-        self.photo_count_input = QLineEdit("5")
-
-        int_validator = QIntValidator(self)
-        self.surf_wp1_input.setValidator(int_validator)
-        self.surf_wp2_input.setValidator(int_validator)
-        self.under_wp1_input.setValidator(int_validator)
-        self.under_wp2_input.setValidator(int_validator)
-        self.photo_count_input.setValidator(int_validator)
-
-        self.surf_wp1_input.setPlaceholderText("Surface Start")
-        self.surf_wp2_input.setPlaceholderText("Surface Stop")
-        self.under_wp1_input.setPlaceholderText("Underwater Start")
-        self.under_wp2_input.setPlaceholderText("Underwater Stop")
-        self.photo_count_input.setPlaceholderText("Max Total Foto")
-
-        photo_form_layout.addRow("Surface Start WP:", self.surf_wp1_input)
-        photo_form_layout.addRow("Surface Stop WP:", self.surf_wp2_input)
-        photo_form_layout.addRow("Underwater Start WP:", self.under_wp1_input)
-        photo_form_layout.addRow("Underwater Stop WP:", self.under_wp2_input)
-        photo_form_layout.addRow("Max Foto (Masing-masing):", self.photo_count_input)
-
-        self.set_photo_mission_button = QPushButton("Set Segment Mission")
-        self.set_photo_mission_button.setStyleSheet(
-            "background-color: #DAA520; color: white; font-weight: bold;"
-        )
-
-        photo_mission_layout.addLayout(photo_form_layout)
-        photo_mission_layout.addWidget(self.set_photo_mission_button)
-        photo_mission_box.setLayout(photo_mission_layout)
-
-        # --- 5. [DIHAPUS] Konfigurasi Trigger Inversi ---
-        # Fitur ini dihapus sesuai instruksi
-
         # --- Menyusun Layout Utama ---
         main_layout.addWidget(mission_box)
         main_layout.addLayout(input_form_layout)
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(grid_layout)
-
-        main_layout.addWidget(photo_mission_box)
 
         self.setLayout(main_layout)
 
@@ -177,7 +149,6 @@ class WaypointsPanel(QGroupBox):
         self.delete_button.clicked.connect(self.delete_waypoint)
         self.send_all_button.clicked.connect(self.send_all_waypoints)
         self.request_sync_button.clicked.connect(self.request_wp_sync.emit)
-        self.set_photo_mission_button.clicked.connect(self._on_set_photo_mission)
 
         self.replace_gui_button.clicked.connect(self._on_replace_gui)
         self.arm_rc_button.clicked.connect(self._on_arm_rc)
@@ -359,47 +330,3 @@ class WaypointsPanel(QGroupBox):
         print(
             f"[WaypointsPanel] Sinyal send_waypoints dipancarkan: {len(all_waypoints)} waypoints, Arena: {current_arena_to_send}"
         )
-
-    @Slot()
-    def _on_set_photo_mission(self):
-        """Handler untuk set misi foto segmen."""
-        surf1_text = self.surf_wp1_input.text()
-        surf2_text = self.surf_wp2_input.text()
-        under1_text = self.under_wp1_input.text()
-        under2_text = self.under_wp2_input.text()
-        count_text = self.photo_count_input.text()
-
-        if (
-            not surf1_text
-            or not surf2_text
-            or not under1_text
-            or not under2_text
-            or not count_text
-        ):
-            print(
-                "[WaypointsPanel] Error: Harap isi semua field indeks dan Jumlah Foto."
-            )
-            return
-
-        try:
-            surf1 = int(surf1_text)
-            surf2 = int(surf2_text)
-            under1 = int(under1_text)
-            under2 = int(under2_text)
-            count = int(count_text)
-
-            if count <= 0:
-                print("[WaypointsPanel] Error: Jumlah Foto harus > 0.")
-                return
-
-            payload = {
-                "surf_wp1": surf1,
-                "surf_wp2": surf2,
-                "under_wp1": under1,
-                "under_wp2": under2,
-                "count": count,
-            }
-            self.send_photo_mission.emit(payload)
-            print(f"[WaypointsPanel] Sinyal send_photo_mission dipancarkan: {payload}")
-        except ValueError:
-            print("[WaypointsPanel] Error: Input indeks / jumlah foto tidak valid.")

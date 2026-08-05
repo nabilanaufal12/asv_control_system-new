@@ -30,8 +30,17 @@ class DebugPanel(QWidget):
         wp_layout = QHBoxLayout()
 
         self.counter_plus_btn = QPushButton("Counter Plus")
+        self.counter_plus_btn.setStyleSheet(
+            "background-color: #03A9F4; color: white; font-weight: bold; padding: 5px;"
+        )
         self.counter_min_btn = QPushButton("Counter Min")
+        self.counter_min_btn.setStyleSheet(
+            "background-color: #03A9F4; color: white; font-weight: bold; padding: 5px;"
+        )
         self.reset_btn = QPushButton("Reset")
+        self.reset_btn.setStyleSheet(
+            "background-color: #F44336; color: white; font-weight: bold; padding: 5px;"
+        )
 
         wp_layout.addWidget(self.counter_plus_btn)
         wp_layout.addWidget(self.counter_min_btn)

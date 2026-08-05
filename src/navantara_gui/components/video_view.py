@@ -31,14 +31,14 @@ class VideoView(QWidget):
         # --- UI SETUP ---
         self.start_stop_button = QPushButton("Stop Stream")
         self.start_stop_button.setStyleSheet(
-            "background-color: #e74c3c; color: white; font-weight: bold; padding: 5px;"
+            "background-color: #F44336; color: white; font-weight: bold; padding: 5px;"
         )
 
         self.invert_button = QPushButton("Swap Camera (Surface ↔ UW)")
         self.invert_button.setCheckable(True)
         self.invert_button.setEnabled(True)
         self.invert_button.setStyleSheet(
-            "background-color: #34495e; color: white; font-weight: bold; padding: 5px;"
+            "background-color: #607D8B; color: white; font-weight: bold; padding: 5px;"
         )
 
         self.label_video_1 = QLabel("SURFACE CAMERA (CAM 1)\n\n[ OFFLINE / NO SIGNAL ]")

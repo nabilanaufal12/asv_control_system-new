@@ -106,6 +106,11 @@ class AsvState:
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
     vision_auto_motor_cmd: int = 1300
+    # Portrait Mission Config
+    portrait_speed: int = 1400
+    portrait_reverse_speed: int = 1400
+    portrait_stop_ms: int = 3000
+    portrait_reverse_ms: int = 2000
     vision_front_motor_left_cmd: int = 1500
     vision_front_motor_right_cmd: int = 1500
     vision_servo_left_cmd: int = 70
@@ -682,6 +687,7 @@ class AsvHandler:
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "SWAP_CAMERAS": self._handle_swap_cameras,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
+            "SET_PORTRAIT_CONFIG": self._handle_set_portrait_config,
             "ARM_REPLACE_WP": self._handle_arm_replace_wp,
             "REQUEST_WP_SYNC": self._handle_request_wp_sync,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
@@ -1019,11 +1025,45 @@ class AsvHandler:
                 self.current_state.photo_mission_qty_taken_1 = 0
                 self.current_state.photo_mission_qty_taken_2 = 0
 
+            # Kirim range portrait ke ESP32
+            if self.serial_handler.is_connected:
+                self.serial_handler.send_command(
+                    f"S,PT_RANGE,{under_wp1},{under_wp2},{surf_wp1},{surf_wp2}\n"
+                )
+                logging.info(
+                    f"[AsvHandler] Portrait Range dikirim ke ESP32: UW={under_wp1}-{under_wp2}, Surf={surf_wp1}-{surf_wp2}"
+                )
+
             self.logger.log_event(
                 f"[GUI Command] Set Photo Mission -> Surf: {surf_wp1}-{surf_wp2}, Under: {under_wp1}-{under_wp2}, Qty: {count}"
             )
         except Exception as e:
             logging.error(f"Error handling SET_PHOTO_MISSION: {e}")
+
+    def _handle_set_portrait_config(self, payload):
+        """Menerima konfigurasi kecepatan & durasi portrait dari GUI."""
+        try:
+            speed = payload.get("speed", 1400)
+            stop_ms = payload.get("stop_ms", 3000)
+            reverse_ms = payload.get("reverse_ms", 2000)
+            reverse_speed = payload.get("reverse_speed", 1400)
+
+            with self.state_lock:
+                self.current_state.portrait_speed = speed
+                self.current_state.portrait_stop_ms = stop_ms
+                self.current_state.portrait_reverse_ms = reverse_ms
+                self.current_state.portrait_reverse_speed = reverse_speed
+
+            # Kirim konfigurasi portrait ke ESP32
+            if self.serial_handler.is_connected:
+                self.serial_handler.send_command(
+                    f"S,PORTRAIT,{speed},{stop_ms},{reverse_ms},{reverse_speed}\n"
+                )
+                logging.info(
+                    f"[AsvHandler] Portrait Config dikirim ke ESP32: Spd={speed}, Stop={stop_ms}ms, Rev={reverse_ms}ms, RevSpd={reverse_speed}"
+                )
+        except Exception as e:
+            logging.error(f"Error handling SET_PORTRAIT_CONFIG: {e}")
 
     def stop(self):
         self.running = False

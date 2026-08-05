@@ -37,11 +37,11 @@ class ControlPanel(QWidget):
         # Tombol Surface
         self.btn_surf_overlay = QPushButton("Overlay")
         self.btn_surf_overlay.setStyleSheet(
-            "background-color: #3498db; color: white; padding: 5px;"
+            "background-color: #00BCD4; color: white; font-weight: bold; padding: 5px;"
         )
         self.btn_surf_raw = QPushButton("RAW")
         self.btn_surf_raw.setStyleSheet(
-            "background-color: #95a5a6; color: white; padding: 5px;"
+            "background-color: #9E9E9E; color: white; font-weight: bold; padding: 5px;"
         )
 
         capture_layout.addWidget(self.btn_surf_overlay, 1, 0)
@@ -53,11 +53,11 @@ class ControlPanel(QWidget):
         # Tombol Underwater
         self.btn_under_overlay = QPushButton("Overlay")
         self.btn_under_overlay.setStyleSheet(
-            "background-color: #3498db; color: white; padding: 5px;"
+            "background-color: #00BCD4; color: white; font-weight: bold; padding: 5px;"
         )
         self.btn_under_raw = QPushButton("RAW")
         self.btn_under_raw.setStyleSheet(
-            "background-color: #95a5a6; color: white; padding: 5px;"
+            "background-color: #9E9E9E; color: white; font-weight: bold; padding: 5px;"
         )
 
         capture_layout.addWidget(self.btn_under_overlay, 3, 0)

@@ -150,19 +150,26 @@ class MainWindow(QMainWindow):
         # Sekarang: VideoView menjadi widget utama di tengah
 
         # --- Sidebar Kanan ---
-        layout_sidebar_kanan = QVBoxLayout()
-        layout_sidebar_kanan.setAlignment(Qt.AlignTop)
-        layout_sidebar_kanan.addWidget(self.waypoints_panel)
-        layout_sidebar_kanan.addWidget(self.system_status_panel)
 
-        widget_sidebar_kanan = QWidget()
-        widget_sidebar_kanan.setLayout(layout_sidebar_kanan)
-
+        # 1. Waypoints Panel (Bisa di-scroll)
         scroll_area_kanan = QScrollArea()
-        scroll_area_kanan.setWidget(widget_sidebar_kanan)
+        scroll_area_kanan.setWidget(self.waypoints_panel)
         scroll_area_kanan.setWidgetResizable(True)
         scroll_area_kanan.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kanan.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # 2. Kontainer Utama Sidebar Kanan
+        layout_sidebar_kanan = QVBoxLayout()
+        layout_sidebar_kanan.setContentsMargins(0, 0, 0, 0)
+        layout_sidebar_kanan.addWidget(
+            scroll_area_kanan, 1
+        )  # Stretch factor 1 agar mengisi ruang sisa
+        layout_sidebar_kanan.addWidget(
+            self.system_status_panel, 0
+        )  # Stretch factor 0 agar ukurannya fixed di bawah
+
+        widget_sidebar_kanan = QWidget()
+        widget_sidebar_kanan.setLayout(layout_sidebar_kanan)
 
         # --- Layout Tengah (Video & Fitur Masa Depan) ---
         layout_tengah = QVBoxLayout()
@@ -181,7 +188,7 @@ class MainWindow(QMainWindow):
         main_splitter = QSplitter(Qt.Horizontal)
         main_splitter.addWidget(scroll_area_kiri)
         main_splitter.addWidget(widget_tengah)  # Menggunakan Container Tengah
-        main_splitter.addWidget(scroll_area_kanan)
+        main_splitter.addWidget(widget_sidebar_kanan)
 
         gui_settings = self.config.get("gui_settings", {})
         splitter_sizes = gui_settings.get("main_splitter_sizes", [350, 800, 350])
@@ -292,8 +299,11 @@ class MainWindow(QMainWindow):
         self.api_client.frame_cam1_updated.connect(self.video_view.update_frame_1)
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
 
-        self.waypoints_panel.send_photo_mission.connect(
+        self.settings_panel.send_photo_mission.connect(
             lambda payload: self.api_client.send_command("SET_PHOTO_MISSION", payload)
+        )
+        self.settings_panel.send_portrait_config.connect(
+            lambda payload: self.api_client.send_command("SET_PORTRAIT_CONFIG", payload)
         )
 
         # --- Koneksi Capture RAW/Overlay ---

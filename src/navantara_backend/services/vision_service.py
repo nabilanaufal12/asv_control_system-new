@@ -1124,11 +1124,11 @@ class VisionService:
                 # Mode Avoidance (Bola)
                 if cls in ["bola-merah", "bola-hijau", "bola-biru"]:
                     valid_buoys.append(det)
-            elif range_kotak_biru[0] <= current_wp <= range_kotak_biru[1]:
+            elif range_kotak_biru[0] < current_wp <= range_kotak_biru[1]:
                 # Mode Tracking Underwater (Kotak Biru)
                 if cls == "kotak-biru":
                     valid_buoys.append(det)
-            elif range_kotak_hijau[0] <= current_wp <= range_kotak_hijau[1]:
+            elif range_kotak_hijau[0] < current_wp <= range_kotak_hijau[1]:
                 # Mode Tracking Surface (Kotak Hijau)
                 if cls == "kotak-hijau":
                     valid_buoys.append(det)

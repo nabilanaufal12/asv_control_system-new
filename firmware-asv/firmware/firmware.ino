@@ -77,6 +77,21 @@ bool captureTriggered = false;
 bool wasInCaptureMode = false; 
 bool wasInSaveMode = false; 
 
+// --- PORTRAIT MISSION STATE MACHINE ---
+enum PortraitState { PT_NORMAL, PT_SLOW, PT_STOP, PT_REVERSE };
+PortraitState portraitState = PT_NORMAL;
+unsigned long portraitTimer = 0;
+
+// Konfigurasi Portrait (Default, bisa diubah dari GUI via Jetson)
+int portraitSpeed = 1400;           // PWM motor utama saat pelan di segmen portrait
+int portraitReverseSpeed = 1400;    // PWM motor utama saat mundur
+unsigned long portraitStopMs = 3000;    // Durasi berhenti di titik akhir (ms)
+unsigned long portraitReverseMs = 2000; // Durasi mundur setelah berhenti (ms)
+
+// Range WP Portrait (Default, bisa diubah dari GUI via Jetson)
+int uwStart = 11, uwEnd = 12;      // Kotak Biru (Underwater)
+int surfStart = 13, surfEnd = 14;   // Kotak Hijau (Surface)
+
 // --- KONTROL DARI JETSON/KOMUNIKASI SERIAL ---
 char serialCommand = 'W'; 
 int ai_servo_val = 90; 
@@ -282,6 +297,7 @@ void checkSerialInput() {
               if (counter > 0) counter--;
             } else if (cmdAction == "RESET") {
               counter = 0;
+              portraitState = PT_NORMAL;
             }
           }
         } else if (serialCommand == 'P') {
@@ -338,6 +354,44 @@ void checkSerialInput() {
                 String idxStr = subCmd.substring(comma2 + 1);
                 targetCaptureIndex = idxStr.toInt();
                 Serial.println("Target bidikan RC disetel ke: " + String(targetCaptureIndex));
+              }
+            }
+          }
+        } else if (serialCommand == 'S') {
+          // Settings command: S,PORTRAIT,... atau S,PT_RANGE,...
+          int comma1 = serialInputBuffer.indexOf(',');
+          if (comma1 > 0) {
+            String subCmd = serialInputBuffer.substring(comma1 + 1);
+            if (subCmd.startsWith("PORTRAIT,")) {
+              // Format: S,PORTRAIT,speed,stopMs,reverseMs,reverseSpeed
+              int c1 = subCmd.indexOf(',');
+              int c2 = subCmd.indexOf(',', c1 + 1);
+              int c3 = subCmd.indexOf(',', c2 + 1);
+              int c4 = subCmd.indexOf(',', c3 + 1);
+              if (c1 > 0 && c2 > 0 && c3 > 0 && c4 > 0) {
+                portraitSpeed = subCmd.substring(c1 + 1, c2).toInt();
+                portraitStopMs = subCmd.substring(c2 + 1, c3).toInt();
+                portraitReverseMs = subCmd.substring(c3 + 1, c4).toInt();
+                portraitReverseSpeed = subCmd.substring(c4 + 1).toInt();
+                Serial.println("Portrait Config: Spd=" + String(portraitSpeed) + 
+                              " Stop=" + String(portraitStopMs) + "ms" +
+                              " Rev=" + String(portraitReverseMs) + "ms" +
+                              " RevSpd=" + String(portraitReverseSpeed));
+              }
+            } else if (subCmd.startsWith("PT_RANGE,")) {
+              // Format: S,PT_RANGE,uwStart,uwEnd,surfStart,surfEnd
+              int c1 = subCmd.indexOf(',');
+              int c2 = subCmd.indexOf(',', c1 + 1);
+              int c3 = subCmd.indexOf(',', c2 + 1);
+              int c4 = subCmd.indexOf(',', c3 + 1);
+              if (c1 > 0 && c2 > 0 && c3 > 0 && c4 > 0) {
+                uwStart = subCmd.substring(c1 + 1, c2).toInt();
+                uwEnd = subCmd.substring(c2 + 1, c3).toInt();
+                surfStart = subCmd.substring(c3 + 1, c4).toInt();
+                surfEnd = subCmd.substring(c4 + 1).toInt();
+                portraitState = PT_NORMAL;
+                Serial.println("Portrait Range: UW=" + String(uwStart) + "-" + String(uwEnd) +
+                              " Surf=" + String(surfStart) + "-" + String(surfEnd));
               }
             }
           }
@@ -580,16 +634,50 @@ void loop() {
       isManual = false;
       counter = 0; 
       is_new_wp = true;
+      portraitState = PT_NORMAL;
     }
 
     mode = "AUTO";
     finalDir = 1500; 
 
-    if (serialCommand == 'A') {
-      int calculatedServoVal = ai_servo_val;
-      
-      // Pada mode AUTO, kontrol motor sepenuhnya dari Jetson via Serial
-      // Inversi servo otomatis berdasarkan waypoint index DITIADAKAN
+    // --- PORTRAIT ZONE DETECTION ---
+    bool isInPortraitZone = (counter > uwStart && counter <= uwEnd) 
+                         || (counter > surfStart && counter <= surfEnd);
+    bool isAtPortraitEnd = (counter == uwEnd) || (counter == surfEnd);
+
+    // === PORTRAIT STOP (Motor utama mati, motor depan boleh jika AI aktif) ===
+    if (portraitState == PT_STOP) {
+      status = "PT_STOP";
+      finalMotor = 1000;
+      finalServo = 90;
+      // Izinkan motor depan jika Jetson mendeteksi kotak
+      if (serialCommand == 'A') {
+        finalMotorDepanKiri = ai_motor_depan_kiri_val;
+        finalMotorDepanKanan = ai_motor_depan_kanan_val;
+      }
+      if (millis() - portraitTimer >= portraitStopMs) {
+        portraitState = PT_REVERSE;
+        portraitTimer = millis();
+        Serial.println("Portrait: Mulai mundur...");
+      }
+    }
+    // === PORTRAIT REVERSE (Motor utama mundur, semua motor depan mati) ===
+    else if (portraitState == PT_REVERSE) {
+      status = "PT_REVERSE";
+      finalMotor = portraitReverseSpeed;
+      finalDir = 1000;  // MUNDUR (menggunakan mekanisme DIR yang sudah ada)
+      finalServo = 90;
+      if (millis() - portraitTimer >= portraitReverseMs) {
+        counter++;
+        is_new_wp = true;
+        portraitState = PT_NORMAL;
+        finalDir = 1500;  // Kembali maju
+        Serial.print("Portrait selesai. Lanjut ke WP #");
+        Serial.println(counter);
+      }
+    }
+    // === AI VISION MODE ===
+    else if (serialCommand == 'A') {
       finalServo = ai_servo_val;
       finalMotor = ai_motor_val;
       finalDir = 1500;
@@ -597,6 +685,12 @@ void loop() {
       finalMotorDepanKanan = ai_motor_depan_kanan_val;
       status = "AI_ACTIVE";
       
+      // Di portrait zone: kunci motor utama agar tidak sentak saat switching W<->A
+      if (isInPortraitZone) {
+        finalMotor = portraitSpeed;
+        portraitState = PT_SLOW;
+        status = "PT_SLOW_AI";
+      }
     } 
     else if (serialCommand == 'W') {
       status = "WAYPOINT";
@@ -644,17 +738,42 @@ void loop() {
           finalServo = servoPos;
 
           int motorSpeed = readChannel(6);  
+          
+          // Di portrait zone: kunci motor utama ke portraitSpeed
+          if (isInPortraitZone) {
+            motorSpeed = portraitSpeed;
+            portraitState = PT_SLOW;
+            status = "PT_SLOW";
+          }
+          
           finalMotor = motorSpeed;          
           
           finalMotorDepanKiri = 1000;       // Paksa mati di Mode W
           finalMotorDepanKanan = 1000;      // Paksa mati di Mode W
 
           if (dist < 1.75) {
-            counter++; 
-            is_new_wp = true;
-            Serial.print("✅ WP #");
-            Serial.print(counter);
-            Serial.println(" tercapai. Menuju WP berikutnya.");
+            if (isAtPortraitEnd && portraitState == PT_SLOW) {
+              // Sampai di titik akhir portrait -> STOP, TAHAN counter
+              portraitState = PT_STOP;
+              portraitTimer = millis();
+              Serial.print("Portrait STOP di WP #");
+              Serial.println(counter);
+            } else {
+              counter++; 
+              is_new_wp = true;
+              Serial.print("WP #");
+              Serial.print(counter);
+              Serial.println(" tercapai. Menuju WP berikutnya.");
+              
+              // Jika keluar dari portrait zone, reset state ke normal
+              if (portraitState == PT_SLOW) {
+                bool stillInZone = (counter >= uwStart && counter <= uwEnd) 
+                                || (counter >= surfStart && counter <= surfEnd);
+                if (!stillInZone) {
+                  portraitState = PT_NORMAL;
+                }
+              }
+            }
           }
 
           wp_target_idx = counter; 
@@ -718,6 +837,7 @@ void loop() {
 
   jsonDoc["w_id"] = counter;
   jsonDoc["w_tot"] = dataIndex;
+  jsonDoc["p_st"] = (int)portraitState;  // 0=Normal, 1=Slow, 2=Stop, 3=Reverse
 
   if (mode == "AUTO" && serialCommand == 'W') { 
     if (status == "WP_COMPLETE") {
