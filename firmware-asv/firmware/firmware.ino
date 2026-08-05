@@ -295,13 +295,16 @@ void checkSerialInput() {
               saveDataToMemory();
               displayAllData();
             } else if (subCmd == "GET_WP") {
-              Serial.println("WP_SYNC_START");
+              Serial.println("SYNC_WP_START");
               for (int i = 0; i < dataIndex; i++) {
+                Serial.print("SYNC_WP,");
+                Serial.print(i);
+                Serial.print(",");
                 Serial.print(latitudes[i], 6);
                 Serial.print(",");
                 Serial.println(longitudes[i], 6);
               }
-              Serial.println("WP_SYNC_END");
+              Serial.println("SYNC_WP_END");
             } else if (subCmd.startsWith("ADD,")) {
               int comma2 = subCmd.indexOf(',');
               int comma3 = subCmd.indexOf(',', comma2 + 1);
@@ -312,6 +315,21 @@ void checkSerialInput() {
                   latitudes[dataIndex] = latStr.toFloat();
                   longitudes[dataIndex] = lonStr.toFloat();
                   dataIndex++;
+                }
+              }
+            } else if (subCmd.startsWith("REPLACE,")) {
+              int comma2 = subCmd.indexOf(',');
+              int comma3 = subCmd.indexOf(',', comma2 + 1);
+              int comma4 = subCmd.indexOf(',', comma3 + 1);
+              if (comma2 > 0 && comma3 > 0 && comma4 > 0) {
+                int idx = subCmd.substring(comma2 + 1, comma3).toInt();
+                String latStr = subCmd.substring(comma3 + 1, comma4);
+                String lonStr = subCmd.substring(comma4 + 1);
+                if (idx >= 0 && idx < dataIndex) {
+                  latitudes[idx] = latStr.toFloat();
+                  longitudes[idx] = lonStr.toFloat();
+                  saveDataToMemory();
+                  Serial.println("Titik " + String(idx) + " berhasil direplace via Serial.");
                 }
               }
             } else if (subCmd.startsWith("ARM,")) {
@@ -398,16 +416,25 @@ void setup() {
   Serial.println("================================");
 }
 
-// --- Variabel Global Telemetri ---
+// --- Variabel Global Telemetri & Timing ---
 float heading = 0.0;
 double lat = 0.0, lon = 0.0;
 double speed = 0.0; 
 int sats = 0;
+unsigned long lastLoopTime = 0;
 // ---------------------------------
 
 void loop() {
+  // 1. BACA SERIAL TERUS MENERUS TANPA HENTI (Mencegah Buffer Overflow)
+  checkSerialInput(); 
 
-  // --- 1. Baca Sensor GPS ---
+  // 2. Batasi kecepatan sensor & aktuator ke 50Hz (20ms) agar I2C tidak macet
+  if (millis() - lastLoopTime < 20) {
+    return;
+  }
+  lastLoopTime = millis();
+
+  // --- 3. Baca Sensor GPS ---
   if (myGPS.getPVT()) { 
     uint8_t fixType = myGPS.getFixType(); 
 
@@ -426,8 +453,6 @@ void loop() {
         sats = 0;
     }
   }
-  
-  checkSerialInput(); 
   
   heading = readCompass();
   if (heading == -1) { heading = 0.0; } 
@@ -493,25 +518,31 @@ void loop() {
           }
           wasInSaveMode = false;
         }
-        if (dataIndex >= MAX_DATA) {
-          Serial.println("⚠ Memori penuh. Tidak bisa menambah titik lagi.");
+        if (targetCaptureIndex >= 0 && targetCaptureIndex < dataIndex) {
+          // MODE REPLACE (Selalu diizinkan walau memori penuh)
+          if (myGPS.getFixType() > 0) {
+            latitudes[targetCaptureIndex] = lat;
+            longitudes[targetCaptureIndex] = lon;
+            saveDataToMemory();
+            Serial.println("📍 Titik ke-" + String(targetCaptureIndex) + " diganti (Replace).");
+            targetCaptureIndex = -1; // Reset target
+          } else {
+            Serial.println("❌ GPS belum lock. Tidak dapat mengganti data.");
+          }
         } else {
-          if (myGPS.getFixType() > 0) { 
-            if (targetCaptureIndex >= 0 && targetCaptureIndex < dataIndex) {
-              latitudes[targetCaptureIndex] = lat;
-              longitudes[targetCaptureIndex] = lon;
-              saveDataToMemory();
-              Serial.println("📍 Titik ke-" + String(targetCaptureIndex) + " diganti (Replace).");
-              targetCaptureIndex = -1; // Reset target
-            } else {
+          // MODE TAMBAH BARU (Hanya diizinkan jika memori belum penuh)
+          if (dataIndex >= MAX_DATA) {
+            Serial.println("⚠ Memori penuh. Tidak bisa menambah titik lagi.");
+          } else {
+            if (myGPS.getFixType() > 0) { 
               latitudes[dataIndex] = lat;
               longitudes[dataIndex] = lon;
               dataIndex++;
               saveDataToMemory();
-              Serial.println("📍 Titik ke-" + String(dataIndex) + " direkam.");
+              Serial.println("📍 Titik ke-" + String(dataIndex - 1) + " direkam.");
+            } else {
+              Serial.println("❌ GPS belum lock. Tidak dapat menambah data.");
             }
-          } else {
-            Serial.println("❌ GPS belum lock. Tidak dapat menambah data.");
           }
         }
         captureTriggered = true;
@@ -702,8 +733,8 @@ void loop() {
     }
   }
 
+  // --- 4. Kirim Telemetri ke Jetson ---
+  // Kita kirim pada kecepatan 50Hz (setiap 20ms) agar sangat responsif
   serializeJson(jsonDoc, Serial);
   Serial.println(); 
-
-  delay(80); 
 }
