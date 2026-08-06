@@ -74,7 +74,6 @@
     "known_classes": [
       "bola-merah",
       "bola-hijau",
-      "bola-biru",
       "kotak-hijau",
       "kotak-biru"
     ],
@@ -94,6 +93,12 @@
       13,
       14
     ]
+  },
+  "docking_defaults": {
+    "motor_utama_pwm": 1200,
+    "motor_depan_pwm": 1400,
+    "charge_duration_ms": 3000,
+    "heading_tolerance_deg": 5
   },
   "api_urls": {},
   "gui_settings": {

@@ -47,6 +47,7 @@ TELEMETRY_KEY_MAP = {
     "debug_waypoint_counter": "dbg_cnt",
     "vision_target": "vis",
     "esp_status": "esp_sts",
+    "docking_state": "dk_st",
 }
 # --- [AKHIR OPTIMASI] ---
 
@@ -111,10 +112,10 @@ class AsvState:
     portrait_reverse_speed: int = 1400
     portrait_stop_ms: int = 3000
     portrait_reverse_ms: int = 2000
-    vision_front_motor_left_cmd: int = 1500
-    vision_front_motor_right_cmd: int = 1500
+    vision_front_motor_cmd: int = 1500
     vision_servo_left_cmd: int = 70
     vision_servo_right_cmd: int = 110
+    docking_state: int = 0
 
 
 class AsvHandler:
@@ -230,6 +231,12 @@ class AsvHandler:
                     )
                 elif esp_status == "WP_COMPLETE":
                     processed_status = "MISI SELESAI"
+                elif esp_status == "DK_TURNING":
+                    processed_status = "DOCKING: TURNING"
+                elif esp_status == "DK_CHARGING":
+                    processed_status = "DOCKING: CHARGING"
+                elif esp_status == "DK_COMPLETE":
+                    processed_status = "DOCKING SELESAI"
                 elif esp_status == "NO_WAYPOINTS":
                     processed_status = "AUTO IDLE (NO WPs)"
                 elif esp_status == "GPS_INVALID":
@@ -366,12 +373,24 @@ class AsvHandler:
                 )
                 mode = data.get("mod")
                 if mode:
+                    # Cetak informasi di terminal jika mode berubah
+                    if self.current_state.control_mode != mode:
+                        print(f"\n======================================")
+                        print(f">>> MODE RC BERUBAH: {self.current_state.control_mode} -> {mode} <<<")
+                        print(f"======================================\n")
+
                     # Deteksi transisi dari MANUAL ke AUTO untuk membuat folder race_x baru
                     if self.current_state.control_mode == "MANUAL" and mode == "AUTO":
-                        logging.info(
-                            "[AsvHandler] Mode berubah MANUAL -> AUTO. Membuat Race Session baru."
-                        )
-                        self.logger.start_new_race()
+                        if getattr(self, "_is_first_auto_switch", True):
+                            logging.info(
+                                "[AsvHandler] Mode berubah MANUAL -> AUTO pertama kali. Menggunakan race session yang sudah dibuat saat backend nyala."
+                            )
+                            self._is_first_auto_switch = False
+                        else:
+                            logging.info(
+                                "[AsvHandler] Mode berubah MANUAL -> AUTO. Membuat Race Session baru."
+                            )
+                            self.logger.start_new_race()
 
                     self.current_state.control_mode = mode
 
@@ -398,6 +417,9 @@ class AsvHandler:
                     self.current_state.current_waypoint_index = new_idx
                 if "w_tot" in data:
                     self.current_state.nav_esp_total_wp = data.get("w_tot")
+                
+                if "dk_st" in data:
+                    self.current_state.docking_state = data.get("dk_st")
         except Exception as e:
             logging.error(
                 f"[AsvHandler] Gagal mem-parsing data JSON: {e}. Data: {data}"
@@ -511,11 +533,8 @@ class AsvHandler:
                         # 1. TENTUKAN ARAH MENGHINDAR ATAU TRACKING
                         # Ambil nilai servo dan motor depan dari GUI secara realtime
                         with self.state_lock:
-                            pwm_depan_kiri_aktif = (
-                                self.current_state.vision_front_motor_left_cmd
-                            )
-                            pwm_depan_kanan_aktif = (
-                                self.current_state.vision_front_motor_right_cmd
+                            pwm_depan_aktif = (
+                                self.current_state.vision_front_motor_cmd
                             )
                             servo_kiri_aktif = self.current_state.vision_servo_left_cmd
                             servo_kanan_aktif = (
@@ -527,7 +546,7 @@ class AsvHandler:
                         motor_depan_kanan = 1000
                         servo_cmd = servo_default
 
-                        if obj_class in ["bola-hijau", "bola-merah", "bola-biru"]:
+                        if obj_class in ["bola-hijau", "bola-merah"]:
                             # --- LOGIKA AVOIDANCE (BOLA) ---
                             if obj_class == "bola-hijau":
                                 if current_arena == "Arena_B":
@@ -539,17 +558,15 @@ class AsvHandler:
                                     turn_direction = "LEFT"
                                 else:
                                     turn_direction = "RIGHT"
-                            elif obj_class == "bola-biru":
-                                turn_direction = "STRAIGHT"
 
                             desc = f"{obj_class} -> Avoidance {turn_direction}"
 
                             if turn_direction == "LEFT":
                                 servo_cmd = servo_kiri_aktif
-                                motor_depan_kanan = pwm_depan_kanan_aktif
+                                motor_depan_kanan = pwm_depan_aktif
                             elif turn_direction == "RIGHT":
                                 servo_cmd = servo_kanan_aktif
-                                motor_depan_kiri = pwm_depan_kiri_aktif
+                                motor_depan_kiri = pwm_depan_aktif
                             else:
                                 servo_cmd = servo_default
 
@@ -569,14 +586,14 @@ class AsvHandler:
                                 turn_direction = "TRACKING_LEFT"
                                 offset = (error_x / center_x) * max_tracking_deflection
                                 servo_cmd = int(90 + offset)
-                                motor_depan_kanan = pwm_depan_kanan_aktif
+                                motor_depan_kanan = pwm_depan_aktif
                                 desc = f"{obj_class} -> Track Kiri (Err: {error_x:.1f})"
                             elif error_x > tolerance:
                                 # Kotak di kanan layar -> Kapal perlu belok kanan
                                 turn_direction = "TRACKING_RIGHT"
                                 offset = (error_x / center_x) * max_tracking_deflection
                                 servo_cmd = int(90 + offset)
-                                motor_depan_kiri = pwm_depan_kiri_aktif
+                                motor_depan_kiri = pwm_depan_aktif
                                 desc = (
                                     f"{obj_class} -> Track Kanan (Err: {error_x:.1f})"
                                 )
@@ -688,6 +705,7 @@ class AsvHandler:
             "SWAP_CAMERAS": self._handle_swap_cameras,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
             "SET_PORTRAIT_CONFIG": self._handle_set_portrait_config,
+            "SET_DOCK_CONFIG": self._handle_set_dock_config,
             "ARM_REPLACE_WP": self._handle_arm_replace_wp,
             "REQUEST_WP_SYNC": self._handle_request_wp_sync,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
@@ -761,13 +779,11 @@ class AsvHandler:
 
     def _handle_update_vision_front_motor(self, payload):
         try:
-            left_val = int(payload.get("left", 1650))
-            right_val = int(payload.get("right", 1650))
+            pwm_val = int(payload.get("pwm", 1500))
             with self.state_lock:
-                self.current_state.vision_front_motor_left_cmd = left_val
-                self.current_state.vision_front_motor_right_cmd = right_val
+                self.current_state.vision_front_motor_cmd = pwm_val
             logging.info(
-                f"[AsvHandler] Motor Depan AI Updated -> Kiri: {left_val}, Kanan: {right_val}"
+                f"[AsvHandler] Motor Depan AI Updated -> PWM: {pwm_val}"
             )
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
@@ -1064,6 +1080,29 @@ class AsvHandler:
                 )
         except Exception as e:
             logging.error(f"Error handling SET_PORTRAIT_CONFIG: {e}")
+
+    def _handle_set_dock_config(self, payload):
+        """Menerima konfigurasi docking dari GUI dan mengirim ke ESP32."""
+        try:
+            motor_utama = payload.get("motor_utama_pwm", 1200)
+            motor_depan = payload.get("motor_depan_pwm", 1400)
+            charge_ms = payload.get("charge_duration_ms", 3000)
+            tol = payload.get("heading_tolerance_deg", 5)
+            
+            with self.state_lock:
+                arena = self.current_state.active_arena
+            
+            direction = 1 if "B" in arena else 0  # 0=KIRI(A), 1=KANAN(B)
+
+            if self.serial_handler.is_connected:
+                self.serial_handler.send_command(
+                    f"S,DOCK,{motor_utama},{motor_depan},{charge_ms},{tol},{direction}\n"
+                )
+                logging.info(f"[AsvHandler] Dock Config dikirim ke ESP32: {motor_utama},{motor_depan},{charge_ms},{tol},{direction}")
+                
+            self.logger.log_event(f"[GUI Command] Set Dock Config -> {motor_utama},{motor_depan},{charge_ms},{tol},{direction}")
+        except Exception as e:
+            logging.error(f"Error handling SET_DOCK_CONFIG: {e}")
 
     def stop(self):
         self.running = False

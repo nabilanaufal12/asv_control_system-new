@@ -92,6 +92,20 @@ unsigned long portraitReverseMs = 2000; // Durasi mundur setelah berhenti (ms)
 int uwStart = 11, uwEnd = 12;      // Kotak Biru (Underwater)
 int surfStart = 13, surfEnd = 14;   // Kotak Hijau (Surface)
 
+// --- DOCKING MISSION STATE MACHINE ---
+enum DockingState { DK_IDLE, DK_TURNING, DK_CHARGING, DK_COMPLETE };
+DockingState dockingState = DK_IDLE;
+unsigned long dockingTimer = 0;
+float dockingInitialHeading = 0.0;
+float dockingTargetHeading = 0.0;
+
+// Konfigurasi Docking (Default, bisa diubah dari GUI via Jetson)
+int dockMotorUtama = 1200;          // PWM motor utama saat docking
+int dockMotorDepan = 1400;          // PWM motor depan pembantu belok
+unsigned long dockChargeMs = 3000;  // Durasi maju menabrak dock (ms)
+int dockHeadingTolerance = 5;       // Toleransi heading (derajat)
+int dockTurnDirection = 0;          // 0=KIRI (Arena A), 1=KANAN (Arena B)
+
 // --- KONTROL DARI JETSON/KOMUNIKASI SERIAL ---
 char serialCommand = 'W'; 
 int ai_servo_val = 90; 
@@ -298,6 +312,7 @@ void checkSerialInput() {
             } else if (cmdAction == "RESET") {
               counter = 0;
               portraitState = PT_NORMAL;
+              dockingState = DK_IDLE;
             }
           }
         } else if (serialCommand == 'P') {
@@ -392,6 +407,26 @@ void checkSerialInput() {
                 portraitState = PT_NORMAL;
                 Serial.println("Portrait Range: UW=" + String(uwStart) + "-" + String(uwEnd) +
                               " Surf=" + String(surfStart) + "-" + String(surfEnd));
+              }
+            } else if (subCmd.startsWith("DOCK,")) {
+              // Format: S,DOCK,motorUtama,motorDepan,chargeMs,tolerance,direction
+              int c1 = subCmd.indexOf(',');
+              int c2 = subCmd.indexOf(',', c1 + 1);
+              int c3 = subCmd.indexOf(',', c2 + 1);
+              int c4 = subCmd.indexOf(',', c3 + 1);
+              int c5 = subCmd.indexOf(',', c4 + 1);
+              if (c1 > 0 && c2 > 0 && c3 > 0 && c4 > 0 && c5 > 0) {
+                dockMotorUtama = subCmd.substring(c1 + 1, c2).toInt();
+                dockMotorDepan = subCmd.substring(c2 + 1, c3).toInt();
+                dockChargeMs = subCmd.substring(c3 + 1, c4).toInt();
+                dockHeadingTolerance = subCmd.substring(c4 + 1, c5).toInt();
+                dockTurnDirection = subCmd.substring(c5 + 1).toInt();
+                dockingState = DK_IDLE; // Reset state jika config berubah
+                Serial.println("Dock Config: Motor=" + String(dockMotorUtama) +
+                              " Depan=" + String(dockMotorDepan) +
+                              " Charge=" + String(dockChargeMs) + "ms" +
+                              " Tol=" + String(dockHeadingTolerance) + "deg" +
+                              " Dir=" + String(dockTurnDirection));
               }
             }
           }
@@ -635,6 +670,7 @@ void loop() {
       counter = 0; 
       is_new_wp = true;
       portraitState = PT_NORMAL;
+      dockingState = DK_IDLE;
     }
 
     mode = "AUTO";
@@ -698,12 +734,82 @@ void loop() {
       if (dataIndex > 0 && myGPS.getFixType() > 0) { 
         
         if (counter >= dataIndex) { 
-          finalServo = 90;
-          finalMotor = 1000; 
-          finalMotorDepanKiri = 1000;  // Paksa mati di Mode W
-          finalMotorDepanKanan = 1000; // Paksa mati di Mode W
-          status = "WP_COMPLETE";
-          wp_target_idx = dataIndex; 
+          wp_target_idx = dataIndex;
+
+          // === DOCKING STATE MACHINE ===
+          if (dockingState == DK_IDLE) {
+            // Fase 0: Catat heading awal, hitung target 90°
+            dockingInitialHeading = heading;
+            if (dockTurnDirection == 0) {
+              // Arena A: Belok KIRI (-90)
+              dockingTargetHeading = fmod((dockingInitialHeading - 90.0 + 360.0), 360.0);
+            } else {
+              // Arena B: Belok KANAN (+90)
+              dockingTargetHeading = fmod((dockingInitialHeading + 90.0), 360.0);
+            }
+            dockingState = DK_TURNING;
+            Serial.print("DOCKING START! Initial: ");
+            Serial.print(dockingInitialHeading, 1);
+            Serial.print(" -> Target: ");
+            Serial.print(dockingTargetHeading, 1);
+            Serial.print(" Dir: ");
+            Serial.println(dockTurnDirection == 0 ? "KIRI" : "KANAN");
+          }
+
+          if (dockingState == DK_TURNING) {
+            // Fase 1: Putar menuju target heading
+            float dockError = dockingTargetHeading - heading;
+            if (dockError > 180) dockError -= 360;
+            if (dockError < -180) dockError += 360;
+
+            if (abs(dockError) < dockHeadingTolerance) {
+              // Heading tercapai → pindah ke CHARGING
+              dockingState = DK_CHARGING;
+              dockingTimer = millis();
+              Serial.println("DOCKING: Heading tercapai! Mulai CHARGE ke dock...");
+            } else {
+              // Hitung servo dengan PID (reuse fungsi yang sudah ada)
+              finalServo = PID_servo(dockingTargetHeading, heading);
+              finalMotor = dockMotorUtama;
+              finalDir = 1500; // Maju
+
+              // Motor depan: dorong hidung ke arah putaran
+              if (dockError > 0) {
+                // Perlu belok KANAN → Depan Kiri ON
+                finalMotorDepanKiri = dockMotorDepan;
+                finalMotorDepanKanan = 1000;
+              } else {
+                // Perlu belok KIRI → Depan Kanan ON
+                finalMotorDepanKiri = 1000;
+                finalMotorDepanKanan = dockMotorDepan;
+              }
+              status = "DK_TURNING";
+            }
+          }
+
+          if (dockingState == DK_CHARGING) {
+            // Fase 2: Maju lurus menabrak dock
+            finalServo = PID_servo(dockingTargetHeading, heading); // Tetap jaga heading lurus
+            finalMotor = dockMotorUtama;
+            finalDir = 1500;
+            finalMotorDepanKiri = 1000;
+            finalMotorDepanKanan = 1000;
+            status = "DK_CHARGING";
+
+            if (millis() - dockingTimer >= dockChargeMs) {
+              dockingState = DK_COMPLETE;
+              Serial.println("DOCKING COMPLETE! Kapal berhasil docking.");
+            }
+          }
+
+          if (dockingState == DK_COMPLETE) {
+            // Fase 3: Berhenti total
+            finalServo = 90;
+            finalMotor = 1000;
+            finalMotorDepanKiri = 1000;
+            finalMotorDepanKanan = 1000;
+            status = "DK_COMPLETE";
+          }
         } else { 
           double targetLat = latitudes[counter];
           double targetLon = longitudes[counter];
@@ -838,9 +944,15 @@ void loop() {
   jsonDoc["w_id"] = counter;
   jsonDoc["w_tot"] = dataIndex;
   jsonDoc["p_st"] = (int)portraitState;  // 0=Normal, 1=Slow, 2=Stop, 3=Reverse
+  jsonDoc["dk_st"] = (int)dockingState;  // 0=Idle, 1=Turning, 2=Charging, 3=Complete
 
   if (mode == "AUTO" && serialCommand == 'W') { 
-    if (status == "WP_COMPLETE") {
+    if (status == "DK_COMPLETE" || status == "DK_TURNING" || status == "DK_CHARGING") {
+      jsonDoc["w_dst"] = 0.0;
+      jsonDoc["w_brg"] = (float)round(dockingTargetHeading * 100) / 100;
+      jsonDoc["w_err"] = 0.0;
+      jsonDoc["xte"] = 0.0;
+    } else if (status == "WP_COMPLETE") {
       jsonDoc["w_dst"] = 0.0;
       jsonDoc["w_brg"] = 0.0;
       jsonDoc["w_err"] = 0.0;

@@ -305,6 +305,9 @@ class MainWindow(QMainWindow):
         self.settings_panel.send_portrait_config.connect(
             lambda payload: self.api_client.send_command("SET_PORTRAIT_CONFIG", payload)
         )
+        self.settings_panel.send_dock_config.connect(
+            lambda payload: self.api_client.send_command("SET_DOCK_CONFIG", payload)
+        )
 
         # --- Koneksi Capture RAW/Overlay ---
 

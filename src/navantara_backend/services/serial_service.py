@@ -157,9 +157,9 @@ class SerialHandler:
     def send_command(self, command_string):
         # Always log outgoing commands for visibility/debugging
         try:
-            print(f"[Serial SEND] {command_string.strip()}")
+            if command_string.strip() != "W":
+                print(f"[Serial SEND] {command_string.strip()}")
         except Exception:
-            # If printing fails for any reason, ignore but continue
             pass
 
         # If we're using dummy serial, simulate that the command was applied

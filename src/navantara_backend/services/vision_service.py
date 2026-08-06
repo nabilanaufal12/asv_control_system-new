@@ -165,7 +165,7 @@ class VisionService:
         # --- [CRITICAL: LABEL MAPPING] ---
         # Menjembatani perbedaan label Model Baru vs Logika asv_handler
         self.LABEL_MAP = {
-            "Blue_Ball": "bola-biru",
+            "Blue_Ball": "kotak-biru",
             "Blue_Box": "kotak-biru",
             "Green_Ball": "bola-hijau",
             "Green_Box": "kotak-hijau",
@@ -665,6 +665,10 @@ class VisionService:
                     # 3. Coba buat instance baru dengan source yang sama
                     cap = init_camera(current_opened_src)
 
+                    if not cap:
+                        print(f"[{cam_id_log}] HARD RESET Gagal. Menunggu 15 detik sebelum re-init...")
+                        eventlet.sleep(15.0)
+
                     # Reset counter agar tidak spam reset jika kamera benar-benar mati
                     consecutive_failures = 0
 
@@ -1122,7 +1126,7 @@ class VisionService:
 
             if range_bola[0] <= current_wp <= range_bola[1]:
                 # Mode Avoidance (Bola)
-                if cls in ["bola-merah", "bola-hijau", "bola-biru"]:
+                if cls in ["bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
             elif range_kotak_biru[0] < current_wp <= range_kotak_biru[1]:
                 # Mode Tracking Underwater (Kotak Biru)

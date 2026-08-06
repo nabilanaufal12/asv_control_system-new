@@ -35,6 +35,7 @@ class SettingsPanel(QGroupBox):
     # [TAMBAHAN BARU] Sinyal untuk Photo Mission Segments
     send_photo_mission = Signal(dict)
     send_portrait_config = Signal(dict)
+    send_dock_config = Signal(dict)
 
     def __init__(self, config, title="System Configuration"):
         super().__init__(title)
@@ -43,77 +44,59 @@ class SettingsPanel(QGroupBox):
 
         # --- [BAGIAN KONTROL AI VISION & MISI] ---
         ai_control_group = QGroupBox("AI Engine & Thruster Parameters")
-        ai_layout = QFormLayout()
+        ai_layout = QVBoxLayout()
 
-        # 1. Slider Kecepatan Motor Bawah (Utama)
-        speed_widget_layout = QHBoxLayout()
+        # Row 1: PWM Utama & PWM Depan
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("PWM Utama:"))
         self.spin_ai_speed = QSpinBox()
         self.spin_ai_speed.setRange(1000, 2000)
         self.spin_ai_speed.setValue(1300)
-        self.slider_ai_speed = QSlider(Qt.Horizontal)
-        self.slider_ai_speed.setRange(1000, 2000)
-        self.slider_ai_speed.setValue(1300)
-        speed_widget_layout.addWidget(self.slider_ai_speed)
-        speed_widget_layout.addWidget(self.spin_ai_speed)
-        ai_layout.addRow("PWM Motor Utama:", speed_widget_layout)
+        row1.addWidget(self.spin_ai_speed)
+        
+        row1.addWidget(QLabel("PWM Depan:"))
+        self.spin_front = QSpinBox()
+        self.spin_front.setRange(1000, 2000)
+        self.spin_front.setValue(1500)
+        row1.addWidget(self.spin_front)
+        
+        ai_layout.addLayout(row1)
 
-        # --- Motor Depan Kiri ---
-        left_front_widget_layout = QHBoxLayout()
-        self.spin_front_left = QSpinBox()
-        self.spin_front_left.setRange(1000, 2000)
-        self.spin_front_left.setValue(1500)
-        self.slider_front_left = QSlider(Qt.Horizontal)
-        self.slider_front_left.setRange(1000, 2000)
-        self.slider_front_left.setValue(1500)
-        left_front_widget_layout.addWidget(self.slider_front_left)
-        left_front_widget_layout.addWidget(self.spin_front_left)
-        ai_layout.addRow("PWM Depan Kiri:", left_front_widget_layout)
-
-        # --- Motor Depan Kanan ---
-        right_front_widget_layout = QHBoxLayout()
-        self.spin_front_right = QSpinBox()
-        self.spin_front_right.setRange(1000, 2000)
-        self.spin_front_right.setValue(1500)
-        self.slider_front_right = QSlider(Qt.Horizontal)
-        self.slider_front_right.setRange(1000, 2000)
-        self.slider_front_right.setValue(1500)
-        right_front_widget_layout.addWidget(self.slider_front_right)
-        right_front_widget_layout.addWidget(self.spin_front_right)
-        ai_layout.addRow("PWM Depan Kanan:", right_front_widget_layout)
-
-        # 2. Input Servo Kiri & Kanan
-        servo_widget_layout = QHBoxLayout()
+        # Row 2: Avoidance Angle (Left, Right)
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Avoidance Angle:"))
         self.spin_left = QSpinBox()
         self.spin_left.setRange(0, 90)
         self.spin_left.setValue(70)
         self.spin_left.setPrefix("Left: ")
         self.spin_left.setSuffix("°")
+        row2.addWidget(self.spin_left)
 
         self.spin_right = QSpinBox()
         self.spin_right.setRange(90, 180)
         self.spin_right.setValue(110)
         self.spin_right.setPrefix("Right: ")
         self.spin_right.setSuffix("°")
+        row2.addWidget(self.spin_right)
+        
+        ai_layout.addLayout(row2)
 
-        servo_widget_layout.addWidget(self.spin_left)
-        servo_widget_layout.addWidget(self.spin_right)
-        ai_layout.addRow("Avoidance Angle:", servo_widget_layout)
-
-        # 3. Input Jarak Obstacle (cm)
+        # Row 3: AI Activation & AI Model
+        row3 = QHBoxLayout()
+        row3.addWidget(QLabel("AI Activation:"))
         self.spin_obs_dist = QSpinBox()
         self.spin_obs_dist.setRange(0, 500)
         self.spin_obs_dist.setValue(165)
         self.spin_obs_dist.setSingleStep(10)
-        self.spin_obs_dist.setPrefix("Trigger Dist: ")
         self.spin_obs_dist.setSuffix(" cm")
-        ai_layout.addRow("AI Activation:", self.spin_obs_dist)
+        row3.addWidget(self.spin_obs_dist)
 
-        # 4. Pilihan Model AI
+        row3.addWidget(QLabel("AI Model:"))
         self.combo_model = QComboBox()
-        self.combo_model.addItems(
-            ["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"]
-        )
-        ai_layout.addRow("AI Model:", self.combo_model)
+        self.combo_model.addItems(["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"])
+        row3.addWidget(self.combo_model)
+        
+        ai_layout.addLayout(row3)
 
         ai_control_group.setLayout(ai_layout)
         main_layout.addWidget(ai_control_group)
@@ -166,24 +149,25 @@ class SettingsPanel(QGroupBox):
         photo_mission_layout = QVBoxLayout()
 
         photo_form_layout = QFormLayout()
-        self.surf_wp1_input = QLineEdit("13")
-        self.surf_wp2_input = QLineEdit("14")
-        self.under_wp1_input = QLineEdit("11")
-        self.under_wp2_input = QLineEdit("12")
-        self.photo_count_input = QLineEdit("5")
+        self.surf_wp1_input = QSpinBox()
+        self.surf_wp1_input.setRange(0, 100)
+        self.surf_wp1_input.setValue(13)
 
-        int_validator = QIntValidator(self)
-        self.surf_wp1_input.setValidator(int_validator)
-        self.surf_wp2_input.setValidator(int_validator)
-        self.under_wp1_input.setValidator(int_validator)
-        self.under_wp2_input.setValidator(int_validator)
-        self.photo_count_input.setValidator(int_validator)
+        self.surf_wp2_input = QSpinBox()
+        self.surf_wp2_input.setRange(0, 100)
+        self.surf_wp2_input.setValue(14)
 
-        self.surf_wp1_input.setPlaceholderText("Surface Start")
-        self.surf_wp2_input.setPlaceholderText("Surface Stop")
-        self.under_wp1_input.setPlaceholderText("Underwater Start")
-        self.under_wp2_input.setPlaceholderText("Underwater Stop")
-        self.photo_count_input.setPlaceholderText("Max Total Foto")
+        self.under_wp1_input = QSpinBox()
+        self.under_wp1_input.setRange(0, 100)
+        self.under_wp1_input.setValue(11)
+
+        self.under_wp2_input = QSpinBox()
+        self.under_wp2_input.setRange(0, 100)
+        self.under_wp2_input.setValue(12)
+
+        self.photo_count_input = QSpinBox()
+        self.photo_count_input.setRange(1, 100)
+        self.photo_count_input.setValue(5)
 
         # Surface WP
         photo_surf_layout = QHBoxLayout()
@@ -205,7 +189,7 @@ class SettingsPanel(QGroupBox):
         # --- Portrait Config Inputs ---
         self.spin_portrait_speed = QSpinBox()
         self.spin_portrait_speed.setRange(1000, 2000)
-        self.spin_portrait_speed.setValue(1400)
+        self.spin_portrait_speed.setValue(1200)
 
         self.spin_portrait_rev_speed = QSpinBox()
         self.spin_portrait_rev_speed.setRange(1000, 2000)
@@ -238,6 +222,43 @@ class SettingsPanel(QGroupBox):
 
         main_layout.addWidget(photo_mission_box)
 
+        # --- [TAMBAHAN BARU] Docking Mission Settings ---
+        docking_mission_box = QGroupBox("Docking Mission Settings")
+        docking_layout = QVBoxLayout()
+
+        dock_row1 = QHBoxLayout()
+        dock_row1.addWidget(QLabel("PWM Utama:"))
+        self.spin_dock_motor = QSpinBox()
+        self.spin_dock_motor.setRange(1000, 2000)
+        self.spin_dock_motor.setValue(self.config.get("docking_defaults", {}).get("motor_utama_pwm", 1200))
+        dock_row1.addWidget(self.spin_dock_motor)
+
+        dock_row1.addWidget(QLabel("Depan:"))
+        self.spin_dock_depan = QSpinBox()
+        self.spin_dock_depan.setRange(1000, 2000)
+        self.spin_dock_depan.setValue(self.config.get("docking_defaults", {}).get("motor_depan_pwm", 1400))
+        dock_row1.addWidget(self.spin_dock_depan)
+
+        docking_layout.addLayout(dock_row1)
+
+        dock_row2 = QHBoxLayout()
+        dock_row2.addWidget(QLabel("Durasi (s):"))
+        self.spin_dock_charge = QSpinBox()
+        self.spin_dock_charge.setRange(1, 10)
+        self.spin_dock_charge.setValue(self.config.get("docking_defaults", {}).get("charge_duration_ms", 3000) // 1000)
+        dock_row2.addWidget(self.spin_dock_charge)
+
+        dock_row2.addWidget(QLabel("Toleransi (°):"))
+        self.spin_dock_tol = QSpinBox()
+        self.spin_dock_tol.setRange(1, 90)
+        self.spin_dock_tol.setValue(self.config.get("docking_defaults", {}).get("heading_tolerance_deg", 5))
+        dock_row2.addWidget(self.spin_dock_tol)
+
+        docking_layout.addLayout(dock_row2)
+
+        docking_mission_box.setLayout(docking_layout)
+        main_layout.addWidget(docking_mission_box)
+
         # --- Tombol Simpan Default ---
         self.save_default_button = QPushButton("Save as Default Config")
         self.save_default_button.setStyleSheet(
@@ -257,39 +278,31 @@ class SettingsPanel(QGroupBox):
         self.setLayout(main_layout)
 
         # --- KONEKSI SINYAL ---
-        # Sinkronisasi SpinBox dan Slider
-        self.slider_ai_speed.valueChanged.connect(self.spin_ai_speed.setValue)
-        self.spin_ai_speed.valueChanged.connect(self.slider_ai_speed.setValue)
-
-        self.slider_front_left.valueChanged.connect(self.spin_front_left.setValue)
-        self.spin_front_left.valueChanged.connect(self.slider_front_left.setValue)
-
-        self.slider_front_right.valueChanged.connect(self.spin_front_right.setValue)
-        self.spin_front_right.valueChanged.connect(self.slider_front_right.setValue)
-
-        # Koneksi Kontrol AI
-        self.slider_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
-
-        # [UBAH] Sambungkan kedua slider depan ke fungsi yang sama
-        self.slider_front_left.valueChanged.connect(self._on_front_speed_changed)
-        self.slider_front_right.valueChanged.connect(self._on_front_speed_changed)
-
+        # Event Handler AI Engine
+        self.spin_ai_speed.valueChanged.connect(self._on_ai_speed_changed)
+        self.spin_front.valueChanged.connect(self._on_front_speed_changed)
         self.spin_left.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
-        self.combo_model.currentTextChanged.connect(self.vision_model_updated.emit)
+        self.combo_model.currentTextChanged.connect(self._on_model_changed)
 
         # Event Handler Photo Mission Segments (Auto Update)
-        self.surf_wp1_input.editingFinished.connect(self._on_set_photo_mission)
-        self.surf_wp2_input.editingFinished.connect(self._on_set_photo_mission)
-        self.under_wp1_input.editingFinished.connect(self._on_set_photo_mission)
-        self.under_wp2_input.editingFinished.connect(self._on_set_photo_mission)
-        self.photo_count_input.editingFinished.connect(self._on_set_photo_mission)
+        self.surf_wp1_input.valueChanged.connect(self._on_set_photo_mission)
+        self.surf_wp2_input.valueChanged.connect(self._on_set_photo_mission)
+        self.under_wp1_input.valueChanged.connect(self._on_set_photo_mission)
+        self.under_wp2_input.valueChanged.connect(self._on_set_photo_mission)
+        self.photo_count_input.valueChanged.connect(self._on_set_photo_mission)
 
         self.spin_portrait_speed.valueChanged.connect(self._on_set_photo_mission)
         self.spin_portrait_rev_speed.valueChanged.connect(self._on_set_photo_mission)
         self.spin_portrait_stop.valueChanged.connect(self._on_set_photo_mission)
         self.spin_portrait_reverse.valueChanged.connect(self._on_set_photo_mission)
+        
+        self.spin_dock_motor.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_depan.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_charge.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_tol.valueChanged.connect(self._on_set_dock_config)
+
         self.save_default_button.clicked.connect(self._save_defaults_to_config)
 
         # Event Handler Update Ranges
@@ -334,10 +347,8 @@ class SettingsPanel(QGroupBox):
 
         if "ai_speed" in defs:
             self.spin_ai_speed.setValue(defs["ai_speed"])
-        if "front_left" in defs:
-            self.spin_front_left.setValue(defs["front_left"])
-        if "front_right" in defs:
-            self.spin_front_right.setValue(defs["front_right"])
+        if "front_motor" in defs:
+            self.spin_front.setValue(defs["front_motor"])
         if "servo_left" in defs:
             self.spin_left.setValue(defs["servo_left"])
         if "servo_right" in defs:
@@ -346,15 +357,15 @@ class SettingsPanel(QGroupBox):
             self.spin_obs_dist.setValue(defs["obs_dist"])
 
         if "photo_surf1" in defs:
-            self.surf_wp1_input.setText(str(defs["photo_surf1"]))
+            self.surf_wp1_input.setValue(int(defs["photo_surf1"]))
         if "photo_surf2" in defs:
-            self.surf_wp2_input.setText(str(defs["photo_surf2"]))
+            self.surf_wp2_input.setValue(int(defs["photo_surf2"]))
         if "photo_under1" in defs:
-            self.under_wp1_input.setText(str(defs["photo_under1"]))
+            self.under_wp1_input.setValue(int(defs["photo_under1"]))
         if "photo_under2" in defs:
-            self.under_wp2_input.setText(str(defs["photo_under2"]))
+            self.under_wp2_input.setValue(int(defs["photo_under2"]))
         if "photo_count" in defs:
-            self.photo_count_input.setText(str(defs["photo_count"]))
+            self.photo_count_input.setValue(int(defs["photo_count"]))
 
         if "portrait_speed" in defs:
             self.spin_portrait_speed.setValue(defs["portrait_speed"])
@@ -387,21 +398,27 @@ class SettingsPanel(QGroupBox):
 
         self.config["gui_settings"]["panel_defaults"] = {
             "ai_speed": self.spin_ai_speed.value(),
-            "front_left": self.spin_front_left.value(),
-            "front_right": self.spin_front_right.value(),
+            "front_motor": self.spin_front.value(),
             "servo_left": self.spin_left.value(),
             "servo_right": self.spin_right.value(),
             "obs_dist": self.spin_obs_dist.value(),
-            "photo_surf1": self.surf_wp1_input.text(),
-            "photo_surf2": self.surf_wp2_input.text(),
-            "photo_under1": self.under_wp1_input.text(),
-            "photo_under2": self.under_wp2_input.text(),
-            "photo_count": self.photo_count_input.text(),
+            "photo_surf1": self.surf_wp1_input.value(),
+            "photo_surf2": self.surf_wp2_input.value(),
+            "photo_under1": self.under_wp1_input.value(),
+            "photo_under2": self.under_wp2_input.value(),
+            "photo_count": self.photo_count_input.value(),
             "portrait_speed": self.spin_portrait_speed.value(),
             "portrait_rev_speed": self.spin_portrait_rev_speed.value(),
             "portrait_stop": self.spin_portrait_stop.value(),
             "portrait_reverse": self.spin_portrait_reverse.value(),
         }
+
+        if "docking_defaults" not in self.config:
+            self.config["docking_defaults"] = {}
+        self.config["docking_defaults"]["motor_utama_pwm"] = self.spin_dock_motor.value()
+        self.config["docking_defaults"]["motor_depan_pwm"] = self.spin_dock_depan.value()
+        self.config["docking_defaults"]["charge_duration_ms"] = self.spin_dock_charge.value() * 1000
+        self.config["docking_defaults"]["heading_tolerance_deg"] = self.spin_dock_tol.value()
 
         # Write to file
         try:
@@ -427,10 +444,9 @@ class SettingsPanel(QGroupBox):
         self.vision_speed_updated.emit(value)
 
     def _on_front_speed_changed(self):
-        val_l = self.slider_front_left.value()
-        val_r = self.slider_front_right.value()
+        val = self.spin_front.value()
         # Kirim payload data ke backend
-        self.vision_front_motor_updated.emit({"left": val_l, "right": val_r})
+        self.vision_front_motor_updated.emit({"pwm": val})
 
     def _on_ai_servo_changed(self):
         payload = {"left": self.spin_left.value(), "right": self.spin_right.value()}
@@ -459,30 +475,12 @@ class SettingsPanel(QGroupBox):
 
     def _on_set_photo_mission(self):
         """Handler untuk set misi foto segmen."""
-        surf1_text = self.surf_wp1_input.text()
-        surf2_text = self.surf_wp2_input.text()
-        under1_text = self.under_wp1_input.text()
-        under2_text = self.under_wp2_input.text()
-        count_text = self.photo_count_input.text()
-
-        if (
-            not surf1_text
-            or not surf2_text
-            or not under1_text
-            or not under2_text
-            or not count_text
-        ):
-            print(
-                "[SettingsPanel] Error: Harap isi semua field indeks dan Jumlah Foto."
-            )
-            return
-
         try:
-            surf1 = int(surf1_text)
-            surf2 = int(surf2_text)
-            under1 = int(under1_text)
-            under2 = int(under2_text)
-            count = int(count_text)
+            surf1 = self.surf_wp1_input.value()
+            surf2 = self.surf_wp2_input.value()
+            under1 = self.under_wp1_input.value()
+            under2 = self.under_wp2_input.value()
+            count = self.photo_count_input.value()
 
             if count <= 0:
                 print("[SettingsPanel] Error: Jumlah Foto harus > 0.")
@@ -509,5 +507,20 @@ class SettingsPanel(QGroupBox):
             print(
                 f"[SettingsPanel] Sinyal send_portrait_config dipancarkan: {portrait_payload}"
             )
+        except Exception as e:
+            print(f"[SettingsPanel] Error parsing photo mission WP: {e}")
+
+    def _on_set_dock_config(self):
+        try:
+            payload = {
+                "motor_utama_pwm": self.spin_dock_motor.value(),
+                "motor_depan_pwm": self.spin_dock_depan.value(),
+                "charge_duration_ms": self.spin_dock_charge.value() * 1000,
+                "heading_tolerance_deg": self.spin_dock_tol.value()
+            }
+            self.send_dock_config.emit(payload)
+            print(f"[SettingsPanel] Sinyal send_dock_config dipancarkan: {payload}")
+        except Exception as e:
+            print(f"[SettingsPanel] Error parsing dock config: {e}")
         except ValueError:
             print("[SettingsPanel] Error: Input indeks / jumlah foto tidak valid.")
