@@ -4,6 +4,8 @@ import time
 import numpy as np
 import json
 import logging
+import collections
+import statistics
 from dataclasses import dataclass, asdict, field
 
 from navantara_backend.services.serial_service import SerialHandler
@@ -19,6 +21,7 @@ TELEMETRY_KEY_MAP = {
     "latitude": "lat",
     "longitude": "lon",
     "heading": "hdg",
+    "cog": "cog",
     "speed": "sog",  # Speed Over Ground
     "battery_voltage": "bat",
     "status": "sts",
@@ -158,6 +161,7 @@ class AsvHandler:
         )
         self.ekf = SimpleEKF(np.zeros(5), np.eye(5) * 0.1)
         self.last_ekf_update_time = time.time()
+        self.heading_history = collections.deque(maxlen=5) # [NEW] Median Filter Window
         self.use_dummy_serial = self.config.get("serial_connection", {}).get(
             "use_dummy_serial", False
         )
@@ -352,7 +356,14 @@ class AsvHandler:
     def _parse_json_telemetry(self, data):
         try:
             with self.state_lock:
-                self.current_state.heading = data.get("hdg", self.current_state.heading)
+                raw_hdg = data.get("hdg")
+                if raw_hdg is not None:
+                    # [NEW] Median Filter untuk menendang nilai lonjakan EMI ekstrem sesaat
+                    self.heading_history.append(raw_hdg)
+                    filtered_hdg = statistics.median(self.heading_history)
+                    self.current_state.heading = filtered_hdg
+                
+                self.current_state.cog = data.get("cog", self.current_state.cog)
                 self.current_state.speed = data.get("spd", 0.0) / 3.6
                 self.current_state.nav_gps_sats = data.get(
                     "sat", self.current_state.nav_gps_sats

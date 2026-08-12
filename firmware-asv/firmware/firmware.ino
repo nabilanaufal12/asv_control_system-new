@@ -143,18 +143,29 @@ double bearing(double lat1, double lon1, double lat2, double lon2) {
 
 // ---------------- Baca heading CMPS12 ----------------
 float readCompass() {
+  static float last_valid_heading = 0.0;
   Wire.beginTransmission(CMPS12_ADDRESS);
   Wire.write(ANGLE_16BIT_REGISTER);
-  Wire.endTransmission();
+  uint8_t error = Wire.endTransmission();
+  
+  if (error != 0) {
+    // EMI Spike terdeteksi / Komunikasi I2C Putus -> Reset Bus!
+    Wire.end();
+    delay(5);
+    Wire.begin(21, 22);
+    Wire.setTimeOut(150);
+    return last_valid_heading; // Kembalikan nilai terakhir yang valid agar tidak loncat
+  }
 
-  Wire.requestFrom(CMPS12_ADDRESS, 2); 
-  if (Wire.available() == 2) {
+  uint8_t bytesReceived = Wire.requestFrom(CMPS12_ADDRESS, 2); 
+  if (bytesReceived == 2) {
     byte highByte = Wire.read();
     byte lowByte = Wire.read();
     unsigned int angle16 = (highByte << 8) | lowByte; 
-    return angle16 / 10.0; 
+    last_valid_heading = angle16 / 10.0;
+    return last_valid_heading; 
   }
-  return -1; 
+  return last_valid_heading; // Fallback ke heading terakhir
 }
 
 // ---------------- PID untuk servo ----------------
@@ -487,6 +498,7 @@ void setup() {
   myGPS.setAutoPVT(true); 
 
   Wire.begin(21, 22); 
+  Wire.setTimeOut(150); // Mencegah I2C blocking tak terhingga jika kena EMI
 
   // Inisialisasi PPM
   pinMode(PPM_PIN, INPUT);
@@ -509,6 +521,7 @@ void setup() {
 float heading = 0.0;
 double lat = 0.0, lon = 0.0;
 double speed = 0.0; 
+double cog = 0.0; // [NEW] Course Over Ground
 int sats = 0;
 unsigned long lastLoopTime = 0;
 // ---------------------------------
@@ -535,10 +548,12 @@ void loop() {
         lon = myGPS.getLongitude() / 10000000.0;
         speed = myGPS.getGroundSpeed() / 1000.0 * 3.6; 
         sats = myGPS.getSIV(); 
+        cog = myGPS.getHeading() / 100000.0; // [NEW] Ambil Course Over Ground
     } else { 
         lat = 0.0;
         lon = 0.0;
         speed = 0.0;
+        cog = 0.0;
         sats = 0;
     }
   }
@@ -903,6 +918,31 @@ void loop() {
   // --- 3. Kontrol Aktuator Lanjutan ---
   // ========================================
 
+  // [NEW] Slew Rate Limiter (Soft Start) untuk memuluskan transisi PWM
+  static int currentMotorBawah = 1000;
+  static int currentMotorDepanKiri = 1000;
+  static int currentMotorDepanKanan = 1000;
+
+  int max_step = 15; // Step ramp-up (semakin kecil = semakin halus tarikan arusnya)
+
+  // Soft-start Motor Utama (Bawah)
+  if (finalMotor > currentMotorBawah + max_step) currentMotorBawah += max_step;
+  else if (finalMotor < currentMotorBawah - max_step) currentMotorBawah -= max_step;
+  else currentMotorBawah = finalMotor;
+  finalMotor = currentMotorBawah;
+
+  // Soft-start Motor Kiri
+  if (finalMotorDepanKiri > currentMotorDepanKiri + max_step) currentMotorDepanKiri += max_step;
+  else if (finalMotorDepanKiri < currentMotorDepanKiri - max_step) currentMotorDepanKiri -= max_step;
+  else currentMotorDepanKiri = finalMotorDepanKiri;
+  finalMotorDepanKiri = currentMotorDepanKiri;
+
+  // Soft-start Motor Kanan
+  if (finalMotorDepanKanan > currentMotorDepanKanan + max_step) currentMotorDepanKanan += max_step;
+  else if (finalMotorDepanKanan < currentMotorDepanKanan - max_step) currentMotorDepanKanan -= max_step;
+  else currentMotorDepanKanan = finalMotorDepanKanan;
+  finalMotorDepanKanan = currentMotorDepanKanan;
+
   servoKiri.write(finalServo); 
   servoKanan.write(finalServo); 
 
@@ -927,6 +967,7 @@ void loop() {
   jsonDoc["sts"] = status;
 
   jsonDoc["hdg"] = (float)round(heading * 100) / 100;
+  jsonDoc["cog"] = (float)round(cog * 10) / 10; // [NEW] Kirim COG ke Jetson
   jsonDoc["lat"] = lat;
   jsonDoc["lon"] = lon;
   jsonDoc["spd"] = (float)round(speed * 100) / 100;

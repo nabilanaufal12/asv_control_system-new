@@ -420,6 +420,8 @@ class MainWindow(QMainWindow):
             self.backend_status_lbl.setStyleSheet(
                 "font-weight: bold; color: #2ecc71; margin-right: 20px;"
             )
+            # Sinkronisasi otomatis pengaturan GUI Windows ke Jetson Backend
+            self.settings_panel.broadcast_all_settings()
         else:
             self.backend_status_lbl.setText("GCS Backend Server: DISCONNECTED")
             self.backend_status_lbl.setStyleSheet(

@@ -1,7 +1,7 @@
 // js/main.js
 
 // --- KONFIGURASI IP ---
-const SERVER_IP = "http://192.168.1.20:5000";
+const SERVER_IP = window.location.origin; // Dinamis mendeteksi IP Jetson saat ini
 let isLiveMode = true;
 let currentHistoryRaceId = null;
 
@@ -609,8 +609,8 @@ function setupLocalSocketIO(elements, icons) {
 
     if (elements.cogValue) {
       elements.cogValue.textContent =
-        data.heading !== undefined
-          ? `${parseFloat(data.heading).toFixed(1)}°`
+        data.cog !== undefined
+          ? `${parseFloat(data.cog).toFixed(1)}°`
           : "0.0°";
     }
 
@@ -698,7 +698,7 @@ setInterval(async () => {
       // Update dropdown HANYA jika jumlah race berubah (ada race baru)
       if (races.length > 0 && races.length !== (raceSelector.options.length - 1)) {
         const previousValue = raceSelector.value; // Simpan pilihan user
-        
+
         raceSelector.innerHTML = '<option value="">Pilih Race</option>';
         races.forEach(race => {
           const option = document.createElement('option');
