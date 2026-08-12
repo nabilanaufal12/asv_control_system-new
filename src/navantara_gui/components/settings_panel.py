@@ -439,10 +439,10 @@ class SettingsPanel(QGroupBox):
         """Kirim semua setting ke backend secara serentak (berguna saat baru connect)."""
         print("[SettingsPanel] Melakukan broadcast semua pengaturan ke backend...")
         self._on_model_changed(self.combo_model.currentText())
-        self._on_ai_speed_changed(self.slider_ai_speed.value())
+        self._on_ai_speed_changed(self.spin_ai_speed.value())
         self._on_front_speed_changed()
         self._on_ai_servo_changed()
-        self._on_obs_dist_changed(self.slider_obs_dist.value())
+        self._on_obs_dist_changed(self.spin_obs_dist.value())
         self._on_wp_ranges_changed()
         self._on_set_photo_mission()
         self._on_set_dock_config()
