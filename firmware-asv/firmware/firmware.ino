@@ -51,8 +51,6 @@ Servo dirBawahKanan;
 // ---------------- PID ----------------
 double Kp = 2.0, Ki = 0.0, Kd = 0.5; // Konstanta PID
 
-// --- Waypoint Inversion Control for AI Mode ---
-// Fitur inversi servo dihapus
 
 double error, lastError = 0, integral = 0;
 
@@ -118,8 +116,8 @@ StaticJsonDocument<400> jsonDoc;
 String serialInputBuffer = ""; 
 
 // ---------------- Haversine ----------------
-#define R 6371000.0
 double haversine(double lat1, double lon1, double lat2, double lon2) {
+  const double R = 6371000.0;
   double dLat = radians(lat2 - lat1);
   double dLon = radians(lon2 - lon1);
   lat1 = radians(lat1);

@@ -23,11 +23,9 @@ TELEMETRY_KEY_MAP = {
     "heading": "hdg",
     "cog": "cog",
     "speed": "sog",  # Speed Over Ground
-    "battery_voltage": "bat",
     "status": "sts",
     "control_mode": "mode",
     "active_arena": "ar",
-    "inverse_servo": "inv",
     # Navigation & Waypoints
     "waypoints": "wps",
     "current_waypoint_index": "cur_wp",
@@ -55,11 +53,6 @@ TELEMETRY_KEY_MAP = {
 # --- [AKHIR OPTIMASI] ---
 
 
-def map_value(x, in_min, in_max, out_min, out_max):
-    if in_max == in_min:
-        return out_min
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
-
 
 @dataclass
 class AsvState:
@@ -69,18 +62,15 @@ class AsvState:
     heading: float = 90.0
     cog: float = 0.0
     speed: float = 0.0
-    battery_voltage: float = 12.5
     status: str = "DISCONNECTED"
     mission_time: str = "00:00:00"
     waypoints: list = field(default_factory=list)
     current_waypoint_index: int = 0
     is_connected_to_serial: bool = False
-    gyro_z: float = 0.0
-    accel_x: float = 0.0
     rc_channels: list = field(default_factory=lambda: [1500] * 6)
     nav_target_wp_index: int = 0
     nav_esp_total_wp: int = 0
-    nav_dist_to_wp: float = 0.0  # coba 9999.0
+    nav_dist_to_wp: float = 0.0
     nav_xte_m: float = 0.0
     nav_target_bearing: float = 0.0
     nav_heading_error: float = 0.0
@@ -481,7 +471,7 @@ class AsvHandler:
                     with self.state_lock:
                         heading_rad = np.radians(self.current_state.heading)
                         speed_ms = self.current_state.speed
-                        gyro_z_rad = np.radians(self.current_state.gyro_z)
+                        gyro_z_rad = 0.0  # Sensor gyro tidak terpasang, gunakan 0
                     self.ekf.predict(dt)
                     self.ekf.update_compass(heading_rad)
                     self.ekf.update_imu(np.array([speed_ms, gyro_z_rad]))
