@@ -7,7 +7,7 @@
 // ---------------- GPS (Diganti ke U-Blox 10Hz) ----------------
 SFE_UBLOX_GPS myGPS;
 HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
-#define GPS_BAUD_RATE 9600 // Baud rate komunikasi ke modul GPS
+#define GPS_BAUD_RATE 9600 // Baud rate GPS (hardware-locked di modul U-Blox, jangan diubah)
 #define GPS_RX_PIN 16 // Pin RX untuk komunikasi GPS (default Serial 2 RX)
 #define GPS_TX_PIN 17 // Pin TX untuk komunikasi GPS (default Serial 2 TX)
 
@@ -149,15 +149,15 @@ float readCompass() {
   uint8_t error = Wire.endTransmission();
   
   if (error != 0) {
-    // EMI Spike terdeteksi / Komunikasi I2C Putus -> Reset Bus!
-    Wire.end();
-    delay(5);
-    Wire.begin(21, 22);
-    Wire.setTimeOut(150);
-    return last_valid_heading; // Kembalikan nilai terakhir yang valid agar tidak loncat
+    // [FIX-2] Hanya return nilai terakhir yang valid. JANGAN reset Wire bus
+    // di dalam loop 50Hz karena menyebabkan memory leak / crash ESP32.
+    // Wire.setTimeOut(150) di setup() sudah cukup untuk mencegah blocking.
+    return last_valid_heading;
   }
 
-  uint8_t bytesReceived = Wire.requestFrom(CMPS12_ADDRESS, 2); 
+  // Semua argumen di-cast ke uint8_t agar cocok persis dengan overload:
+  // uint8_t requestFrom(uint8_t address, uint8_t size, uint8_t sendStop)
+  uint8_t bytesReceived = Wire.requestFrom((uint8_t)CMPS12_ADDRESS, (uint8_t)2, (uint8_t)1);
   if (bytesReceived == 2) {
     byte highByte = Wire.read();
     byte lowByte = Wire.read();
@@ -494,7 +494,7 @@ void setup() {
   }
 
   myGPS.setUART1Output(COM_TYPE_UBX); 
-  myGPS.setNavigationFrequency(10); 
+  myGPS.setNavigationFrequency(5); // [FIX-1 REVISED] Diturunkan dari 10Hz -> 5Hz agar payload tidak overflow buffer UART 9600bps
   myGPS.setAutoPVT(true); 
 
   Wire.begin(21, 22); 
@@ -923,7 +923,7 @@ void loop() {
   static int currentMotorDepanKiri = 1000;
   static int currentMotorDepanKanan = 1000;
 
-  int max_step = 15; // Step ramp-up (semakin kecil = semakin halus tarikan arusnya)
+  int max_step = 3; // [FIX-3] Diturunkan dari 15 -> 3 untuk soft-start yang lebih halus, menekan EMI spike inrush current
 
   // Soft-start Motor Utama (Bawah)
   if (finalMotor > currentMotorBawah + max_step) currentMotorBawah += max_step;

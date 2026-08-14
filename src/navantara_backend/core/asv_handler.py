@@ -161,7 +161,8 @@ class AsvHandler:
         )
         self.ekf = SimpleEKF(np.zeros(5), np.eye(5) * 0.1)
         self.last_ekf_update_time = time.time()
-        self.heading_history = collections.deque(maxlen=5) # [NEW] Median Filter Window
+        self.heading_history = collections.deque(maxlen=25) # [FIX-4] Window diperlebar: 5 -> 25 (menutup 0.5 detik spike EMI di 50Hz)
+        self._ema_heading = None  # [FIX-4] State EMA heading (alpha=0.15)
         self.use_dummy_serial = self.config.get("serial_connection", {}).get(
             "use_dummy_serial", False
         )
@@ -358,10 +359,24 @@ class AsvHandler:
             with self.state_lock:
                 raw_hdg = data.get("hdg")
                 if raw_hdg is not None:
-                    # [NEW] Median Filter untuk menendang nilai lonjakan EMI ekstrem sesaat
+                    # [FIX-4] Lapisan 1: Median Filter (window=25) untuk menolak outlier EMI ekstrem
                     self.heading_history.append(raw_hdg)
-                    filtered_hdg = statistics.median(self.heading_history)
-                    self.current_state.heading = filtered_hdg
+                    median_hdg = statistics.median(self.heading_history)
+
+                    # [FIX-4] Lapisan 2: EMA dengan koreksi angular wrap-around 360°->0°
+                    if self._ema_heading is None:
+                        self._ema_heading = median_hdg
+                    else:
+                        alpha = 0.15
+                        # Hitung selisih sudut terpendek (agar 359°->1° = +2°, bukan -358°)
+                        diff = median_hdg - self._ema_heading
+                        if diff > 180:
+                            diff -= 360
+                        elif diff < -180:
+                            diff += 360
+                        self._ema_heading = (self._ema_heading + alpha * diff) % 360
+
+                    self.current_state.heading = self._ema_heading
                 
                 self.current_state.cog = data.get("cog", self.current_state.cog)
                 self.current_state.speed = data.get("spd", 0.0) / 3.6
