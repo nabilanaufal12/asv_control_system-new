@@ -3,17 +3,14 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QVBoxLayout,
     QLabel,
-    QSlider,
     QHBoxLayout,
     QComboBox,
-    QLineEdit,
     QPushButton,
     QMessageBox,
     QFormLayout,
     QSpinBox,
 )
-from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QIntValidator
+from PySide6.QtCore import Signal
 import os
 import json
 
@@ -53,13 +50,13 @@ class SettingsPanel(QGroupBox):
         self.spin_ai_speed.setRange(1000, 2000)
         self.spin_ai_speed.setValue(1300)
         row1.addWidget(self.spin_ai_speed)
-        
+
         row1.addWidget(QLabel("PWM Depan:"))
         self.spin_front = QSpinBox()
         self.spin_front.setRange(1000, 2000)
         self.spin_front.setValue(1500)
         row1.addWidget(self.spin_front)
-        
+
         ai_layout.addLayout(row1)
 
         # Row 2: Avoidance Angle (Left, Right)
@@ -78,7 +75,7 @@ class SettingsPanel(QGroupBox):
         self.spin_right.setPrefix("Right: ")
         self.spin_right.setSuffix("°")
         row2.addWidget(self.spin_right)
-        
+
         ai_layout.addLayout(row2)
 
         # Row 3: AI Activation & AI Model
@@ -93,9 +90,11 @@ class SettingsPanel(QGroupBox):
 
         row3.addWidget(QLabel("AI Model:"))
         self.combo_model = QComboBox()
-        self.combo_model.addItems(["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"])
+        self.combo_model.addItems(
+            ["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"]
+        )
         row3.addWidget(self.combo_model)
-        
+
         ai_layout.addLayout(row3)
 
         ai_control_group.setLayout(ai_layout)
@@ -230,13 +229,17 @@ class SettingsPanel(QGroupBox):
         dock_row1.addWidget(QLabel("PWM Utama:"))
         self.spin_dock_motor = QSpinBox()
         self.spin_dock_motor.setRange(1000, 2000)
-        self.spin_dock_motor.setValue(self.config.get("docking_defaults", {}).get("motor_utama_pwm", 1200))
+        self.spin_dock_motor.setValue(
+            self.config.get("docking_defaults", {}).get("motor_utama_pwm", 1200)
+        )
         dock_row1.addWidget(self.spin_dock_motor)
 
         dock_row1.addWidget(QLabel("Depan:"))
         self.spin_dock_depan = QSpinBox()
         self.spin_dock_depan.setRange(1000, 2000)
-        self.spin_dock_depan.setValue(self.config.get("docking_defaults", {}).get("motor_depan_pwm", 1400))
+        self.spin_dock_depan.setValue(
+            self.config.get("docking_defaults", {}).get("motor_depan_pwm", 1400)
+        )
         dock_row1.addWidget(self.spin_dock_depan)
 
         docking_layout.addLayout(dock_row1)
@@ -245,13 +248,18 @@ class SettingsPanel(QGroupBox):
         dock_row2.addWidget(QLabel("Durasi (s):"))
         self.spin_dock_charge = QSpinBox()
         self.spin_dock_charge.setRange(1, 10)
-        self.spin_dock_charge.setValue(self.config.get("docking_defaults", {}).get("charge_duration_ms", 3000) // 1000)
+        self.spin_dock_charge.setValue(
+            self.config.get("docking_defaults", {}).get("charge_duration_ms", 3000)
+            // 1000
+        )
         dock_row2.addWidget(self.spin_dock_charge)
 
         dock_row2.addWidget(QLabel("Toleransi (°):"))
         self.spin_dock_tol = QSpinBox()
         self.spin_dock_tol.setRange(1, 90)
-        self.spin_dock_tol.setValue(self.config.get("docking_defaults", {}).get("heading_tolerance_deg", 5))
+        self.spin_dock_tol.setValue(
+            self.config.get("docking_defaults", {}).get("heading_tolerance_deg", 5)
+        )
         dock_row2.addWidget(self.spin_dock_tol)
 
         docking_layout.addLayout(dock_row2)
@@ -297,7 +305,7 @@ class SettingsPanel(QGroupBox):
         self.spin_portrait_rev_speed.valueChanged.connect(self._on_set_photo_mission)
         self.spin_portrait_stop.valueChanged.connect(self._on_set_photo_mission)
         self.spin_portrait_reverse.valueChanged.connect(self._on_set_photo_mission)
-        
+
         self.spin_dock_motor.valueChanged.connect(self._on_set_dock_config)
         self.spin_dock_depan.valueChanged.connect(self._on_set_dock_config)
         self.spin_dock_charge.valueChanged.connect(self._on_set_dock_config)
@@ -415,10 +423,18 @@ class SettingsPanel(QGroupBox):
 
         if "docking_defaults" not in self.config:
             self.config["docking_defaults"] = {}
-        self.config["docking_defaults"]["motor_utama_pwm"] = self.spin_dock_motor.value()
-        self.config["docking_defaults"]["motor_depan_pwm"] = self.spin_dock_depan.value()
-        self.config["docking_defaults"]["charge_duration_ms"] = self.spin_dock_charge.value() * 1000
-        self.config["docking_defaults"]["heading_tolerance_deg"] = self.spin_dock_tol.value()
+        self.config["docking_defaults"][
+            "motor_utama_pwm"
+        ] = self.spin_dock_motor.value()
+        self.config["docking_defaults"][
+            "motor_depan_pwm"
+        ] = self.spin_dock_depan.value()
+        self.config["docking_defaults"]["charge_duration_ms"] = (
+            self.spin_dock_charge.value() * 1000
+        )
+        self.config["docking_defaults"][
+            "heading_tolerance_deg"
+        ] = self.spin_dock_tol.value()
 
         # Write to file
         try:
@@ -528,7 +544,7 @@ class SettingsPanel(QGroupBox):
                 "motor_utama_pwm": self.spin_dock_motor.value(),
                 "motor_depan_pwm": self.spin_dock_depan.value(),
                 "charge_duration_ms": self.spin_dock_charge.value() * 1000,
-                "heading_tolerance_deg": self.spin_dock_tol.value()
+                "heading_tolerance_deg": self.spin_dock_tol.value(),
             }
             self.send_dock_config.emit(payload)
             print(f"[SettingsPanel] Sinyal send_dock_config dipancarkan: {payload}")

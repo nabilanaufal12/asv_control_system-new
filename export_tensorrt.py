@@ -11,7 +11,6 @@ Cara pakai:
 Konfigurasi bisa diubah di bagian CONFIG di bawah.
 """
 
-import os
 import sys
 import shutil
 from pathlib import Path
@@ -44,19 +43,24 @@ def check_prerequisites():
 
     try:
         import torch
+
         cuda_ok = torch.cuda.is_available()
         print(f"\n[CHECK] PyTorch   : {torch.__version__}")
-        print(f"[CHECK] CUDA      : {'OK - ' + torch.cuda.get_device_name(0) if cuda_ok else 'TIDAK TERSEDIA'}")
+        print(
+            f"[CHECK] CUDA      : {'OK - ' + torch.cuda.get_device_name(0) if cuda_ok else 'TIDAK TERSEDIA'}"
+        )
         if not cuda_ok:
-            print("\n[ERROR] CUDA tidak tersedia! Export TensorRT membutuhkan GPU CUDA.")
+            print(
+                "\n[ERROR] CUDA tidak tersedia! Export TensorRT membutuhkan GPU CUDA."
+            )
             sys.exit(1)
     except ImportError:
         print("[ERROR] PyTorch tidak terinstal.")
         sys.exit(1)
 
     try:
-        from ultralytics import YOLO
         import ultralytics
+
         print(f"[CHECK] Ultralytics: {ultralytics.__version__}")
     except ImportError:
         print("[ERROR] Ultralytics tidak terinstal. Jalankan: pip install ultralytics")
@@ -73,6 +77,7 @@ def check_prerequisites():
 
 def inspect_model():
     from ultralytics import YOLO
+
     print("\n" + "=" * 60)
     print("  Inspeksi Model")
     print("=" * 60)
@@ -108,7 +113,7 @@ def export_to_tensorrt(model):
     print(f"[CONFIG] half (FP16): {CONFIG['half']}")
     print(f"[CONFIG] batch      : {CONFIG['batch']}")
     print(f"[CONFIG] workspace  : {CONFIG['workspace']} GB")
-    print(f"\n[INFO] Memulai export... (bisa memakan 5-15 menit, jangan matikan!)\n")
+    print("\n[INFO] Memulai export... (bisa memakan 5-15 menit, jangan matikan!)\n")
 
     try:
         engine_path = model.export(
@@ -123,16 +128,17 @@ def export_to_tensorrt(model):
         if engine_path and Path(engine_path).exists():
             size_mb = Path(engine_path).stat().st_size / (1024 * 1024)
             print(f"\n{'=' * 60}")
-            print(f"  EXPORT BERHASIL!")
+            print("  EXPORT BERHASIL!")
             print(f"{'=' * 60}")
             print(f"\n[OUTPUT] File  : {engine_path}")
             print(f"[OUTPUT] Ukuran: {size_mb:.1f} MB")
-            print(f"\n[NOTE] Backend akan otomatis memilih .engine ini saat restart.")
+            print("\n[NOTE] Backend akan otomatis memilih .engine ini saat restart.")
         else:
             print("\n[WARNING] Cari file .engine di direktori yang sama dengan best.pt")
     except Exception as e:
         print(f"\n[ERROR] Export gagal: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -141,7 +147,8 @@ def tips_dataset():
     print("\n" + "=" * 60)
     print("  Tips Dataset untuk Akurasi YOLOv11 Maksimal")
     print("=" * 60)
-    print("""
+    print(
+        """
 MASALAH: Model salah menebak antar kelas (Blue_Ball vs Blue_Box, dll.)
 
 PENYEBAB UMUM:
@@ -169,7 +176,8 @@ AUGMENTASI YANG DIREKOMENDASIKAN (via Roboflow/YOLO):
 KELAS YANG SERING KONFLIK:
   Blue_Ball vs Blue_Box   -> tambah foto dari samping (bentuk bola vs kotak lebih jelas)
   Green_Ball vs Green_Box -> pastikan anotasi presisi, hindari bounding box longgar
-    """)
+    """
+    )
 
 
 if __name__ == "__main__":

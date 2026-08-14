@@ -88,23 +88,7 @@ def create_app():
         print(f"[Server] Mencoba di path: {config_path}")
         exit(1)
 
-    asv_conf = app.config["ASV_CONFIG"]
-    use_dynamic = asv_conf.get("system_settings", {}).get("use_dynamic_handler", False)
-
-    if use_dynamic:
-        print("\n" + "=" * 50)
-        print(" [SYSTEM] MODE: DYNAMIC HANDLER (TESTING)")
-        print(" [INFO]   Memuat: core/asv_handler_dynamic.py")
-        print("=" * 50 + "\n")
-        # Import dari file BARU (pastikan file ini ada)
-        from navantara_backend.core.asv_handler_dynamic import AsvHandler
-    else:
-        print("\n" + "=" * 50)
-        print(" [SYSTEM] MODE: STABLE HANDLER (PRODUCTION)")
-        print(" [INFO]   Memuat: core/asv_handler.py")
-        print("=" * 50 + "\n")
-        # Import dari file LAMA/STABIL
-        from navantara_backend.core.asv_handler import AsvHandler
+    from navantara_backend.core.asv_handler import AsvHandler
 
     # Inisialisasi layanan
     asv_handler = AsvHandler(app.config["ASV_CONFIG"], socketio)

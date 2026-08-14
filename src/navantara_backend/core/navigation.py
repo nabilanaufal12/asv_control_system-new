@@ -52,8 +52,6 @@ class PIDController:
         self.last_error = error
         self.last_time = current_time
 
-        print(f"    PID -> P: {p_out:.2f}, I: {i_out:.2f}, D: {d_out:.2f}")
-
         return output
 
     def reset(self):

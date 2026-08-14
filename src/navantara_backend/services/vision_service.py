@@ -393,13 +393,9 @@ class VisionService:
                 self.model = new_model
                 self.is_tensorrt = getattr(self.model, "_is_tensorrt", False)
                 if self.is_tensorrt:
-                    print(
-                        f"[VisionService] Mode diubah: TensorRT FP16 (device terkunci)."
-                    )
+                    print("[VisionService] Mode diubah: TensorRT FP16 (device terkunci).")
                 else:
-                    print(
-                        f"[VisionService] Mode diubah: PyTorch di {self.infer_device}."
-                    )
+                    print(f"[VisionService] Mode diubah: PyTorch di {self.infer_device}.")
             else:
                 print(
                     "[VisionService] Gagal mengganti model, tetap menggunakan model lama."
@@ -666,7 +662,9 @@ class VisionService:
                     cap = init_camera(current_opened_src)
 
                     if not cap:
-                        print(f"[{cam_id_log}] HARD RESET Gagal. Menunggu 15 detik sebelum re-init...")
+                        print(
+                            f"[{cam_id_log}] HARD RESET Gagal. Menunggu 15 detik sebelum re-init..."
+                        )
                         eventlet.sleep(15.0)
 
                     # Reset counter agar tidak spam reset jika kamera benar-benar mati

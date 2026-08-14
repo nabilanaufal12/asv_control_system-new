@@ -201,7 +201,9 @@ class SensorDisplay(QGroupBox):
         # Baris COG (Course Over Ground)
         row_cog = QHBoxLayout()
         self.val_cog = QLabel("0.0°")
-        self.val_cog.setStyleSheet("font-size: 16px; font-weight: bold; color: #3498db;")
+        self.val_cog.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #3498db;"
+        )
         row_cog.addWidget(QLabel("COG:"))
         row_cog.addWidget(self.val_cog)
         layout.addLayout(row_cog)

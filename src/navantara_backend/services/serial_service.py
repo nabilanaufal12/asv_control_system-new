@@ -5,8 +5,6 @@ import serial
 import serial.tools.list_ports
 import threading
 import time
-import random
-import json
 
 
 class SerialHandler:
@@ -16,28 +14,6 @@ class SerialHandler:
         self.serial_lock = threading.Lock()
         self.is_connected = False
         self.read_buffer = b""  # <-- [PERBAIKAN] Buffer internal untuk data
-
-        # If True, when no real serial is connected we'll still simulate
-        # handling of outgoing commands for development/debugging.
-        self.simulate_if_disconnected = self.config.get("serial_connection", {}).get(
-            "simulate_if_disconnected", True
-        )
-
-        self.use_dummy_serial = self.config.get("serial_connection", {}).get(
-            "use_dummy_serial", False
-        )
-        if self.use_dummy_serial:
-            self.is_connected = True
-            self.dummy_heading = 90.0
-            self.dummy_lat = -6.918000
-            self.dummy_lon = 107.618500
-            self.dummy_data_counter = 0
-            self.dummy_servo = 90
-            self.dummy_motor = 1500
-            print("=================================================")
-            print("  [PERINGATAN] MODE SERIAL DUMMY AKTIF  ")
-            print("  Backend akan menghasilkan data serial JSON palsu.  ")
-            print("=================================================")
 
     def connect(self, port_name, baudrate):
         self.disconnect()
@@ -162,49 +138,9 @@ class SerialHandler:
         except Exception:
             pass
 
-        # If we're using dummy serial, simulate that the command was applied
-        if self.use_dummy_serial:
-            # Try to parse common actuator command format 'A,servo,motor' to update dummy state
-            try:
-                parts = command_string.strip().split(",")
-                if parts and parts[0] == "A" and len(parts) >= 3:
-                    servo_val = int(float(parts[1]))
-                    motor_val = int(float(parts[2]))
-                    with self.serial_lock:
-                        self.dummy_servo = servo_val
-                        self.dummy_motor = motor_val
-            except Exception:
-                pass
-            return
-
-        # If not connected, optionally simulate the command (useful for testing AI without hardware)
         if not self.is_connected:
-            if self.simulate_if_disconnected:
-                try:
-                    print(f"[Serial SIMULATE] (no connection) {command_string.strip()}")
-                except Exception:
-                    pass
-                # Try to apply actuator updates to in-memory dummy state so AI logic can reflect them
-                try:
-                    parts = command_string.strip().split(",")
-                    if parts and parts[0] == "A" and len(parts) >= 3:
-                        servo_val = int(float(parts[1]))
-                        motor_val = int(float(parts[2]))
-                        # create dummy attrs if they don't exist
-                        if not hasattr(self, "dummy_servo"):
-                            self.dummy_servo = servo_val
-                        else:
-                            self.dummy_servo = servo_val
-                        if not hasattr(self, "dummy_motor"):
-                            self.dummy_motor = motor_val
-                        else:
-                            self.dummy_motor = motor_val
-                except Exception:
-                    pass
-                return
-            else:
-                print("[Serial] Tidak terhubung, perintah tidak dikirim.")
-                return
+            print("[Serial] Tidak terhubung, perintah tidak dikirim.")
+            return
 
         with self.serial_lock:
             if self.serial_port:
@@ -215,54 +151,6 @@ class SerialHandler:
                     self.disconnect()
 
     def read_line(self):
-        # --- [LOGIKA DUMMY (Tidak Berubah)] ---
-        if self.use_dummy_serial:
-            with self.serial_lock:
-                time.sleep(0.5)
-                self.dummy_heading = (self.dummy_heading + 1.5) % 360
-                self.dummy_lat += 0.00001 * random.uniform(0.8, 1.2)
-                self.dummy_lon += 0.000005 * random.uniform(0.8, 1.2)
-                self.dummy_data_counter += 1
-                dummy_data = {
-                    "hdg": round(self.dummy_heading, 1),
-                    "lat": round(self.dummy_lat, 6),
-                    "lon": round(self.dummy_lon, 6),
-                    "spd": round(1.2 + random.uniform(-0.1, 0.1), 1),
-                    "sat": 10,
-                }
-                if self.dummy_data_counter % 2 == 0:
-                    self.dummy_servo = 110 if self.dummy_servo == 90 else 90
-                    self.dummy_motor = 1550 if self.dummy_motor == 1500 else 1500
-                    dummy_data.update(
-                        {
-                            "mod": "MANUAL",
-                            "sts": "ACTIVE",
-                            "srv": self.dummy_servo,
-                            "mot": self.dummy_motor,
-                        }
-                    )
-                else:
-                    dist_to_wp = 15.0 - (self.dummy_data_counter % 10)
-                    target_bearing = 120.0
-                    heading_error = target_bearing - self.dummy_heading
-                    if heading_error > 180:
-                        heading_error -= 360
-                    if heading_error < -180:
-                        heading_error += 360
-                    dummy_data.update(
-                        {
-                            "mod": "AUTO",
-                            "sts": "WAYPOINT",
-                            "srv": 100,
-                            "mot": 1600,
-                            "w_id": 2,
-                            "w_dst": round(dist_to_wp, 1),
-                            "w_brg": round(target_bearing, 1),
-                            "w_err": round(heading_error, 1),
-                        }
-                    )
-                return json.dumps(dummy_data)
-        # --- AKHIR LOGIKA DUMMY ---
 
         # --- [MODIFIKASI BESAR] Logika Asli dengan Buffering ---
         if not self.is_connected:

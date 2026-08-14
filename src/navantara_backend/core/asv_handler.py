@@ -53,12 +53,11 @@ TELEMETRY_KEY_MAP = {
 # --- [AKHIR OPTIMASI] ---
 
 
-
 @dataclass
 class AsvState:
     control_mode: str = "AUTO"
-    latitude: float = -6.9180
-    longitude: float = 107.6185
+    latitude: float = 0.0
+    longitude: float = 0.0
     heading: float = 90.0
     cog: float = 0.0
     speed: float = 0.0
@@ -151,11 +150,11 @@ class AsvHandler:
         )
         self.ekf = SimpleEKF(np.zeros(5), np.eye(5) * 0.1)
         self.last_ekf_update_time = time.time()
-        self.heading_history = collections.deque(maxlen=25) # [FIX-4] Window diperlebar: 5 -> 25 (menutup 0.5 detik spike EMI di 50Hz)
+        self.heading_history = collections.deque(
+            maxlen=25
+        )  # [FIX-4] Window diperlebar: 5 -> 25 (menutup 0.5 detik spike EMI di 50Hz)
         self._ema_heading = None  # [FIX-4] State EMA heading (alpha=0.15)
-        self.use_dummy_serial = self.config.get("serial_connection", {}).get(
-            "use_dummy_serial", False
-        )
+
         self.logger = MissionLogger()
         self.is_logging_csv = False
         self.custom_csv_headers = ["Day", "Date", "Time", "GPS", "SOG", "COG", "HDG"]
@@ -169,7 +168,6 @@ class AsvHandler:
         baud_rate = serial_cfg.get("default_baud_rate", 115200)
 
         if force_port:
-            self.use_dummy_serial = False
             self.serial_handler.use_dummy_serial = False
             logging.info(
                 f"[AsvHandler] Memaksa koneksi serial ke: {force_port} @ {baud_rate}"
@@ -179,10 +177,6 @@ class AsvHandler:
                 logging.warning(
                     f"[AsvHandler] Gagal terhubung ke port paksa {force_port}. Melanjutkan auto-scan..."
                 )
-
-        if self.use_dummy_serial:
-            logging.info("[AsvHandler] Mode DUMMY SERIAL aktif.")
-            return
 
         logging.info("[AsvHandler] Memulai upaya koneksi serial otomatis...")
         self.serial_handler.find_and_connect_esp32(baud_rate)
@@ -367,7 +361,7 @@ class AsvHandler:
                         self._ema_heading = (self._ema_heading + alpha * diff) % 360
 
                     self.current_state.heading = self._ema_heading
-                
+
                 self.current_state.cog = data.get("cog", self.current_state.cog)
                 self.current_state.speed = data.get("spd", 0.0) / 3.6
                 self.current_state.nav_gps_sats = data.get(
@@ -391,9 +385,11 @@ class AsvHandler:
                 if mode:
                     # Cetak informasi di terminal jika mode berubah
                     if self.current_state.control_mode != mode:
-                        print(f"\n======================================")
-                        print(f">>> MODE RC BERUBAH: {self.current_state.control_mode} -> {mode} <<<")
-                        print(f"======================================\n")
+                        print("\n======================================")
+                        print(
+                            f">>> MODE RC BERUBAH: {self.current_state.control_mode} -> {mode} <<<"
+                        )
+                        print("======================================\n")
 
                     # Deteksi transisi dari MANUAL ke AUTO untuk membuat folder race_x baru
                     if self.current_state.control_mode == "MANUAL" and mode == "AUTO":
@@ -433,7 +429,7 @@ class AsvHandler:
                     self.current_state.current_waypoint_index = new_idx
                 if "w_tot" in data:
                     self.current_state.nav_esp_total_wp = data.get("w_tot")
-                
+
                 if "dk_st" in data:
                     self.current_state.docking_state = data.get("dk_st")
         except Exception as e:
@@ -549,9 +545,7 @@ class AsvHandler:
                         # 1. TENTUKAN ARAH MENGHINDAR ATAU TRACKING
                         # Ambil nilai servo dan motor depan dari GUI secara realtime
                         with self.state_lock:
-                            pwm_depan_aktif = (
-                                self.current_state.vision_front_motor_cmd
-                            )
+                            pwm_depan_aktif = self.current_state.vision_front_motor_cmd
                             servo_kiri_aktif = self.current_state.vision_servo_left_cmd
                             servo_kanan_aktif = (
                                 self.current_state.vision_servo_right_cmd
@@ -624,7 +618,7 @@ class AsvHandler:
                         else:
                             turn_direction = "STRAIGHT"
                             servo_cmd = servo_default
-                            desc = f"Unknown -> Lurus"
+                            desc = "Unknown -> Lurus"
 
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
                         if nav_dist_to_wp < 1.5:
@@ -640,10 +634,7 @@ class AsvHandler:
                         else:
                             # Kirim 5 parameter: A, Servo (Selalu 90), Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)},{motor_depan_kiri},{motor_depan_kanan}\n"
-                            logging.info(
-                                f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}"
-                            )
-
+                            logging.debug(f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}")
                     elif resume_waypoint_on_clear:
                         with self.state_lock:
                             self.current_state.is_avoiding = False
@@ -798,9 +789,7 @@ class AsvHandler:
             pwm_val = int(payload.get("pwm", 1500))
             with self.state_lock:
                 self.current_state.vision_front_motor_cmd = pwm_val
-            logging.info(
-                f"[AsvHandler] Motor Depan AI Updated -> PWM: {pwm_val}"
-            )
+            logging.info(f"[AsvHandler] Motor Depan AI Updated -> PWM: {pwm_val}")
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
 
@@ -1104,19 +1093,23 @@ class AsvHandler:
             motor_depan = payload.get("motor_depan_pwm", 1400)
             charge_ms = payload.get("charge_duration_ms", 3000)
             tol = payload.get("heading_tolerance_deg", 5)
-            
+
             with self.state_lock:
                 arena = self.current_state.active_arena
-            
+
             direction = 1 if "B" in arena else 0  # 0=KIRI(A), 1=KANAN(B)
 
             if self.serial_handler.is_connected:
                 self.serial_handler.send_command(
                     f"S,DOCK,{motor_utama},{motor_depan},{charge_ms},{tol},{direction}\n"
                 )
-                logging.info(f"[AsvHandler] Dock Config dikirim ke ESP32: {motor_utama},{motor_depan},{charge_ms},{tol},{direction}")
-                
-            self.logger.log_event(f"[GUI Command] Set Dock Config -> {motor_utama},{motor_depan},{charge_ms},{tol},{direction}")
+                logging.info(
+                    f"[AsvHandler] Dock Config dikirim ke ESP32: {motor_utama},{motor_depan},{charge_ms},{tol},{direction}"
+                )
+
+            self.logger.log_event(
+                f"[GUI Command] Set Dock Config -> {motor_utama},{motor_depan},{charge_ms},{tol},{direction}"
+            )
         except Exception as e:
             logging.error(f"Error handling SET_DOCK_CONFIG: {e}")
 

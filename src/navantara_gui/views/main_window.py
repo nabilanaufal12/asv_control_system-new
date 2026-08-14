@@ -28,7 +28,6 @@ from PySide6.QtCore import Slot, Qt
 from navantara_gui.components.control_panel import ControlPanel
 from navantara_gui.components.dashboard import Dashboard
 from navantara_gui.components.settings_panel import SettingsPanel
-from navantara_gui.components.debug_panel import DebugPanel
 from navantara_gui.components.video_view import VideoView
 from navantara_gui.components.header import Header
 from navantara_gui.components.waypoints_panel import WaypointsPanel
@@ -56,7 +55,6 @@ class MainWindow(QMainWindow):
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
         self.system_status_panel = Dashboard(config=self.config)
-        self.debug_panel = DebugPanel(config=self.config)
         self.settings_panel = SettingsPanel(config=self.config)
         self.video_view = VideoView(config=self.config)
 
@@ -132,7 +130,6 @@ class MainWindow(QMainWindow):
 
         layout_sidebar_kiri.addWidget(video_group)
         layout_sidebar_kiri.addWidget(self.control_panel)
-        layout_sidebar_kiri.addWidget(self.debug_panel)
         layout_sidebar_kiri.addWidget(self.settings_panel)
         layout_sidebar_kiri.addStretch()
 
@@ -236,8 +233,6 @@ class MainWindow(QMainWindow):
                 "SWAP_CAMERAS", {"swapped": is_swapped}
             )
         )
-
-        self.debug_panel.debug_command_sent.connect(self.api_client.send_command)
 
         self.settings_panel.vision_speed_updated.connect(
             lambda val: self.api_client.send_command(
