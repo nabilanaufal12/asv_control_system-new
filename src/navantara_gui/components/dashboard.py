@@ -198,6 +198,14 @@ class SensorDisplay(QGroupBox):
         row1.addWidget(self.val_heading)
         layout.addLayout(row1)
 
+        # Baris COG (Course Over Ground)
+        row_cog = QHBoxLayout()
+        self.val_cog = QLabel("0.0°")
+        self.val_cog.setStyleSheet("font-size: 16px; font-weight: bold; color: #3498db;")
+        row_cog.addWidget(QLabel("COG:"))
+        row_cog.addWidget(self.val_cog)
+        layout.addLayout(row_cog)
+
         # Baris Latitude
         row_lat = QHBoxLayout()
         self.val_lat = QLabel("0.0")
@@ -223,11 +231,13 @@ class SensorDisplay(QGroupBox):
 
     def update_sensor(self, data):
         hdg = data.get("heading", data.get("hdg", 0.0))
+        cog_val = data.get("cog", 0.0)
         lat = data.get("latitude", data.get("lat", 0.0))
         lon = data.get("longitude", data.get("lon", 0.0))
         spd = data.get("speed", data.get("sog", 0.0))
 
         self.val_heading.setText(f"{float(hdg):.1f}°")
+        self.val_cog.setText(f"{float(cog_val):.1f}°")
         self.val_lat.setText(f"{float(lat):.6f}")
         self.val_lon.setText(f"{float(lon):.6f}")
         self.val_speed.setText(f"{float(spd):.1f} km/h")
