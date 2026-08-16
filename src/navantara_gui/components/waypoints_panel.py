@@ -28,6 +28,7 @@ class WaypointsPanel(QGroupBox):
     load_mission_requested = Signal(str)
     request_wp_sync = Signal()  # Sinyal baru untuk meminta sync dari ESP32
     waypoints_updated = Signal(list)
+    counter_action_requested = Signal(str)  # Sinyal untuk kontrol target WP (INC, DEC, RESET)
 
     def __init__(self, config, title="Navigation & Waypoint Setup"):
         super().__init__(title)
@@ -49,6 +50,23 @@ class WaypointsPanel(QGroupBox):
         mission_layout.addWidget(self.load_a_button)
         mission_layout.addWidget(self.load_b_button)
         mission_box.setLayout(mission_layout)
+
+        # --- 1.5. Waypoint Target Counter Controls ---
+        counter_box = QGroupBox("Target Waypoint Override")
+        counter_layout = QHBoxLayout()
+        self.counter_dec_button = QPushButton("<< Prev WP (-)")
+        self.counter_reset_button = QPushButton("Reset Target (0)")
+        self.counter_inc_button = QPushButton("Next WP (+) >>")
+        
+        btn_style_counter = "background-color: #607D8B; color: white; font-weight: bold; padding: 5px;"
+        self.counter_dec_button.setStyleSheet(btn_style_counter)
+        self.counter_inc_button.setStyleSheet(btn_style_counter)
+        self.counter_reset_button.setStyleSheet("background-color: #E91E63; color: white; font-weight: bold; padding: 5px;")
+        
+        counter_layout.addWidget(self.counter_dec_button)
+        counter_layout.addWidget(self.counter_reset_button)
+        counter_layout.addWidget(self.counter_inc_button)
+        counter_box.setLayout(counter_layout)
 
         # --- 2. Manual Input Form ---
         input_form_layout = QFormLayout()
@@ -133,6 +151,7 @@ class WaypointsPanel(QGroupBox):
 
         # --- Menyusun Layout Utama ---
         main_layout.addWidget(mission_box)
+        main_layout.addWidget(counter_box)
         main_layout.addLayout(input_form_layout)
         main_layout.addWidget(self.waypoints_list)
         main_layout.addLayout(grid_layout)
@@ -142,6 +161,10 @@ class WaypointsPanel(QGroupBox):
         # --- Koneksi Sinyal ---
         self.load_a_button.clicked.connect(lambda: self._on_load_mission("A"))
         self.load_b_button.clicked.connect(lambda: self._on_load_mission("B"))
+        
+        self.counter_inc_button.clicked.connect(lambda: self.counter_action_requested.emit("INC"))
+        self.counter_dec_button.clicked.connect(lambda: self.counter_action_requested.emit("DEC"))
+        self.counter_reset_button.clicked.connect(lambda: self.counter_action_requested.emit("RESET"))
 
         self.add_manual_button.clicked.connect(self.add_manual_waypoint)
         self.replace_manual_button.clicked.connect(self.replace_manual_waypoint)
