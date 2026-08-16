@@ -312,6 +312,9 @@ class MainWindow(QMainWindow):
         self.settings_panel.send_dock_enabled.connect(
             lambda payload: self.api_client.send_command("SET_DOCK_ENABLED", payload)
         )
+        self.settings_panel.send_box_avoidance_config.connect(
+            lambda payload: self.api_client.send_command("UPDATE_BOX_AVOIDANCE_CONFIG", payload)
+        )
 
         # --- Koneksi Capture RAW/Overlay ---
 

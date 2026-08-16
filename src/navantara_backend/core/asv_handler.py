@@ -108,6 +108,11 @@ class AsvState:
     vision_front_motor_cmd: int = 1500
     vision_servo_left_cmd: int = 70
     vision_servo_right_cmd: int = 110
+    
+    # Box Avoidance Parameters
+    box_avoidance_distance: float = 165.0
+    box_servo_left_cmd: int = 70
+    box_servo_right_cmd: int = 110
     docking_state: int = 0
     docking_enabled: bool = True  # [ON/OFF] Toggle aktif/nonaktif docking mission
 
@@ -390,6 +395,10 @@ class AsvHandler:
                                 "[AsvHandler] Mode berubah MANUAL -> AUTO. Membuat Race Session baru."
                             )
                             self.logger.start_new_race()
+                            
+                        # Reset counter foto ketika memulai putaran AUTO baru
+                        self.current_state.photo_mission_qty_taken_1 = 0
+                        self.current_state.photo_mission_qty_taken_2 = 0
 
                     self.current_state.control_mode = mode
 
@@ -567,80 +576,105 @@ class AsvHandler:
                             else:
                                 servo_cmd = servo_default
 
-                        elif obj_class == "kotak-biru":
-                            # --- LOGIKA DOCKING (KOTAK BIRU) ---
-                            # Mengejar Ujung Bola (Edge Tracking)
-                            center_x = vision_target_frame_width / 2
-                            box_width = self.current_state.vision_target.get("width", 0)
+                        elif obj_class in ["kotak-biru", "kotak-hijau", "kotak-merah"]:
+                            total_wps = len(self.current_state.waypoints) if self.current_state.waypoints else 0
+                            is_last_wp = (total_wps > 0) and (self.current_state.nav_target_wp_index >= total_wps - 1)
+                            
+                            if obj_class == "kotak-biru" and is_last_wp:
+                                # --- LOGIKA DOCKING (KOTAK BIRU) DI WP TERAKHIR ---
+                                # Mengejar Ujung Bola (Edge Tracking)
+                                center_x = vision_target_frame_width / 2
+                                box_width = self.current_state.vision_target.get("width", 0)
 
-                            if current_arena == "Arena_B":
-                                # Mengejar bola ujung kanan
-                                target_point = vision_target_center_x + (box_width / 2)
-                            else:
-                                # Arena A (Default): Mengejar bola ujung kiri
-                                target_point = vision_target_center_x - (box_width / 2)
+                                if current_arena == "Arena_B":
+                                    target_point = vision_target_center_x + (box_width / 2)
+                                else:
+                                    target_point = vision_target_center_x - (box_width / 2)
 
-                            error_x = target_point - center_x
-                            tolerance = 40
-                            max_tracking_deflection = 30
+                                error_x = target_point - center_x
+                                tolerance = 40
+                                max_tracking_deflection = 30
 
-                            if error_x < -tolerance:
-                                turn_direction = "TRACKING_LEFT"
-                                offset = (error_x / center_x) * max_tracking_deflection
-                                servo_cmd = int(90 + offset)
-                                motor_depan_kanan = pwm_depan_aktif
-                                desc = f"Kotak Biru -> Track Ujung Kiri (Err: {error_x:.1f})"
-                            elif error_x > tolerance:
-                                turn_direction = "TRACKING_RIGHT"
-                                offset = (error_x / center_x) * max_tracking_deflection
-                                servo_cmd = int(90 + offset)
-                                motor_depan_kiri = pwm_depan_aktif
-                                desc = f"Kotak Biru -> Track Ujung Kanan (Err: {error_x:.1f})"
-                            else:
-                                turn_direction = "TRACKING_CENTER"
-                                servo_cmd = servo_default
-                                desc = "Kotak Biru -> Track Ujung Tengah"
+                                if error_x < -tolerance:
+                                    turn_direction = "TRACKING_LEFT"
+                                    offset = (error_x / center_x) * max_tracking_deflection
+                                    servo_cmd = int(90 + offset)
+                                    motor_depan_kanan = pwm_depan_aktif
+                                    desc = f"Kotak Biru -> Track Ujung Kiri (Err: {error_x:.1f})"
+                                elif error_x > tolerance:
+                                    turn_direction = "TRACKING_RIGHT"
+                                    offset = (error_x / center_x) * max_tracking_deflection
+                                    servo_cmd = int(90 + offset)
+                                    motor_depan_kiri = pwm_depan_aktif
+                                    desc = f"Kotak Biru -> Track Ujung Kanan (Err: {error_x:.1f})"
+                                else:
+                                    turn_direction = "TRACKING_CENTER"
+                                    servo_cmd = servo_default
+                                    desc = "Kotak Biru -> Track Ujung Tengah"
 
-                            servo_cmd = max(40, min(140, servo_cmd))
+                                servo_cmd = max(40, min(140, servo_cmd))
 
-                            # PROXIMITY CHECK (Apakah kapal sudah sangat dekat?)
-                            # Ambil state docking agar tidak berkali-kali nembak jika sudah selesai
-                            is_docking_enabled = self.current_state.docking_enabled
-                            if is_docking_enabled and vision_target_frame_width > 0:
-                                proximity_ratio = box_width / vision_target_frame_width
-                                if proximity_ratio > 0.65:
-                                    command_to_send = "S,DOCK_SWING\n"
-                                    desc = "Kotak Biru -> SANGAT DEKAT! TRIGGER SWING DOCKING!"
-                                    logging.warning("[AsvHandler] DOCKING SWING TRIGGERED by Proximity")
+                                is_docking_enabled = self.current_state.docking_enabled
+                                if is_docking_enabled and vision_target_frame_width > 0:
+                                    proximity_ratio = box_width / vision_target_frame_width
+                                    if proximity_ratio > 0.65:
+                                        command_to_send = "S,DOCK_SWING\n"
+                                        desc = "Kotak Biru -> SANGAT DEKAT! TRIGGER SWING DOCKING!"
+                                        logging.warning("[AsvHandler] DOCKING SWING TRIGGERED by Proximity")
+                                        
+                            elif obj_class in ["kotak-biru", "kotak-hijau"]:
+                                # --- LOGIKA AVOIDANCE (KOTAK BIRU & HIJAU) ---
+                                with self.state_lock:
+                                    box_servo_kiri_aktif = self.current_state.box_servo_left_cmd
+                                    box_servo_kanan_aktif = self.current_state.box_servo_right_cmd
+                                
+                                if obj_class == "kotak-biru":
+                                    if current_arena == "Arena_B":
+                                        turn_direction = "LEFT"
+                                    else:
+                                        turn_direction = "RIGHT"
+                                elif obj_class == "kotak-hijau":
+                                    if current_arena == "Arena_B":
+                                        turn_direction = "RIGHT"
+                                    else:
+                                        turn_direction = "LEFT"
 
-                        elif obj_class in ["kotak-hijau", "kotak-merah"]:
-                            # --- LOGIKA TRACKING (KOTAK HIJAU/MERAH) ---
-                            center_x = vision_target_frame_width / 2
-                            error_x = vision_target_center_x - center_x
+                                desc = f"{obj_class} -> Avoidance {turn_direction}"
 
-                            # Tolerance deadband (px)
-                            tolerance = 40
-                            max_tracking_deflection = 30  # Servo bergeser halus
+                                if turn_direction == "LEFT":
+                                    servo_cmd = box_servo_kiri_aktif
+                                    motor_depan_kanan = pwm_depan_aktif
+                                elif turn_direction == "RIGHT":
+                                    servo_cmd = box_servo_kanan_aktif
+                                    motor_depan_kiri = pwm_depan_aktif
+                                else:
+                                    servo_cmd = servo_default
+                                    
+                            elif obj_class == "kotak-merah":
+                                # --- LOGIKA TRACKING (KOTAK MERAH) ---
+                                center_x = vision_target_frame_width / 2
+                                error_x = vision_target_center_x - center_x
+                                tolerance = 40
+                                max_tracking_deflection = 30
 
-                            if error_x < -tolerance:
-                                # Kotak di kiri layar -> Kapal perlu belok kiri
-                                turn_direction = "TRACKING_LEFT"
-                                offset = (error_x / center_x) * max_tracking_deflection
-                                servo_cmd = int(90 + offset)
-                                motor_depan_kanan = pwm_depan_aktif
-                                desc = f"{obj_class} -> Track Kiri (Err: {error_x:.1f})"
-                            elif error_x > tolerance:
-                                # Kotak di kanan layar -> Kapal perlu belok kanan
-                                turn_direction = "TRACKING_RIGHT"
-                                offset = (error_x / center_x) * max_tracking_deflection
-                                servo_cmd = int(90 + offset)
-                                motor_depan_kiri = pwm_depan_aktif
-                                desc = f"{obj_class} -> Track Kanan (Err: {error_x:.1f})"
-                            else:
-                                # Kotak sudah di tengah layar
-                                turn_direction = "TRACKING_CENTER"
-                                servo_cmd = servo_default
-                                desc = f"{obj_class} -> Track Tengah"
+                                if error_x < -tolerance:
+                                    turn_direction = "TRACKING_LEFT"
+                                    offset = (error_x / center_x) * max_tracking_deflection
+                                    servo_cmd = int(90 + offset)
+                                    motor_depan_kanan = pwm_depan_aktif
+                                    desc = f"{obj_class} -> Track Kiri (Err: {error_x:.1f})"
+                                elif error_x > tolerance:
+                                    turn_direction = "TRACKING_RIGHT"
+                                    offset = (error_x / center_x) * max_tracking_deflection
+                                    servo_cmd = int(90 + offset)
+                                    motor_depan_kiri = pwm_depan_aktif
+                                    desc = f"{obj_class} -> Track Kanan (Err: {error_x:.1f})"
+                                else:
+                                    turn_direction = "TRACKING_CENTER"
+                                    servo_cmd = servo_default
+                                    desc = f"{obj_class} -> Track Tengah"
+
+                                servo_cmd = max(40, min(140, servo_cmd))
 
                             # Clamp servo value safely
                             servo_cmd = max(40, min(140, servo_cmd))
@@ -740,6 +774,7 @@ class AsvHandler:
             "UPDATE_VISION_DISTANCE": self._handle_update_vision_distance,
             "UPDATE_VISION_MODEL": self._handle_update_vision_model,
             "UPDATE_VISION_WP_RANGES": self._handle_update_vision_wp_ranges,
+            "UPDATE_BOX_AVOIDANCE_CONFIG": self._handle_update_box_avoidance_config,
             "DEBUG_WP_COUNTER": self._handle_debug_counter,
             "SWAP_CAMERAS": self._handle_swap_cameras,
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
@@ -826,6 +861,25 @@ class AsvHandler:
         except ValueError:
             logging.warning("[AsvHandler] Payload PWM motor depan tidak valid")
 
+    def _handle_update_box_avoidance_config(self, payload):
+        try:
+            dist = float(payload.get("distance", 165.0))
+            left_val = int(payload.get("left", 70))
+            right_val = int(payload.get("right", 110))
+            
+            # Validasi range servo
+            left_val = max(0, min(90, left_val))
+            right_val = max(90, min(180, right_val))
+
+            with self.state_lock:
+                self.current_state.box_avoidance_distance = dist
+                self.current_state.box_servo_left_cmd = left_val
+                self.current_state.box_servo_right_cmd = right_val
+
+            logging.info(f"[AsvHandler] Box Avoidance Config Updated -> Dist: {dist}cm, Left: {left_val}, Right: {right_val}")
+        except ValueError:
+            logging.warning("[AsvHandler] Payload Box Avoidance Config tidak valid")
+
     def _handle_debug_counter(self, payload):
         action = payload.get("action")
         cmd = ""
@@ -847,6 +901,8 @@ class AsvHandler:
             elif action == "RESET":
                 cmd = "C,RESET\n"
                 self.current_state.current_waypoint_index = 0
+                self.current_state.photo_mission_qty_taken_1 = 0
+                self.current_state.photo_mission_qty_taken_2 = 0
 
             self.current_state.current_waypoint_index = min(
                 self.current_state.current_waypoint_index, max_points

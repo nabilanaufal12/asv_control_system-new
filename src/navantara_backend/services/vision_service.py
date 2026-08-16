@@ -1083,12 +1083,12 @@ class VisionService:
                 self.asv_handler.current_state.photo_mission_qty_taken_2
             )  # Underwater
 
-            # Evaluasi In Segment
+            # Evaluasi In Segment (Mulai aktif setelah melewati wp1, yaitu saat target adalah wp2)
             in_segment_surf = (surf_wp1 != -1 and surf_wp2 != -1) and (
-                surf_wp1 <= current_wp < surf_wp2
+                surf_wp1 < current_wp <= surf_wp2
             )
             in_segment_under = (under_wp1 != -1 and under_wp2 != -1) and (
-                under_wp1 <= current_wp < under_wp2
+                under_wp1 < current_wp <= under_wp2
             )
 
             current_state_photo = self.asv_handler.current_state
@@ -1164,6 +1164,7 @@ class VisionService:
             # --- [PERBAIKAN] Logika Filter Target Berbasis Waypoint (WP) ---
             vision_cfg = self.config.get("vision", {})
             range_bola = vision_cfg.get("wp_range_bola", [0, 10])
+            range_kotak_biru = vision_cfg.get("wp_range_kotak_biru", [11, 12])
             range_kotak_hijau = vision_cfg.get("wp_range_kotak_hijau", [13, 14])
 
             total_wps = len(current_state.waypoints) if current_state.waypoints else 0
@@ -1173,8 +1174,8 @@ class VisionService:
                 # Mode Avoidance (Bola)
                 if cls in ["bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
-            elif is_last_wp:
-                # Mode Tracking Docking (Kotak Biru) HANYA di WP TERAKHIR
+            elif (range_kotak_biru[0] < current_wp <= range_kotak_biru[1]) or is_last_wp:
+                # Mode Tracking Underwater (Kotak Biru) atau Docking di WP Terakhir
                 if cls == "kotak-biru":
                     valid_buoys.append(det)
             elif range_kotak_hijau[0] < current_wp <= range_kotak_hijau[1]:
@@ -1198,8 +1199,16 @@ class VisionService:
             if distance_to_closest is None:
                 distance_to_closest = float("inf")
 
+            # Tentukan threshold jarak aktivasi berdasarkan jenis objek
+            closest_cls = closest_buoy.get("class", "unknown")
+            if closest_cls in ["kotak-biru", "kotak-hijau", "kotak-merah"]:
+                with self.asv_handler.state_lock:
+                    activation_dist = self.asv_handler.current_state.box_avoidance_distance
+            else:
+                activation_dist = self.obstacle_activation_distance
+
             # Jika objek berada dalam jarak aktivasi penghindaran
-            if distance_to_closest < self.obstacle_activation_distance:
+            if distance_to_closest < activation_dist:
                 self.last_buoy_seen_time = time.time()
 
                 payload_obs = {

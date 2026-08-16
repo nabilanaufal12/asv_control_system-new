@@ -36,6 +36,7 @@ class SettingsPanel(QGroupBox):
     send_portrait_config = Signal(dict)
     send_dock_config = Signal(dict)
     send_dock_enabled = Signal(dict)
+    send_box_avoidance_config = Signal(dict)
 
     def __init__(self, config, title="System Configuration"):
         super().__init__(title)
@@ -102,6 +103,38 @@ class SettingsPanel(QGroupBox):
 
         ai_control_group.setLayout(ai_layout)
         main_layout.addWidget(ai_control_group)
+
+        # --- [BAGIAN BOX AVOIDANCE] ---
+        box_avoid_group = QGroupBox("Box Avoidance Parameters")
+        box_layout = QVBoxLayout()
+        
+        row_box1 = QHBoxLayout()
+        row_box1.addWidget(QLabel("Distance:"))
+        self.spin_box_dist = QSpinBox()
+        self.spin_box_dist.setRange(0, 500)
+        self.spin_box_dist.setValue(165)
+        self.spin_box_dist.setSuffix(" cm")
+        row_box1.addWidget(self.spin_box_dist)
+        box_layout.addLayout(row_box1)
+        
+        row_box2 = QHBoxLayout()
+        row_box2.addWidget(QLabel("Angles:"))
+        self.spin_box_left = QSpinBox()
+        self.spin_box_left.setRange(0, 90)
+        self.spin_box_left.setValue(70)
+        self.spin_box_left.setPrefix("Left: ")
+        self.spin_box_left.setSuffix("°")
+        row_box2.addWidget(self.spin_box_left)
+        
+        self.spin_box_right = QSpinBox()
+        self.spin_box_right.setRange(90, 180)
+        self.spin_box_right.setValue(110)
+        self.spin_box_right.setPrefix("Right: ")
+        self.spin_box_right.setSuffix("°")
+        row_box2.addWidget(self.spin_box_right)
+        box_layout.addLayout(row_box2)
+        box_avoid_group.setLayout(box_layout)
+        main_layout.addWidget(box_avoid_group)
 
         # --- [BAGIAN WP RANGES] ---
         wp_ranges_group = QGroupBox("Vision Waypoint Ranges")
@@ -295,6 +328,11 @@ class SettingsPanel(QGroupBox):
         self.spin_right.valueChanged.connect(self._on_ai_servo_changed)
         self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
         self.combo_model.currentTextChanged.connect(self._on_model_changed)
+        
+        # Event Handler Box Avoidance
+        self.spin_box_dist.valueChanged.connect(self._on_box_avoidance_changed)
+        self.spin_box_left.valueChanged.connect(self._on_box_avoidance_changed)
+        self.spin_box_right.valueChanged.connect(self._on_box_avoidance_changed)
 
         # Event Handler Photo Mission Segments (Auto Update)
         self.surf_wp1_input.valueChanged.connect(self._on_set_photo_mission)
@@ -365,6 +403,13 @@ class SettingsPanel(QGroupBox):
             self.spin_right.setValue(defs["servo_right"])
         if "obs_dist" in defs:
             self.spin_obs_dist.setValue(defs["obs_dist"])
+            
+        if "box_obs_dist" in defs:
+            self.spin_box_dist.setValue(defs["box_obs_dist"])
+        if "box_servo_left" in defs:
+            self.spin_box_left.setValue(defs["box_servo_left"])
+        if "box_servo_right" in defs:
+            self.spin_box_right.setValue(defs["box_servo_right"])
 
         if "photo_surf1" in defs:
             self.surf_wp1_input.setValue(int(defs["photo_surf1"]))
@@ -413,6 +458,9 @@ class SettingsPanel(QGroupBox):
             "servo_left": self.spin_left.value(),
             "servo_right": self.spin_right.value(),
             "obs_dist": self.spin_obs_dist.value(),
+            "box_obs_dist": self.spin_box_dist.value(),
+            "box_servo_left": self.spin_box_left.value(),
+            "box_servo_right": self.spin_box_right.value(),
             "photo_surf1": self.surf_wp1_input.value(),
             "photo_surf2": self.surf_wp2_input.value(),
             "photo_under1": self.under_wp1_input.value(),
@@ -557,3 +605,23 @@ class SettingsPanel(QGroupBox):
             print(f"[SettingsPanel] Sinyal send_dock_enabled dipancarkan: {payload}")
         except Exception as e:
             print(f"[SettingsPanel] Error emitting dock enable: {e}")
+
+    def _on_box_avoidance_changed(self):
+        payload = {
+            "distance": self.spin_box_dist.value(),
+            "left": self.spin_box_left.value(),
+            "right": self.spin_box_right.value(),
+        }
+        self.send_box_avoidance_config.emit(payload)
+        
+    def broadcast_all_settings(self):
+        self._on_ai_speed_changed(self.spin_ai_speed.value())
+        self._on_front_speed_changed()
+        self._on_ai_servo_changed()
+        self._on_obs_dist_changed(self.spin_obs_dist.value())
+        self._on_model_changed(self.combo_model.currentText())
+        self._on_wp_ranges_changed()
+        self._on_set_photo_mission()
+        self._on_set_dock_config()
+        self._on_dock_enable_changed(self.chk_dock_enable.checkState())
+        self._on_box_avoidance_changed()
