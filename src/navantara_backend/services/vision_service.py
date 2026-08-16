@@ -110,7 +110,8 @@ class ThreadedCamera:
                     time.sleep(0.5)
                     continue
 
-                status, frame = self.capture.read()
+                # Mencegah Blocking Eventlet: eksekusi C extension read() di thread-pool asli
+                status, frame = eventlet.tpool.execute(self.capture.read)
 
                 with self.lock:
                     if status and frame is not None and frame.size > 0:
