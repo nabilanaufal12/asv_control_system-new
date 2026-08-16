@@ -430,15 +430,9 @@ class SettingsPanel(QGroupBox):
         self.config["docking_defaults"][
             "motor_utama_pwm"
         ] = self.spin_dock_motor.value()
-        self.config["docking_defaults"][
-            "motor_depan_pwm"
-        ] = self.spin_dock_depan.value()
         self.config["docking_defaults"]["charge_duration_ms"] = (
             self.spin_dock_charge.value() * 1000
         )
-        self.config["docking_defaults"][
-            "heading_tolerance_deg"
-        ] = self.spin_dock_tol.value()
 
         # Write to file
         try:
