@@ -241,13 +241,7 @@ class SettingsPanel(QGroupBox):
         )
         dock_row1.addWidget(self.spin_dock_motor)
 
-        dock_row1.addWidget(QLabel("Depan:"))
-        self.spin_dock_depan = QSpinBox()
-        self.spin_dock_depan.setRange(1000, 2000)
-        self.spin_dock_depan.setValue(
-            self.config.get("docking_defaults", {}).get("motor_depan_pwm", 1400)
-        )
-        dock_row1.addWidget(self.spin_dock_depan)
+
 
         docking_layout.addLayout(dock_row1)
 
@@ -261,13 +255,7 @@ class SettingsPanel(QGroupBox):
         )
         dock_row2.addWidget(self.spin_dock_charge)
 
-        dock_row2.addWidget(QLabel("Toleransi (°):"))
-        self.spin_dock_tol = QSpinBox()
-        self.spin_dock_tol.setRange(1, 90)
-        self.spin_dock_tol.setValue(
-            self.config.get("docking_defaults", {}).get("heading_tolerance_deg", 5)
-        )
-        dock_row2.addWidget(self.spin_dock_tol)
+
 
         docking_layout.addLayout(dock_row2)
 

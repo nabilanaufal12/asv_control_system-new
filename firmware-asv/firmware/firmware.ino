@@ -992,12 +992,12 @@ void loop() {
   jsonDoc["w_id"] = counter;
   jsonDoc["w_tot"] = dataIndex;
   jsonDoc["p_st"] = (int)portraitState;  // 0=Normal, 1=Slow, 2=Stop, 3=Reverse
-  jsonDoc["dk_st"] = (int)dockingState;  // 0=Idle, 1=Turning, 2=Charging, 3=Complete
+  jsonDoc["dk_st"] = (int)dockingState;  // 0=Idle, 1=Swing, 2=Complete
 
   if (mode == "AUTO" && serialCommand == 'W') { 
-    if (status == "DK_COMPLETE" || status == "DK_TURNING" || status == "DK_CHARGING") {
+    if (status == "DK_COMPLETE" || status == "DK_SWING" || status == "DK_TRACKING_AI") {
       jsonDoc["w_dst"] = 0.0;
-      jsonDoc["w_brg"] = (float)round(dockingTargetHeading * 100) / 100;
+      jsonDoc["w_brg"] = 0.0;
       jsonDoc["w_err"] = 0.0;
       jsonDoc["xte"] = 0.0;
     } else if (status == "WP_COMPLETE") {
