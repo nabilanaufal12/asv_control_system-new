@@ -102,6 +102,10 @@ class ApiClient(QObject):
     # Sinyal untuk sinkronisasi waypoint dua arah
     sync_waypoints_received = Signal(list)
 
+    # Sinyal internal untuk thread-safety saat start/stop video dari background socketio thread
+    _internal_start_video = Signal()
+    _internal_stop_video = Signal()
+
     def __init__(self, config):
         super().__init__()
         backend_config = config.get("backend_connection", {})
@@ -117,6 +121,10 @@ class ApiClient(QObject):
         # Inisialisasi klien Socket.IO
         self.sio = socketio.Client()
         self.setup_event_handlers()
+
+        # Sambungkan sinyal internal ke eksekutor di Main Thread
+        self._internal_start_video.connect(self._start_video_threads_safe)
+        self._internal_stop_video.connect(self._stop_video_threads_safe)
 
     def connect_to_server(self):
         """
@@ -138,22 +146,18 @@ class ApiClient(QObject):
             self.connection_status_changed.emit(True, "Terhubung ke Backend")
             print("Berhasil terhubung! Meminta stream data dari server...")
             self.sio.start_background_task(self.initial_stream_request)
-            # Mulai thread video (non-blocking, tidak menghambat event handler ini)
-            self._start_video_threads()
+            # Emit sinyal agar Main Thread yang membuat dan menjalankan QThread video
+            self._internal_start_video.emit()
 
         @self.sio.event
         def disconnect():
-            # [FIX] Gunakan request_stop() (non-blocking) bukan stop() (blocking)
-            # Stop yang blocking di sini menyebabkan deadlock dan crash 'QThread: Destroyed while thread is still running'.
-            if self.cam1_thread:
-                self.cam1_thread.request_stop()
-            if self.cam2_thread:
-                self.cam2_thread.request_stop()
-
+            self.connection_status_changed.emit(False, "Terputus dari Backend")
+            print("Koneksi ke backend terputus.")
+            # Hentikan video stream via sinyal ke Main Thread
+            self._internal_stop_video.emit()
+            
             # Reset state lengkap saat koneksi terputus
             self.full_gui_state = {}
-            self.connection_status_changed.emit(False, "Koneksi terputus")
-            print("Koneksi ke server terputus.")
 
         @self.sio.on("telemetry_update")
         def on_telemetry_update(data):
@@ -180,22 +184,30 @@ class ApiClient(QObject):
             except Exception as e:
                 print(f"[ApiClient] Gagal memproses sync_waypoints: {e}")
 
-    def _start_video_threads(self):
-        """Memulai (atau me-restart) kedua thread streaming MJPEG."""
-        # Hentikan thread lama secara non-blocking jika masih berjalan
-        if self.cam1_thread is not None:
-            self.cam1_thread.request_stop()
-        if self.cam2_thread is not None:
-            self.cam2_thread.request_stop()
-
-        # Buat dan mulai thread baru
+    @Slot()
+    def _start_video_threads_safe(self):
+        # Dipanggil di Main Thread berkat Signal
+        self._stop_video_threads_safe()
+        
         self.cam1_thread = MjpegStreamThread(f"{self.base_url}/video_feed_1")
         self.cam1_thread.frame_ready.connect(self.frame_cam1_updated.emit)
         self.cam1_thread.start()
-
+        
         self.cam2_thread = MjpegStreamThread(f"{self.base_url}/video_feed_2")
         self.cam2_thread.frame_ready.connect(self.frame_cam2_updated.emit)
         self.cam2_thread.start()
+
+    @Slot()
+    def _stop_video_threads_safe(self):
+        # Dipanggil di Main Thread berkat Signal
+        if self.cam1_thread:
+            self.cam1_thread.request_stop()
+            self.cam1_thread.wait(2000)
+            self.cam1_thread = None
+        if self.cam2_thread:
+            self.cam2_thread.request_stop()
+            self.cam2_thread.wait(2000)
+            self.cam2_thread = None
 
     def initial_stream_request(self):
 
