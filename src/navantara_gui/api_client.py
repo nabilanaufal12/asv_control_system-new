@@ -52,25 +52,29 @@ class MjpegStreamThread(QThread):
 
     def run(self):
         self.running = True
-        try:
-            req = urllib.request.Request(self.url)
-            with urllib.request.urlopen(req, timeout=5) as res:
-                bytes_data = b''
-                while self.running:
-                    chunk = res.read(1024)
-                    if not chunk:
-                        break
-                    bytes_data += chunk
-                    a = bytes_data.find(b'\xff\xd8')
-                    b = bytes_data.find(b'\xff\xd9')
-                    if a != -1 and b != -1:
-                        jpg = bytes_data[a:b+2]
-                        bytes_data = bytes_data[b+2:]
-                        self.frame_ready.emit(jpg)
-        except Exception as e:
-            print(f"[MjpegStreamThread] Error streaming from {self.url}: {e}")
-        finally:
-            self.running = False
+        while self.running:
+            try:
+                req = urllib.request.Request(self.url)
+                with urllib.request.urlopen(req, timeout=5) as res:
+                    bytes_data = b''
+                    while self.running:
+                        chunk = res.read(1024)
+                        if not chunk:
+                            break
+                        bytes_data += chunk
+                        a = bytes_data.find(b'\xff\xd8')
+                        b = bytes_data.find(b'\xff\xd9')
+                        if a != -1 and b != -1:
+                            jpg = bytes_data[a:b+2]
+                            bytes_data = bytes_data[b+2:]
+                            self.frame_ready.emit(jpg)
+            except Exception as e:
+                if self.running:
+                    print(f"[MjpegStreamThread] Mencoba menyambung ulang ke {self.url}...")
+                    import time
+                    time.sleep(1.5)  # Tunggu sebelum reconnect agar tidak spam CPU
+            finally:
+                pass  # Terus loop selama self.running == True
 
     def request_stop(self):
         """Non-blocking: hanya set flag, tidak menunggu thread selesai.
