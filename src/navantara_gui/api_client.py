@@ -6,9 +6,41 @@ import base64  # <--- 1. TAMBAHAN PENTING
 
 from PySide6.QtCore import QObject, Signal, Slot, QThread
 
-
-
 import urllib.request
+
+# --- [OPTIMASI KEY MINIFICATION: MAPPING DICTIONARY] ---
+# Untuk decode JSON key pendek kembali ke full key asli AsvState
+REVERSE_KEY_MAP = {
+    "lat": "latitude",
+    "lon": "longitude",
+    "hdg": "heading",
+    "cog": "cog",
+    "sog": "speed",
+    "sts": "status",
+    "mode": "control_mode",
+    "ar": "active_arena",
+    "wps": "waypoints",
+    "cur_wp": "current_waypoint_index",
+    "wp_idx": "nav_target_wp_index",
+    "wp_tot": "nav_esp_total_wp",
+    "wp_dst": "nav_dist_to_wp",
+    "xte": "nav_xte_m",
+    "err_hdg": "nav_heading_error",
+    "tgt_brg": "nav_target_bearing",
+    "sat": "nav_gps_sats",
+    "srv": "nav_servo_cmd",
+    "mot": "nav_motor_cmd",
+    "m_srv": "manual_servo_cmd",
+    "m_mot": "manual_motor_cmd",
+    "time": "mission_time",
+    "rc": "rc_channels",
+    "conn": "is_connected_to_serial",
+    "dbg_cnt": "debug_waypoint_counter",
+    "vis": "vision_target",
+    "esp_sts": "esp_status",
+    "dk_st": "docking_state",
+}
+
 
 class MjpegStreamThread(QThread):
     frame_ready = Signal(bytes)
@@ -121,9 +153,15 @@ class ApiClient(QObject):
 
         @self.sio.on("telemetry_update")
         def on_telemetry_update(data):
-            # 'data' adalah 'delta_payload'
+            # 'data' adalah 'delta_payload' yang berisi key pendek
             try:
-                self.full_gui_state.update(data)
+                # --- [REHYDRATE KEYS] ---
+                full_keys_data = {}
+                for key, value in data.items():
+                    long_key = REVERSE_KEY_MAP.get(key, key)
+                    full_keys_data[long_key] = value
+
+                self.full_gui_state.update(full_keys_data)
                 self.data_updated.emit(self.full_gui_state.copy())
             except Exception as e:
                 print(f"[ApiClient] Gagal memproses telemetry_update: {e}")
