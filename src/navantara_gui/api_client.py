@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 import base64  # <--- 1. TAMBAHAN PENTING
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, Signal, Slot, QThread
 
 
 
