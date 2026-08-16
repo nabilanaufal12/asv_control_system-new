@@ -743,6 +743,7 @@ class VisionService:
     def generate_mjpeg_stream(self, cam_id: int):
         import eventlet
         import cv2
+        yield b''  # Memaksa Flask untuk mengirim HTTP Headers (200 OK) segera
         while self.running:
             frame = None
             if cam_id == 1:
