@@ -118,7 +118,7 @@ def apply_overlay(background_frame, overlay_data):
 
     # === 3. GAMBAR INFO BOX (HANYA TEKS DAN LOGO) ===
     info_x = 15
-    info_y_start = h - 160  # Posisi mulai blok info dari bawah
+    info_y_start = h - 180  # Posisi mulai blok info dari bawah
 
     # Logo di dalam info box
     logo_umrah = get_logo("logo_umrah.png", size=(35, 35))
@@ -158,6 +158,7 @@ def apply_overlay(background_frame, overlay_data):
     lon = telemetry_data.get("longitude", 0)
     sog_ms = telemetry_data.get("speed", 0)
     hdg = telemetry_data.get("heading", 0)
+    cog = telemetry_data.get("cog", 0)
 
     # 1. Format GPS (N/S dan E/W)
     lat_dir = "N" if lat >= 0 else "S"
@@ -176,7 +177,8 @@ def apply_overlay(background_frame, overlay_data):
         f"TIME: {now.strftime('%H:%M:%S')}",
         f"GPS : {gps_str}",
         f"SOG : {sog_str}",
-        f"COG : {hdg:.2f} deg",
+        f"COG : {cog:.2f} deg",
+        f"HDG : {hdg:.2f} deg",
     ]
 
     # --- KONFIGURASI LAYOUT ---

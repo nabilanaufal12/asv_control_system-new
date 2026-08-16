@@ -7,6 +7,41 @@ import base64  # <--- 1. TAMBAHAN PENTING
 from PySide6.QtCore import QObject, Signal, Slot
 
 
+
+import urllib.request
+
+class MjpegStreamThread(QThread):
+    frame_ready = Signal(bytes)
+
+    def __init__(self, url, parent=None):
+        super().__init__(parent)
+        self.url = url
+        self.running = False
+
+    def run(self):
+        self.running = True
+        try:
+            req = urllib.request.Request(self.url)
+            with urllib.request.urlopen(req, timeout=5) as res:
+                bytes_data = b''
+                while self.running:
+                    chunk = res.read(1024)
+                    if not chunk:
+                        break
+                    bytes_data += chunk
+                    a = bytes_data.find(b'\xff\xd8')
+                    b = bytes_data.find(b'\xff\xd9')
+                    if a != -1 and b != -1:
+                        jpg = bytes_data[a:b+2]
+                        bytes_data = bytes_data[b+2:]
+                        self.frame_ready.emit(jpg)
+        except Exception as e:
+            print(f"[MjpegStreamThread] Error streaming from {self.url}: {e}")
+
+    def stop(self):
+        self.running = False
+        self.wait()
+
 class ApiClient(QObject):
     """
     Klien WebSocket yang berkomunikasi dengan backend. Mengadopsi pola "pull"
@@ -15,9 +50,9 @@ class ApiClient(QObject):
 
     data_updated = Signal(dict)
     connection_status_changed = Signal(bool, str)
-    # Sinyal untuk frame video (tetap menggunakan np.ndarray agar kompatibel dengan VideoView lama)
-    frame_cam1_updated = Signal(np.ndarray)
-    frame_cam2_updated = Signal(np.ndarray)
+    # Sinyal untuk frame video (sekarang menggunakan bytes dari MJPEG) agar kompatibel dengan VideoView lama)
+    frame_cam1_updated = Signal(bytes)
+    frame_cam2_updated = Signal(bytes)
 
     # Sinyal untuk sinkronisasi waypoint dua arah
     sync_waypoints_received = Signal(list)
@@ -29,6 +64,10 @@ class ApiClient(QObject):
 
         # Kamus ini akan menyimpan state lengkap dan persisten di sisi GUI
         self.full_gui_state = {}
+
+        # Inisialisasi thread video
+        self.cam1_thread = None
+        self.cam2_thread = None
 
         # Inisialisasi klien Socket.IO
         self.sio = socketio.Client()
@@ -55,8 +94,28 @@ class ApiClient(QObject):
             print("Berhasil terhubung! Meminta stream data dari server...")
             self.sio.start_background_task(self.initial_stream_request)
 
+            # Start video threads
+            if self.cam1_thread is None or not self.cam1_thread.running:
+                self.cam1_thread = MjpegStreamThread(f"{self.base_url}/video_feed_1")
+                # Parse the raw jpeg bytes directly in VideoView, but VideoView expects numpy array or base64.
+                # Since MjpegStreamThread emits `bytes`, let's just connect it directly, 
+                # but VideoView needs to handle bytes.
+                self.cam1_thread.frame_ready.connect(self.frame_cam1_updated.emit)
+                self.cam1_thread.start()
+                
+            if self.cam2_thread is None or not self.cam2_thread.running:
+                self.cam2_thread = MjpegStreamThread(f"{self.base_url}/video_feed_2")
+                self.cam2_thread.frame_ready.connect(self.frame_cam2_updated.emit)
+                self.cam2_thread.start()
+
         @self.sio.event
         def disconnect():
+            # Stop video threads
+            if self.cam1_thread:
+                self.cam1_thread.stop()
+            if self.cam2_thread:
+                self.cam2_thread.stop()
+                
             # Reset state lengkap saat koneksi terputus
             self.full_gui_state = {}
             self.connection_status_changed.emit(False, "Koneksi terputus")
@@ -81,93 +140,4 @@ class ApiClient(QObject):
             except Exception as e:
                 print(f"[ApiClient] Gagal memproses sync_waypoints: {e}")
 
-        # --- [PERBAIKAN HANDLER VIDEO] ---
-        @self.sio.on("frame_cam1")
-        def on_frame_cam1(data):
-            try:
-                # 1. Cek tipe data (Bytes atau String/Base64)
-                if not isinstance(data, (bytes, str)):
-                    print(f"[API-CAM1] Tipe data salah: {type(data)}. Melompati.")
-                    return
-
-                # 2. Jika String (Base64), decode ke Bytes dulu
-                if isinstance(data, str):
-                    try:
-                        data = base64.b64decode(data)
-                    except Exception as e:
-                        print(f"[API-CAM1] Gagal decode Base64: {e}")
-                        return
-
-                # 3. Decode Bytes JPEG ke OpenCV Image (numpy array)
-                nparr = np.frombuffer(data, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-                if frame is not None:
-                    self.frame_cam1_updated.emit(frame)
-                else:
-                    print("[API-CAM1] Gagal decode frame (frame is None).")
-
-            except Exception as e:
-                print(f"[API-CAM1] Error processing frame: {e}")
-
-        @self.sio.on("frame_cam2")
-        def on_frame_cam2(data):
-            try:
-                # 1. Cek tipe data
-                if not isinstance(data, (bytes, str)):
-                    print(f"[API-CAM2] Tipe data salah: {type(data)}. Melompati.")
-                    return
-
-                # 2. Jika String (Base64), decode ke Bytes dulu
-                if isinstance(data, str):
-                    try:
-                        data = base64.b64decode(data)
-                    except Exception as e:
-                        print(f"[API-CAM2] Gagal decode Base64: {e}")
-                        return
-
-                # 3. Decode Bytes JPEG ke OpenCV Image
-                nparr = np.frombuffer(data, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-                if frame is not None:
-                    self.frame_cam2_updated.emit(frame)
-                else:
-                    print("[API-CAM2] Gagal decode frame (frame is None).")
-
-            except Exception as e:
-                print(f"[API-CAM2] Error processing frame: {e}")
-
-        # --- [AKHIR PERBAIKAN] ---
-
-    def initial_stream_request(self):
-        """Fungsi yang dijalankan di latar belakang untuk meminta stream awal."""
-        self.sio.sleep(0.1)
-        self.request_data_stream(True)
-
-    @Slot(bool)
-    def request_data_stream(self, start: bool):
-        """Mengirim event untuk memulai atau menghentikan stream data dari server."""
-        if self.sio.connected:
-            self.sio.emit("request_stream", {"status": start})
-            print(
-                f"Mengirim permintaan untuk {'memulai' if start else 'menghentikan'} stream."
-            )
-        else:
-            print("Tidak bisa meminta stream, belum terhubung ke server.")
-
-    def send_command(self, command_name, payload_data=None):
-        """Fungsi helper terpusat untuk mengirim semua perintah ke backend."""
-        if payload_data is None:
-            payload_data = {}
-        if self.sio.connected:
-            self.sio.emit("command", {"command": command_name, "payload": payload_data})
-        else:
-            print(f"Gagal mengirim perintah '{command_name}', tidak terhubung.")
-
-    def shutdown(self):
-        """Memutuskan koneksi dengan bersih saat aplikasi ditutup."""
-        print("Memutuskan koneksi WebSocket...")
-        if self.sio.connected:
-            self.request_data_stream(False)
-            self.sio.disconnect()
+        

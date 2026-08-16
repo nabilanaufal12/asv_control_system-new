@@ -1,15 +1,21 @@
 #include <Wire.h> // Library untuk komunikasi I2C (untuk CMPS12)
-#include <SparkFun_Ublox_Arduino_Library.h> // Library untuk GPS U-Blox
 #include <ESP32Servo.h> // Library untuk mengontrol Servo dan ESC
 #include <Preferences.h> // Library untuk menyimpan data di memori non-volatile (NVS/EEPROM)
 #include <ArduinoJson.h> // Library untuk memproses dan mengirim data JSON (telemetri)
 
-// ---------------- GPS (Diganti ke U-Blox 10Hz) ----------------
-SFE_UBLOX_GPS myGPS;
+// ---------------- GPS (Custom UBX Parser, TANPA LIBRARY!) ----------------
 HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
-#define GPS_BAUD_RATE 9600 // Baud rate GPS (hardware-locked di modul U-Blox, jangan diubah)
+#define GPS_BAUD_RATE 115200 // Baud rate GPS (HARUS sudah disimpan di u-center!)
 #define GPS_RX_PIN 16 // Pin RX untuk komunikasi GPS (default Serial 2 RX)
 #define GPS_TX_PIN 17 // Pin TX untuk komunikasi GPS (default Serial 2 TX)
+
+// --- UBX Parser State Machine ---
+uint8_t ubxState = 0;
+uint16_t ubxPayloadLength = 0;
+uint16_t ubxPayloadCounter = 0;
+uint8_t ubxPayload[100];
+uint8_t ubxCkA = 0, ubxCkB = 0;
+uint8_t gpsFixType = 0; // Variabel global pengganti myGPS.getFixType()
 
 // ---------------- LED GPS FIX ----------------
 #define LED_GPS 2   // LED ESP32 (GPIO 2) untuk indikasi lock GPS
@@ -484,51 +490,17 @@ void setup() {
   pinMode(LED_GPS, OUTPUT);
   digitalWrite(LED_GPS, LOW); 
 
-  Serial.println("Mencoba koneksi ke GPS U-Blox...");
+  // --- Inisialisasi GPS (Custom UBX Parser) ---
+  // PENTING: Modul GPS HARUS sudah dikonfigurasi via u-center sebelumnya:
+  //   - Baud rate: 115200
+  //   - Output: UBX only (matikan NMEA)
+  //   - Navigation Rate: 5Hz
+  //   - GNSS: GPS + GLONASS
+  //   - Simpan ke Flash (Send CFG-CFG Save)
+  Serial.println("Mendengarkan GPS U-Blox (Custom UBX Parser)...");
+  gpsSerial.setRxBufferSize(1024); // Perbesar buffer agar data 115200bps tidak tumpah
   gpsSerial.begin(GPS_BAUD_RATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN); 
-
-  if (myGPS.begin(gpsSerial)) {
-    Serial.println("Koneksi GPS berhasil!");
-  } else {
-    Serial.println("Gagal koneksi ke GPS. Cek kabel & baud rate.");
-  }
-
-  myGPS.setUART1Output(COM_TYPE_UBX); 
-  myGPS.setNavigationFrequency(5); // [FIX-1 REVISED] Diturunkan dari 10Hz -> 5Hz agar payload tidak overflow buffer UART 9600bps
-  myGPS.setAutoPVT(true); 
-
-  // --- [GNSS MULTI-CONSTELLATION] Aktifkan GPS + GLONASS via UBX-CFG-GNSS ---
-  // Dikirim langsung ke modul karena SparkFun library versi lama tidak punya API enableGNSS.
-  // Payload: 2 config block — GPS (gnssId=0) dan GLONASS (gnssId=6), keduanya di-enable.
-  {
-    uint8_t cfgGnss[] = {
-      0xB5, 0x62,             // UBX sync chars
-      0x06, 0x3E,             // Class: CFG, ID: GNSS
-      0x18, 0x00,             // Length: 24 bytes payload (LE)
-      // Header payload
-      0x00,                   // msgVer
-      0x00,                   // numTrkChHw (0 = auto)
-      0x20,                   // numTrkChUse (32 channels)
-      0x02,                   // numConfigBlocks = 2
-      // Block 1 - GPS (gnssId=0, L1C/A)
-      0x00, 0x08, 0x10, 0x00, // gnssId=0, resTrkCh=8, maxTrkCh=16, reserved=0
-      0x01, 0x00, 0x01, 0x01, // flags: enabled, signal L1C/A
-      // Block 2 - GLONASS (gnssId=6, L1OF)
-      0x06, 0x08, 0x0E, 0x00, // gnssId=6, resTrkCh=8, maxTrkCh=14, reserved=0
-      0x01, 0x00, 0x01, 0x01  // flags: enabled, signal L1OF
-    };
-    // Hitung checksum CK_A / CK_B (dimulai dari byte index 2 = Class byte)
-    uint8_t ckA = 0, ckB = 0;
-    for (size_t i = 2; i < sizeof(cfgGnss); i++) {
-      ckA += cfgGnss[i];
-      ckB += ckA;
-    }
-    gpsSerial.write(cfgGnss, sizeof(cfgGnss));
-    gpsSerial.write(ckA);
-    gpsSerial.write(ckB);
-    delay(600); // Beri waktu modul memproses & merestart GNSS engine
-    Serial.println("[GPS] Konfigurasi multi-konstilasi GPS+GLONASS dikirim.");
-  }
+  Serial.println("[GPS] Parser UBX-NAV-PVT siap (115200 baud, tanpa library).");
 
   Wire.begin(21, 22); 
   Wire.setTimeOut(150); // Mencegah I2C blocking tak terhingga jika kena EMI
@@ -554,42 +526,71 @@ void setup() {
 float heading = 0.0;
 double lat = 0.0, lon = 0.0;
 double speed = 0.0; 
-double cog = 0.0; // [NEW] Course Over Ground
+double cog = 0.0; // Course Over Ground
 int sats = 0;
 unsigned long lastLoopTime = 0;
 // ---------------------------------
+
+// --- Custom UBX-NAV-PVT Parser ---
+// Fungsi ini dipanggil otomatis saat 92-byte payload PVT berhasil divalidasi.
+void parsePVT() {
+  gpsFixType = ubxPayload[20];
+  sats = ubxPayload[23];
+
+  // Ekstraksi 4 byte gabungan (Little Endian) sesuai Data Sheet u-blox
+  int32_t lon_raw    = ubxPayload[24] | (ubxPayload[25]<<8) | (ubxPayload[26]<<16) | (ubxPayload[27]<<24);
+  int32_t lat_raw    = ubxPayload[28] | (ubxPayload[29]<<8) | (ubxPayload[30]<<16) | (ubxPayload[31]<<24);
+  int32_t gSpeed_raw = ubxPayload[60] | (ubxPayload[61]<<8) | (ubxPayload[62]<<16) | (ubxPayload[63]<<24);
+  int32_t head_raw   = ubxPayload[64] | (ubxPayload[65]<<8) | (ubxPayload[66]<<16) | (ubxPayload[67]<<24);
+
+  if (gpsFixType > 0) {
+    lat   = lat_raw / 10000000.0;
+    lon   = lon_raw / 10000000.0;
+    speed = gSpeed_raw / 1000.0 * 3.6; // m/s -> km/h
+    cog   = head_raw / 100000.0;       // 1e-5 deg -> deg
+    digitalWrite(LED_GPS, HIGH);
+  } else {
+    lat = 0.0; lon = 0.0; speed = 0.0; cog = 0.0; sats = 0;
+    digitalWrite(LED_GPS, LOW);
+  }
+}
+
+// --- Mesin Penyadap UBX (dipanggil di awal loop) ---
+void readGPS_UBX() {
+  while (gpsSerial.available()) {
+    uint8_t c = gpsSerial.read();
+    switch (ubxState) {
+      case 0: if (c == 0xB5) ubxState = 1; break;
+      case 1: if (c == 0x62) ubxState = 2; else ubxState = 0; break;
+      case 2: if (c == 0x01) { ubxState = 3; ubxCkA = c; ubxCkB = c; } else ubxState = 0; break;
+      case 3: if (c == 0x07) { ubxState = 4; ubxCkA += c; ubxCkB += ubxCkA; } else ubxState = 0; break;
+      case 4: ubxPayloadLength = c; ubxCkA += c; ubxCkB += ubxCkA; ubxState = 5; break;
+      case 5: ubxPayloadLength |= (c << 8); ubxCkA += c; ubxCkB += ubxCkA;
+              if (ubxPayloadLength == 92) { ubxState = 6; ubxPayloadCounter = 0; }
+              else ubxState = 0; break;
+      case 6: ubxPayload[ubxPayloadCounter++] = c;
+              ubxCkA += c; ubxCkB += ubxCkA;
+              if (ubxPayloadCounter == 92) ubxState = 7;
+              break;
+      case 7: if (c == ubxCkA) ubxState = 8; else ubxState = 0; break;
+      case 8: if (c == ubxCkB) parsePVT();
+              ubxState = 0; break;
+    }
+  }
+}
 
 void loop() {
   // 1. BACA SERIAL TERUS MENERUS TANPA HENTI (Mencegah Buffer Overflow)
   checkSerialInput(); 
 
-  // 2. Batasi kecepatan sensor & aktuator ke 50Hz (20ms) agar I2C tidak macet
-  if (millis() - lastLoopTime < 20) {
+  // 2. BACA GPS UBX TERUS MENERUS (Mencegah Buffer Overflow pada 115200 baud)
+  readGPS_UBX();
+
+  // 3. Batasi kecepatan sensor & aktuator ke 20Hz (50ms)
+  if (millis() - lastLoopTime < 50) {
     return;
   }
   lastLoopTime = millis();
-
-  // --- 3. Baca Sensor GPS ---
-  if (myGPS.getPVT()) { 
-    uint8_t fixType = myGPS.getFixType(); 
-
-    if (fixType > 0) digitalWrite(LED_GPS, HIGH);
-    else digitalWrite(LED_GPS, LOW);
-
-    if (fixType > 0) { 
-        lat = myGPS.getLatitude() / 10000000.0;
-        lon = myGPS.getLongitude() / 10000000.0;
-        speed = myGPS.getGroundSpeed() / 1000.0 * 3.6; 
-        sats = myGPS.getSIV(); 
-        cog = myGPS.getHeading() / 100000.0; // [NEW] Ambil Course Over Ground
-    } else { 
-        lat = 0.0;
-        lon = 0.0;
-        speed = 0.0;
-        cog = 0.0;
-        sats = 0;
-    }
-  }
   
   heading = readCompass();
   if (heading == -1) { heading = 0.0; } 
@@ -657,7 +658,7 @@ void loop() {
         }
         if (targetCaptureIndex >= 0 && targetCaptureIndex < dataIndex) {
           // MODE REPLACE (Selalu diizinkan walau memori penuh)
-          if (myGPS.getFixType() > 0) {
+          if (gpsFixType > 0) {
             latitudes[targetCaptureIndex] = lat;
             longitudes[targetCaptureIndex] = lon;
             saveDataToMemory();
@@ -671,7 +672,7 @@ void loop() {
           if (dataIndex >= MAX_DATA) {
             Serial.println("⚠ Memori penuh. Tidak bisa menambah titik lagi.");
           } else {
-            if (myGPS.getFixType() > 0) { 
+            if (gpsFixType > 0) { 
               latitudes[dataIndex] = lat;
               longitudes[dataIndex] = lon;
               dataIndex++;
@@ -779,7 +780,7 @@ void loop() {
     else if (serialCommand == 'W') {
       status = "WAYPOINT";
       
-      if (dataIndex > 0 && myGPS.getFixType() > 0) { 
+      if (dataIndex > 0 && gpsFixType > 0) { 
         
         if (counter >= dataIndex) { 
           wp_target_idx = dataIndex;
@@ -926,29 +927,7 @@ void loop() {
   // ========================================
 
   // [NEW] Slew Rate Limiter (Soft Start) untuk memuluskan transisi PWM
-  static int currentMotorBawah = 1000;
-  static int currentMotorDepanKiri = 1000;
-  static int currentMotorDepanKanan = 1000;
-
-  int max_step = 15;
-
-  // Soft-start Motor Utama (Bawah)
-  if (finalMotor > currentMotorBawah + max_step) currentMotorBawah += max_step;
-  else if (finalMotor < currentMotorBawah - max_step) currentMotorBawah -= max_step;
-  else currentMotorBawah = finalMotor;
-  finalMotor = currentMotorBawah;
-
-  // Soft-start Motor Kiri
-  if (finalMotorDepanKiri > currentMotorDepanKiri + max_step) currentMotorDepanKiri += max_step;
-  else if (finalMotorDepanKiri < currentMotorDepanKiri - max_step) currentMotorDepanKiri -= max_step;
-  else currentMotorDepanKiri = finalMotorDepanKiri;
-  finalMotorDepanKiri = currentMotorDepanKiri;
-
-  // Soft-start Motor Kanan
-  if (finalMotorDepanKanan > currentMotorDepanKanan + max_step) currentMotorDepanKanan += max_step;
-  else if (finalMotorDepanKanan < currentMotorDepanKanan - max_step) currentMotorDepanKanan -= max_step;
-  else currentMotorDepanKanan = finalMotorDepanKanan;
-  finalMotorDepanKanan = currentMotorDepanKanan;
+  // Motor langsung dikirim tanpa ramping (realtime dari RC)
 
   servoKiri.write(finalServo); 
   servoKanan.write(finalServo); 

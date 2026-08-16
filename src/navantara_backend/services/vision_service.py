@@ -723,8 +723,10 @@ class VisionService:
                         ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 35]
                     )
                     if ret_encode:
-                        b64_string = base64.b64encode(buffer).decode("utf-8")
-                        self.socketio.emit(event_name, b64_string)
+                        # [MODIFIKASI] Pengiriman base64 via SocketIO dimatikan
+                        # untuk menghemat bandwidth telemetri. Diganti dengan MJPEG HTTP Stream.
+                        # b64_string = base64.b64encode(buffer).decode("utf-8")
+                        # self.socketio.emit(event_name, b64_string)
                         eventlet.sleep(0)
                 except Exception:
                     pass
@@ -737,6 +739,33 @@ class VisionService:
         print(f"[{cam_id_log}] Loop berhenti.")
 
     # [MODIFIKASI] Menambahkan parameter raw_mode=False sebagai default
+
+    def generate_mjpeg_stream(self, cam_id: int):
+        import eventlet
+        import cv2
+        while self.running:
+            frame = None
+            if cam_id == 1:
+                with VisionService._frame_lock_cam1:
+                    if VisionService._latest_processed_frame_cam1 is not None:
+                        frame = VisionService._latest_processed_frame_cam1.copy()
+            else:
+                with VisionService._frame_lock_cam2:
+                    if VisionService._latest_raw_frame_cam2 is not None:
+                        frame = VisionService._latest_raw_frame_cam2.copy()
+            
+            if frame is not None:
+                # Resize for performance and encode
+                gui_frame = cv2.resize(frame, (320, 240))
+                ret, buffer = cv2.imencode('.jpg', gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 40])
+                if ret:
+                    frame_bytes = buffer.tobytes()
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            
+            # Rate limit to ~15-20 FPS to save CPU
+            eventlet.sleep(0.05)
+
     def trigger_manual_capture(self, capture_type: str, raw_mode: bool = False):
         """
         Menangani trigger manual capture dengan dukungan mode RAW (Tanpa Overlay) vs Default (Dengan Overlay).

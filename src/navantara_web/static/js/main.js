@@ -90,13 +90,16 @@ document.addEventListener("DOMContentLoaded", () => {
       attribution: "© Google Maps",
     }).addTo(map);
 
-    vehicleMarker = L.circleMarker(initialCoords, {
-      radius: 10,
-      color: "#FFFFFF",
-      weight: 1.5,
-      fillColor: "#FF0000",
-      fillOpacity: 1,
-    })
+    const boatIcon = L.divIcon({
+      html: `<svg id="boat-svg" width="30" height="30" viewBox="0 0 24 24" style="transform: rotate(0deg); transform-origin: center; transition: transform 0.2s linear;">
+               <polygon points="12,2 22,22 12,17 2,22" fill="#FF0000" stroke="#FFFFFF" stroke-width="1.5"/>
+             </svg>`,
+      className: 'custom-boat-marker',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15]
+    });
+
+    vehicleMarker = L.marker(initialCoords, { icon: boatIcon })
       .addTo(map)
       .bindPopup("NAVANTARA ASV");
 
@@ -449,22 +452,9 @@ function setupLocalSocketIO(elements, icons) {
         const wp = fullMissionWaypoints[i];
         const wpLatLng = [wp.lat, wp.lon];
 
-        if (i < targetIndex) {
-          L.marker(wpLatLng, { icon: icons.completedWpIcon })
-            .addTo(waypointLayer)
-            .bindPopup(`WP ${i} (Completed)`);
+        // Hapus Titik WP, hanya rekam garis rute yang sudah/sedang dilewati
+        if (i <= targetIndex) {
           completedPathCoords.push(wpLatLng);
-
-        } else if (i === targetIndex) {
-          L.marker(wpLatLng, { icon: icons.targetWpIcon })
-            .addTo(waypointLayer)
-            .bindPopup(`TARGET: WP ${i}`);
-          completedPathCoords.push(wpLatLng);
-
-        } else {
-          L.marker(wpLatLng, { icon: icons.pendingWpIcon })
-            .addTo(waypointLayer)
-            .bindPopup(`WP ${i} (Pending)`);
         }
       }
 
@@ -614,6 +604,12 @@ function setupLocalSocketIO(elements, icons) {
           if (isNaN(hdgNum)) throw new Error("HDG bukan angka");
           elements.hdgValue.textContent = `${Math.round(hdgNum)}°`;
           currentHdg = hdgNum;
+
+          // Putar marker kapal
+          const boatSvg = document.getElementById("boat-svg");
+          if (boatSvg) {
+            boatSvg.style.transform = `rotate(${currentHdg}deg)`;
+          }
         } catch (e) {
           console.error("Data HDG tidak valid:", e);
           elements.hdgValue.textContent = "N/A";
