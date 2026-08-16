@@ -141,6 +141,7 @@ class MainWindow(QMainWindow):
         scroll_area_kiri.setWidgetResizable(True)
         scroll_area_kiri.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kiri.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area_kiri.setMinimumWidth(380)
 
         # --- [MODIFIKASI] Tengah: Hapus QTabWidget, gunakan VideoView langsung ---
         # Sebelumnya: self.tab_tengah = QTabWidget() ...
@@ -188,7 +189,7 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(widget_sidebar_kanan)
 
         gui_settings = self.config.get("gui_settings", {})
-        splitter_sizes = gui_settings.get("main_splitter_sizes", [350, 800, 350])
+        splitter_sizes = gui_settings.get("main_splitter_sizes", [380, 800, 350])
         main_splitter.setSizes(splitter_sizes)
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(2, False)

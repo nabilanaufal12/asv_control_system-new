@@ -49,13 +49,13 @@ class SettingsPanel(QGroupBox):
 
         # Row 1: PWM Utama & PWM Depan
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("PWM Utama:"))
+        row1.addWidget(QLabel("Speed (PWM):"))
         self.spin_ai_speed = QSpinBox()
         self.spin_ai_speed.setRange(1000, 2000)
         self.spin_ai_speed.setValue(1300)
         row1.addWidget(self.spin_ai_speed)
 
-        row1.addWidget(QLabel("PWM Depan:"))
+        row1.addWidget(QLabel("Front Motor:"))
         self.spin_front = QSpinBox()
         self.spin_front.setRange(1000, 2000)
         self.spin_front.setValue(1500)
@@ -65,7 +65,7 @@ class SettingsPanel(QGroupBox):
 
         # Row 2: Avoidance Angle (Left, Right)
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Avoidance Angle:"))
+        row2.addWidget(QLabel("Avoid Angle:"))
         self.spin_left = QSpinBox()
         self.spin_left.setRange(0, 90)
         self.spin_left.setValue(70)
@@ -84,7 +84,7 @@ class SettingsPanel(QGroupBox):
 
         # Row 3: AI Activation & AI Model
         row3 = QHBoxLayout()
-        row3.addWidget(QLabel("AI Activation:"))
+        row3.addWidget(QLabel("Obstacle Dist:"))
         self.spin_obs_dist = QSpinBox()
         self.spin_obs_dist.setRange(0, 500)
         self.spin_obs_dist.setValue(165)
@@ -92,7 +92,7 @@ class SettingsPanel(QGroupBox):
         self.spin_obs_dist.setSuffix(" cm")
         row3.addWidget(self.spin_obs_dist)
 
-        row3.addWidget(QLabel("AI Model:"))
+        row3.addWidget(QLabel("Model:"))
         self.combo_model = QComboBox()
         self.combo_model.addItems(
             ["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"]
@@ -105,7 +105,7 @@ class SettingsPanel(QGroupBox):
         main_layout.addWidget(ai_control_group)
 
         # --- [BAGIAN BOX AVOIDANCE] ---
-        box_avoid_group = QGroupBox("Box Avoidance Parameters")
+        box_avoid_group = QGroupBox("Box Detection Settings")
         box_layout = QVBoxLayout()
         
         row_box1 = QHBoxLayout()
@@ -145,7 +145,7 @@ class SettingsPanel(QGroupBox):
         main_layout.addWidget(box_avoid_group)
 
         # --- [BAGIAN WP RANGES] ---
-        wp_ranges_group = QGroupBox("Vision Waypoint Ranges")
+        wp_ranges_group = QGroupBox("Vision Target WP Ranges")
         wp_ranges_layout = QFormLayout()
 
         # Bola (Avoidance)
@@ -188,7 +188,7 @@ class SettingsPanel(QGroupBox):
         main_layout.addWidget(wp_ranges_group)
 
         # --- [TAMBAHAN BARU] Photo Mission Segments (Pindahan dari Kanan) ---
-        photo_mission_box = QGroupBox("Photography Mission Segments")
+        photo_mission_box = QGroupBox("Photo Mission Settings")
         photo_mission_layout = QVBoxLayout()
 
         photo_form_layout = QFormLayout()
@@ -277,7 +277,7 @@ class SettingsPanel(QGroupBox):
         main_layout.addWidget(photo_mission_box)
 
         # --- [TAMBAHAN BARU] Docking Mission Settings ---
-        docking_mission_box = QGroupBox("Docking Mission Settings")
+        docking_mission_box = QGroupBox("Docking Settings")
         docking_layout = QVBoxLayout()
 
         # Checkbox Enable/Disable Docking
