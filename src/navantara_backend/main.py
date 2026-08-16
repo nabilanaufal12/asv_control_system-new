@@ -104,6 +104,20 @@ def create_app():
         g.vision_service = current_app.vision_service
 
     # Daftarkan blueprint API (yang berisi /live_video_feed)
+
+    # --- HTTP MJPEG Endpoints ---
+    @app.route('/video_feed_1')
+    def video_feed_1():
+        from flask import Response
+        return Response(current_app.vision_service.generate_mjpeg_stream(1),
+                        mimetype='multipart/x-mixed-replace; boundary=frame')
+
+    @app.route('/video_feed_2')
+    def video_feed_2():
+        from flask import Response
+        return Response(current_app.vision_service.generate_mjpeg_stream(2),
+                        mimetype='multipart/x-mixed-replace; boundary=frame')
+
     app.register_blueprint(api_blueprint)
 
     @app.route("/")
