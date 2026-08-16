@@ -153,9 +153,9 @@ class AsvHandler:
         self.ekf = SimpleEKF(np.zeros(5), np.eye(5) * 0.1)
         self.last_ekf_update_time = time.time()
         self.heading_history = collections.deque(
-            maxlen=25
-        )  # [FIX-4] Window diperlebar: 5 -> 25 (menutup 0.5 detik spike EMI di 50Hz)
-        self._ema_heading = None  # [FIX-4] State EMA heading (alpha=0.15)
+            maxlen=3
+        )  # [FIX] Dikurangi menjadi 3 agar merespons instan
+        self._ema_heading = None  # State EMA heading
 
         self.logger = MissionLogger()
         self.is_logging_csv = False
@@ -353,7 +353,7 @@ class AsvHandler:
                     if self._ema_heading is None:
                         self._ema_heading = median_hdg
                     else:
-                        alpha = 0.15
+                        alpha = 0.8  # [FIX] Diperbesar dari 0.15 ke 0.8 agar data sangat realtime
                         # Hitung selisih sudut terpendek (agar 359°->1° = +2°, bukan -358°)
                         diff = median_hdg - self._ema_heading
                         if diff > 180:
