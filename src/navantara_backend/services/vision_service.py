@@ -851,10 +851,12 @@ class VisionService:
 
         # 3. Penyimpanan File
         filename = f"{filename_prefix}_{image_count}.jpg"
+        # Selalu gunakan path race_X/captures/ dari logger, JANGAN fallback ke root logs/captures/
         if hasattr(self.asv_handler, "logger") and self.asv_handler.logger:
             save_dir = self.asv_handler.logger.get_current_capture_dir()
         else:
-            save_dir = os.path.join(os.getcwd(), "logs", "captures")
+            # Logger belum siap — buat path darurat tapi tetap ikut struktur race
+            save_dir = os.path.join(os.getcwd(), "logs", "race_0", "captures")
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 
@@ -1276,10 +1278,12 @@ class VisionService:
             snapshot = frame_to_use
 
         filename = f"{filename_prefix}_{image_count}.jpg"
+        # Selalu gunakan path race_X/captures/ dari logger, JANGAN fallback ke root logs/captures/
         if hasattr(self.asv_handler, "logger") and self.asv_handler.logger:
             save_dir = self.asv_handler.logger.get_current_capture_dir()
         else:
-            save_dir = os.path.join(os.getcwd(), "logs", "captures")
+            # Logger belum siap — buat path darurat tapi tetap ikut struktur race
+            save_dir = os.path.join(os.getcwd(), "logs", "race_0", "captures")
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 
