@@ -141,16 +141,8 @@ document.addEventListener("DOMContentLoaded", () => {
     console.error("Fungsi setupLocalSocketIO tidak ditemukan.");
   }
 
-  // Muat daftar race secara otomatis
+  // Muat daftar race secara otomatis saat inisiasi
   fetchCsvLogList();
-
-  // Polling periodik: refresh daftar race setiap 15 detik
-  // Ini memastikan dropdown race selalu up-to-date saat backend membuat race baru
-  setInterval(() => {
-    if (!userIsViewingHistory) {
-      fetchCsvLogList();
-    }
-  }, 15000);
 
   // Koneksi Socket.IO untuk event real-time (new_capture, dll)
   // Berbeda dengan SSE yang hanya mengirim telemetri, Socket.IO dipakai
@@ -183,7 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Silent fail: Socket.IO opsional, SSE tetap berjalan sebagai data utama
     });
   } catch(e) {
-    console.warn("[Socket.IO] Tidak dapat terhubung, galeri hanya update via polling.", e);
+    console.warn("[Socket.IO] Tidak dapat terhubung, galeri hanya update saat race berganti.", e);
   }
 
   if (ELEMENTS.closeModalBtn && ELEMENTS.modal) {
