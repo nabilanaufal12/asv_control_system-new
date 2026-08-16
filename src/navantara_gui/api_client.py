@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 import base64  # <--- 1. TAMBAHAN PENTING
 
-from PySide6.QtCore import QObject, Signal, Slot, QThread
+from PySide6.QtCore import QObject, Signal, Slot
 
 
 
@@ -141,3 +141,40 @@ class ApiClient(QObject):
                 print(f"[ApiClient] Gagal memproses sync_waypoints: {e}")
 
         
+
+    def initial_stream_request(self):
+        """Fungsi yang dijalankan di latar belakang untuk meminta stream awal."""
+        self.sio.sleep(0.1)
+        self.request_data_stream(True)
+
+    @Slot(bool)
+    def request_data_stream(self, start: bool):
+        """Mengirim event untuk memulai atau menghentikan stream data dari server."""
+        if self.sio.connected:
+            self.sio.emit("request_stream", {"status": start})
+            print(
+                f"Mengirim permintaan untuk {'memulai' if start else 'menghentikan'} stream."
+            )
+        else:
+            print("Tidak bisa meminta stream, belum terhubung ke server.")
+
+    def send_command(self, command_name, payload_data=None):
+        """Fungsi helper terpusat untuk mengirim semua perintah ke backend."""
+        if payload_data is None:
+            payload_data = {}
+        if self.sio.connected:
+            self.sio.emit("command", {"command": command_name, "payload": payload_data})
+        else:
+            print(f"Gagal mengirim perintah '{command_name}', tidak terhubung.")
+
+    def shutdown(self):
+        """Memutuskan koneksi dengan bersih saat aplikasi ditutup."""
+        try:
+            self.request_data_stream(False)
+        except Exception:
+            pass
+        self.sio.disconnect()
+        if self.cam1_thread:
+            self.cam1_thread.stop()
+        if self.cam2_thread:
+            self.cam2_thread.stop()
