@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QFormLayout,
     QSpinBox,
+    QDoubleSpinBox,
     QCheckBox,
 )
 from PySide6.QtCore import Signal, Qt
