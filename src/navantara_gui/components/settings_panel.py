@@ -170,6 +170,11 @@ class SettingsPanel(QGroupBox):
         self.photo_count_input.setRange(1, 100)
         self.photo_count_input.setValue(5)
 
+        self.photo_interval_input = QDoubleSpinBox()
+        self.photo_interval_input.setRange(0.5, 10.0)
+        self.photo_interval_input.setSingleStep(0.5)
+        self.photo_interval_input.setValue(2.0)
+
         # Surface WP
         photo_surf_layout = QHBoxLayout()
         photo_surf_layout.addWidget(QLabel("Start:"))
@@ -186,6 +191,7 @@ class SettingsPanel(QGroupBox):
         photo_under_layout.addWidget(self.under_wp2_input)
         photo_form_layout.addRow("Underwater WP:", photo_under_layout)
         photo_form_layout.addRow("Max Foto / Area:", self.photo_count_input)
+        photo_form_layout.addRow("Interval Foto (s):", self.photo_interval_input)
 
         # --- Portrait Config Inputs ---
         self.spin_portrait_speed = QSpinBox()
@@ -295,6 +301,7 @@ class SettingsPanel(QGroupBox):
         self.under_wp1_input.valueChanged.connect(self._on_set_photo_mission)
         self.under_wp2_input.valueChanged.connect(self._on_set_photo_mission)
         self.photo_count_input.valueChanged.connect(self._on_set_photo_mission)
+        self.photo_interval_input.valueChanged.connect(self._on_set_photo_mission)
 
         self.spin_portrait_speed.valueChanged.connect(self._on_set_photo_mission)
         self.spin_portrait_rev_speed.valueChanged.connect(self._on_set_photo_mission)
@@ -368,6 +375,7 @@ class SettingsPanel(QGroupBox):
             self.under_wp2_input.setValue(int(defs["photo_under2"]))
         if "photo_count" in defs:
             self.photo_count_input.setValue(int(defs["photo_count"]))
+            self.photo_interval_input.setValue(float(defs.get("photo_interval", 2.0)))
 
         if "portrait_speed" in defs:
             self.spin_portrait_speed.setValue(defs["portrait_speed"])
@@ -409,6 +417,7 @@ class SettingsPanel(QGroupBox):
             "photo_under1": self.under_wp1_input.value(),
             "photo_under2": self.under_wp2_input.value(),
             "photo_count": self.photo_count_input.value(),
+            "photo_interval": self.photo_interval_input.value(),
             "portrait_speed": self.spin_portrait_speed.value(),
             "portrait_rev_speed": self.spin_portrait_rev_speed.value(),
             "portrait_stop": self.spin_portrait_stop.value(),

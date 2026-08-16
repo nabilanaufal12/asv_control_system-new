@@ -96,6 +96,7 @@ class AsvState:
     photo_mission_under_wp1: int = 11
     photo_mission_under_wp2: int = 12
     photo_mission_qty_requested: int = 5
+    photo_mission_interval: float = 2.0
     photo_mission_qty_taken_1: int = 0
     photo_mission_qty_taken_2: int = 0
     vision_auto_motor_cmd: int = 1300
@@ -1082,8 +1083,10 @@ class AsvHandler:
             under_wp1 = payload.get("under_wp1", 11)
             under_wp2 = payload.get("under_wp2", 12)
             count = payload.get("count", 5)
+            interval = payload.get("interval", 2.0)
 
             with self.state_lock:
+                self.current_state.photo_mission_interval = float(interval)
                 self.current_state.photo_mission_surf_wp1 = surf_wp1
                 self.current_state.photo_mission_surf_wp2 = surf_wp2
                 self.current_state.photo_mission_under_wp1 = under_wp1
