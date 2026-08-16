@@ -345,24 +345,9 @@ class AsvHandler:
             with self.state_lock:
                 raw_hdg = data.get("hdg")
                 if raw_hdg is not None:
-                    # [FIX-4] Lapisan 1: Median Filter (window=25) untuk menolak outlier EMI ekstrem
-                    self.heading_history.append(raw_hdg)
-                    median_hdg = statistics.median(self.heading_history)
-
-                    # [FIX-4] Lapisan 2: EMA dengan koreksi angular wrap-around 360°->0°
-                    if self._ema_heading is None:
-                        self._ema_heading = median_hdg
-                    else:
-                        alpha = 0.8  # [FIX] Diperbesar dari 0.15 ke 0.8 agar data sangat realtime
-                        # Hitung selisih sudut terpendek (agar 359°->1° = +2°, bukan -358°)
-                        diff = median_hdg - self._ema_heading
-                        if diff > 180:
-                            diff -= 360
-                        elif diff < -180:
-                            diff += 360
-                        self._ema_heading = (self._ema_heading + alpha * diff) % 360
-
-                    self.current_state.heading = self._ema_heading
+                    # [FIX-5] Matikan semua filter (Median & EMA) untuk kecepatan seketika (0 lag).
+                    # Catatan: Jika ada loncatan EMI, biarkan EKF/Kalman Filter yang meratakannya.
+                    self.current_state.heading = raw_hdg
 
                 self.current_state.cog = data.get("cog", self.current_state.cog)
                 self.current_state.speed = data.get("spd", 0.0) / 3.6
