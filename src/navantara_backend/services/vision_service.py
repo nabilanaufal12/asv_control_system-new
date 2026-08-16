@@ -1119,15 +1119,17 @@ class VisionService:
             # --- [PERBAIKAN] Logika Filter Target Berbasis Waypoint (WP) ---
             vision_cfg = self.config.get("vision", {})
             range_bola = vision_cfg.get("wp_range_bola", [0, 10])
-            range_kotak_biru = vision_cfg.get("wp_range_kotak_biru", [11, 12])
             range_kotak_hijau = vision_cfg.get("wp_range_kotak_hijau", [13, 14])
+
+            total_wps = len(current_state.waypoints) if current_state.waypoints else 0
+            is_last_wp = (total_wps > 0) and (current_wp >= total_wps - 1)
 
             if range_bola[0] <= current_wp <= range_bola[1]:
                 # Mode Avoidance (Bola)
                 if cls in ["bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
-            elif range_kotak_biru[0] < current_wp <= range_kotak_biru[1]:
-                # Mode Tracking Underwater (Kotak Biru)
+            elif is_last_wp:
+                # Mode Tracking Docking (Kotak Biru) HANYA di WP TERAKHIR
                 if cls == "kotak-biru":
                     valid_buoys.append(det)
             elif range_kotak_hijau[0] < current_wp <= range_kotak_hijau[1]:
@@ -1181,44 +1183,69 @@ class VisionService:
         """
         Menangani pengambilan foto otomatis berdasarkan mode yang diminta.
         Mode: "surface" (CAM1) atau "underwater" (CAM2).
+        Menghormati flag camera_swapped agar foto diambil dari kamera fisik yang benar.
         """
         frame_to_use = None
         mission_name = None
         filename_prefix = None
         image_count = 0
 
-        # --- SELEKSI FRAME & LOCK BERDASARKAN MODE ---
-        if mode == "surface":
-            # Ambil Frame CAM 1
-            with VisionService._frame_lock_cam1:
-                if VisionService._latest_processed_frame_cam1 is not None:
-                    frame_to_use = VisionService._latest_processed_frame_cam1.copy()
+        # Baca status swap secara thread-safe
+        with self.settings_lock:
+            is_swapped = self.camera_swapped
 
+        # Tentukan sumber frame fisik berdasarkan mode logis + status swap.
+        # "mode" menentukan JENIS foto (surface/underwater) — label file tetap sama.
+        # Jika swap aktif: sumber CAM1 dan CAM2 dibalik.
+        if mode == "surface":
             mission_name = "Surface Imaging"
             filename_prefix = "surface_auto"
             image_count = self.surface_image_count
             self.surface_image_count += 1
 
+            if is_swapped:
+                # Swap aktif: kamera fisik surface sekarang adalah CAM2
+                with VisionService._frame_lock_cam2:
+                    if VisionService._latest_raw_frame_cam2 is not None:
+                        frame_to_use = VisionService._latest_raw_frame_cam2.copy()
+                if frame_to_use is None:
+                    print("[Mission] Gagal Auto-Capture Surface (swapped): Frame CAM2 None.")
+                    return
+            else:
+                # Normal: kamera fisik surface adalah CAM1
+                with VisionService._frame_lock_cam1:
+                    if VisionService._latest_processed_frame_cam1 is not None:
+                        frame_to_use = VisionService._latest_processed_frame_cam1.copy()
+
         elif mode == "underwater":
-            # Ambil Frame CAM 2
-            with VisionService._frame_lock_cam2:
-                if VisionService._latest_raw_frame_cam2 is not None:
-                    frame_to_use = VisionService._latest_raw_frame_cam2.copy()
-
-            if frame_to_use is None:
-                print("[Mission] Gagal Auto-Capture Underwater: Frame CAM 2 None.")
-                return
-
             mission_name = "Underwater Imaging"
             filename_prefix = "underwater_auto"
             image_count = self.underwater_image_count
             self.underwater_image_count += 1
+
+            if is_swapped:
+                # Swap aktif: kamera fisik underwater sekarang adalah CAM1
+                with VisionService._frame_lock_cam1:
+                    if VisionService._latest_processed_frame_cam1 is not None:
+                        frame_to_use = VisionService._latest_processed_frame_cam1.copy()
+                if frame_to_use is None:
+                    print("[Mission] Gagal Auto-Capture Underwater (swapped): Frame CAM1 None.")
+                    return
+            else:
+                # Normal: kamera fisik underwater adalah CAM2
+                with VisionService._frame_lock_cam2:
+                    if VisionService._latest_raw_frame_cam2 is not None:
+                        frame_to_use = VisionService._latest_raw_frame_cam2.copy()
+                if frame_to_use is None:
+                    print("[Mission] Gagal Auto-Capture Underwater: Frame CAM2 None.")
+                    return
 
         else:
             print(f"[Mission] Mode tidak dikenal: {mode}")
             return
 
         if frame_to_use is None:
+            print(f"[Mission] Gagal Auto-Capture '{mode}': Frame None (swapped={is_swapped}).")
             return
 
         # --- PROSES OVERLAY & SIMPAN ---

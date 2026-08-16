@@ -304,6 +304,10 @@ class MainWindow(QMainWindow):
             lambda payload: self.api_client.send_command("SET_DOCK_CONFIG", payload)
         )
 
+        self.settings_panel.send_dock_enabled.connect(
+            lambda payload: self.api_client.send_command("SET_DOCK_ENABLED", payload)
+        )
+
         # --- Koneksi Capture RAW/Overlay ---
 
         # 1. Surface Capture

@@ -4,6 +4,7 @@
 const SERVER_IP = window.location.origin; // Dinamis mendeteksi IP Jetson saat ini
 let isLiveMode = true;
 let currentHistoryRaceId = null;
+let userIsViewingHistory = false; // True jika user manual memilih race lama
 
 // Variabel Global untuk Peta Leaflet
 let map;
@@ -220,22 +221,31 @@ async function fetchCsvLogList() {
     const races = await response.json();
     raceSelector.innerHTML = '<option value="">Pilih Race</option>';
 
-    if (races.length > 0) {
-      races.forEach(race => {
-        const option = document.createElement('option');
-        option.value = race.id;
-        option.textContent = race.name;
-        raceSelector.appendChild(option);
-      });
-      // Hapus auto-load history, biarkan canvas mulai bersih di titik 0 (Live Mode)
-      const latestRace = races.reduce((prev, current) => {
-        return (parseInt(prev.id) > parseInt(current.id)) ? prev : current;
-      });
-      raceSelector.value = latestRace.id;
-      loadRace(latestRace.id);
+      // Jika ada race, auto-load yang terbaru dan set dropdown
+      if (races.length > 0) {
+        races.forEach(race => {
+          const option = document.createElement('option');
+          option.value = race.id;
+          option.textContent = race.name;
+          raceSelector.appendChild(option);
+        });
+        const latestRace = races.reduce((prev, current) => {
+          return (parseInt(prev.id) > parseInt(current.id)) ? prev : current;
+        });
+        raceSelector.value = latestRace.id;
+        currentHistoryRaceId = String(latestRace.id);
+        loadRace(latestRace.id);
 
-      console.log("Dashboard siap. Menunggu data live dari ESP32...");
-    }
+        // Listener: ketika user manual pilih race, tandai sebagai history mode
+        raceSelector.addEventListener('change', () => {
+          const latestId = String(races.reduce((p, c) => parseInt(p.id) > parseInt(c.id) ? p : c).id);
+          userIsViewingHistory = raceSelector.value !== latestId;
+          console.log(`[UI] Race dipilih: ${raceSelector.value} | viewingHistory: ${userIsViewingHistory}`);
+          loadRace(raceSelector.value);
+        });
+
+        console.log("Dashboard siap. Menunggu data live dari ESP32...");
+      }
 
   } catch (error) {
     console.error("Error fetching races:", error);
@@ -355,11 +365,36 @@ function setupLocalSocketIO(elements, icons) {
       }
     }
 
-    // --- Render SSE Gallery Update secara otomatis tanpa setInterval ---
-    if (data.captures && Array.isArray(data.captures)) {
+    // --- Auto-update gallery + race selector dari SSE ---
+    if (data.current_race_id != null) {
       const raceSelector = document.getElementById('race-selector');
-      // Hanya perbarui galeri dari telemetri jika user sedang tidak melihat history lama
-      if (!raceSelector || raceSelector.value == data.current_race_id || !raceSelector.value) {
+
+      // Deteksi perubahan race (backend mulai race baru)
+      if (String(data.current_race_id) !== String(currentHistoryRaceId)) {
+        console.log(`[SSE] Race baru terdeteksi: ${currentHistoryRaceId} -> ${data.current_race_id}`);
+        currentHistoryRaceId = String(data.current_race_id);
+
+        // Tambah option race baru ke dropdown jika belum ada
+        if (raceSelector) {
+          const exists = Array.from(raceSelector.options).some(o => o.value === String(data.current_race_id));
+          if (!exists) {
+            const option = document.createElement('option');
+            option.value = data.current_race_id;
+            option.textContent = `Race ${data.current_race_id}`;
+            raceSelector.appendChild(option);
+          }
+
+          // Jika user tidak sedang melihat history, auto-pindah ke race terbaru
+          if (!userIsViewingHistory) {
+            raceSelector.value = String(data.current_race_id);
+            lastRenderedCaptures = "[]"; // paksa render ulang
+            loadRace(data.current_race_id);
+          }
+        }
+      }
+
+      // Render gallery hanya jika user tidak sedang melihat history lama
+      if (data.captures && Array.isArray(data.captures) && !userIsViewingHistory) {
         renderGallery(data.captures, data.current_race_id);
       }
     }
@@ -687,40 +722,39 @@ setInterval(async () => {
   const raceSelector = document.getElementById('race-selector');
   if (!raceSelector) return;
 
-  const currentValue = raceSelector.value;
-
   // 1. Auto Refresh Dropdown Race
   try {
     const response = await fetch(`${SERVER_IP}/api/races`);
     if (response.ok) {
       const races = await response.json();
 
-      // Update dropdown HANYA jika jumlah race berubah (ada race baru)
-      if (races.length > 0 && races.length !== (raceSelector.options.length - 1)) {
-        const previousValue = raceSelector.value; // Simpan pilihan user
+        // Update dropdown HANYA jika jumlah race berubah (ada race baru)
+        if (races.length > 0 && races.length !== (raceSelector.options.length - 1)) {
+          const previousValue = raceSelector.value;
 
-        raceSelector.innerHTML = '<option value="">Pilih Race</option>';
-        races.forEach(race => {
-          const option = document.createElement('option');
-          option.value = race.id;
-          option.textContent = race.name;
-          raceSelector.appendChild(option);
-        });
+          raceSelector.innerHTML = '<option value="">Pilih Race</option>';
+          races.forEach(race => {
+            const option = document.createElement('option');
+            option.value = race.id;
+            option.textContent = race.name;
+            raceSelector.appendChild(option);
+          });
 
-        const oldOptionExists = races.some(r => String(r.id) === String(previousValue));
-
-        if (oldOptionExists && previousValue !== "") {
-          // Jika user sedang melihat race lama, kembalikan ke pilihannya
-          raceSelector.value = previousValue;
-        } else {
-          // Jika tidak ada pilihan atau pilihan lama hilang, pilih race terbaru
           const latestRace = races.reduce((prev, current) => {
             return (parseInt(prev.id) > parseInt(current.id)) ? prev : current;
           });
-          raceSelector.value = latestRace.id;
-          loadRace(latestRace.id);
+
+          const oldOptionExists = races.some(r => String(r.id) === String(previousValue));
+
+          if (!userIsViewingHistory || !oldOptionExists) {
+            // Auto-pindah ke race terbaru jika user bukan sedang melihat history
+            raceSelector.value = latestRace.id;
+            loadRace(latestRace.id);
+          } else {
+            // Kembalikan ke pilihan lama jika user sedang di history
+            raceSelector.value = previousValue;
+          }
         }
-      }
     }
   } catch (e) { }
 

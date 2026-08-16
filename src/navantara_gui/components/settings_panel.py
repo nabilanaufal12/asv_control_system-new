@@ -9,8 +9,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QFormLayout,
     QSpinBox,
+    QCheckBox,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 import os
 import json
 
@@ -33,6 +34,7 @@ class SettingsPanel(QGroupBox):
     send_photo_mission = Signal(dict)
     send_portrait_config = Signal(dict)
     send_dock_config = Signal(dict)
+    send_dock_enabled = Signal(dict)
 
     def __init__(self, config, title="System Configuration"):
         super().__init__(title)
@@ -225,6 +227,11 @@ class SettingsPanel(QGroupBox):
         docking_mission_box = QGroupBox("Docking Mission Settings")
         docking_layout = QVBoxLayout()
 
+        # Checkbox Enable/Disable Docking
+        self.chk_dock_enable = QCheckBox("Enable Docking Mission")
+        self.chk_dock_enable.setChecked(True)  # Default ON
+        docking_layout.addWidget(self.chk_dock_enable)
+
         dock_row1 = QHBoxLayout()
         dock_row1.addWidget(QLabel("PWM Utama:"))
         self.spin_dock_motor = QSpinBox()
@@ -307,9 +314,8 @@ class SettingsPanel(QGroupBox):
         self.spin_portrait_reverse.valueChanged.connect(self._on_set_photo_mission)
 
         self.spin_dock_motor.valueChanged.connect(self._on_set_dock_config)
-        self.spin_dock_depan.valueChanged.connect(self._on_set_dock_config)
         self.spin_dock_charge.valueChanged.connect(self._on_set_dock_config)
-        self.spin_dock_tol.valueChanged.connect(self._on_set_dock_config)
+        self.chk_dock_enable.stateChanged.connect(self._on_dock_enable_changed)
 
         self.save_default_button.clicked.connect(self._save_defaults_to_config)
 
@@ -542,9 +548,7 @@ class SettingsPanel(QGroupBox):
         try:
             payload = {
                 "motor_utama_pwm": self.spin_dock_motor.value(),
-                "motor_depan_pwm": self.spin_dock_depan.value(),
                 "charge_duration_ms": self.spin_dock_charge.value() * 1000,
-                "heading_tolerance_deg": self.spin_dock_tol.value(),
             }
             self.send_dock_config.emit(payload)
             print(f"[SettingsPanel] Sinyal send_dock_config dipancarkan: {payload}")
@@ -552,3 +556,12 @@ class SettingsPanel(QGroupBox):
             print(f"[SettingsPanel] Error parsing dock config: {e}")
         except ValueError:
             print("[SettingsPanel] Error: Input indeks / jumlah foto tidak valid.")
+
+    def _on_dock_enable_changed(self, state):
+        try:
+            is_enabled = (state == Qt.Checked)
+            payload = {"enabled": is_enabled}
+            self.send_dock_enabled.emit(payload)
+            print(f"[SettingsPanel] Sinyal send_dock_enabled dipancarkan: {payload}")
+        except Exception as e:
+            print(f"[SettingsPanel] Error emitting dock enable: {e}")

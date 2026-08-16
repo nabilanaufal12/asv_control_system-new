@@ -108,6 +108,7 @@ class AsvState:
     vision_servo_left_cmd: int = 70
     vision_servo_right_cmd: int = 110
     docking_state: int = 0
+    docking_enabled: bool = True  # [ON/OFF] Toggle aktif/nonaktif docking mission
 
 
 class AsvHandler:
@@ -580,15 +581,59 @@ class AsvHandler:
                             else:
                                 servo_cmd = servo_default
 
-                        elif obj_class in ["kotak-hijau", "kotak-biru", "kotak-merah"]:
-                            # --- LOGIKA TRACKING (KOTAK) ---
+                        elif obj_class == "kotak-biru":
+                            # --- LOGIKA DOCKING (KOTAK BIRU) ---
+                            # Mengejar Ujung Bola (Edge Tracking)
+                            center_x = vision_target_frame_width / 2
+                            box_width = self.current_state.vision_target.get("width", 0)
+
+                            if current_arena == "Arena_B":
+                                # Mengejar bola ujung kanan
+                                target_point = vision_target_center_x + (box_width / 2)
+                            else:
+                                # Arena A (Default): Mengejar bola ujung kiri
+                                target_point = vision_target_center_x - (box_width / 2)
+
+                            error_x = target_point - center_x
+                            tolerance = 40
+                            max_tracking_deflection = 30
+
+                            if error_x < -tolerance:
+                                turn_direction = "TRACKING_LEFT"
+                                offset = (error_x / center_x) * max_tracking_deflection
+                                servo_cmd = int(90 + offset)
+                                motor_depan_kanan = pwm_depan_aktif
+                                desc = f"Kotak Biru -> Track Ujung Kiri (Err: {error_x:.1f})"
+                            elif error_x > tolerance:
+                                turn_direction = "TRACKING_RIGHT"
+                                offset = (error_x / center_x) * max_tracking_deflection
+                                servo_cmd = int(90 + offset)
+                                motor_depan_kiri = pwm_depan_aktif
+                                desc = f"Kotak Biru -> Track Ujung Kanan (Err: {error_x:.1f})"
+                            else:
+                                turn_direction = "TRACKING_CENTER"
+                                servo_cmd = servo_default
+                                desc = "Kotak Biru -> Track Ujung Tengah"
+
+                            servo_cmd = max(40, min(140, servo_cmd))
+
+                            # PROXIMITY CHECK (Apakah kapal sudah sangat dekat?)
+                            # Ambil state docking agar tidak berkali-kali nembak jika sudah selesai
+                            is_docking_enabled = self.current_state.docking_enabled
+                            if is_docking_enabled and vision_target_frame_width > 0:
+                                proximity_ratio = box_width / vision_target_frame_width
+                                if proximity_ratio > 0.65:
+                                    command_to_send = "S,DOCK_SWING\n"
+                                    desc = "Kotak Biru -> SANGAT DEKAT! TRIGGER SWING DOCKING!"
+                                    logging.warning("[AsvHandler] DOCKING SWING TRIGGERED by Proximity")
+
+                        elif obj_class in ["kotak-hijau", "kotak-merah"]:
+                            # --- LOGIKA TRACKING (KOTAK HIJAU/MERAH) ---
                             center_x = vision_target_frame_width / 2
                             error_x = vision_target_center_x - center_x
 
                             # Tolerance deadband (px)
                             tolerance = 40
-
-                            # Max servo deflection allowed for tracking (from 90)
                             max_tracking_deflection = 30  # Servo bergeser halus
 
                             if error_x < -tolerance:
@@ -604,9 +649,7 @@ class AsvHandler:
                                 offset = (error_x / center_x) * max_tracking_deflection
                                 servo_cmd = int(90 + offset)
                                 motor_depan_kiri = pwm_depan_aktif
-                                desc = (
-                                    f"{obj_class} -> Track Kanan (Err: {error_x:.1f})"
-                                )
+                                desc = f"{obj_class} -> Track Kanan (Err: {error_x:.1f})"
                             else:
                                 # Kotak sudah di tengah layar
                                 turn_direction = "TRACKING_CENTER"
@@ -621,7 +664,10 @@ class AsvHandler:
                             desc = "Unknown -> Lurus"
 
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
-                        if nav_dist_to_wp < 1.5:
+                        if command_to_send and command_to_send.startswith("S,DOCK_SWING"):
+                            # Jangan di-overwrite jika kita sudah memicu DOCK_SWING
+                            pass
+                        elif nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
                             logging.info(
                                 "[AsvHandler] AI STATIC: Jarak WP < 1.5m. Melepas ke Waypoint Nav."
@@ -713,6 +759,7 @@ class AsvHandler:
             "SET_PHOTO_MISSION": self._handle_set_photo_mission,
             "SET_PORTRAIT_CONFIG": self._handle_set_portrait_config,
             "SET_DOCK_CONFIG": self._handle_set_dock_config,
+            "SET_DOCK_ENABLED": self._handle_set_dock_enabled,
             "ARM_REPLACE_WP": self._handle_arm_replace_wp,
             "REQUEST_WP_SYNC": self._handle_request_wp_sync,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
@@ -1085,6 +1132,23 @@ class AsvHandler:
                 )
         except Exception as e:
             logging.error(f"Error handling SET_PORTRAIT_CONFIG: {e}")
+
+    def _handle_set_dock_enabled(self, payload):
+        """Toggle docking mission on/off dari GUI."""
+        try:
+            enabled = bool(payload.get("enabled", True))
+            with self.state_lock:
+                self.current_state.docking_enabled = enabled
+
+            cmd = "S,DOCK_EN\n" if enabled else "S,DOCK_DIS\n"
+            if self.serial_handler.is_connected:
+                self.serial_handler.send_command(cmd)
+
+            state_str = "ENABLED" if enabled else "DISABLED"
+            logging.info(f"[AsvHandler] Docking mission {state_str}.")
+            self.logger.log_event(f"[GUI Command] Docking {state_str}")
+        except Exception as e:
+            logging.error(f"Error handling SET_DOCK_ENABLED: {e}")
 
     def _handle_set_dock_config(self, payload):
         """Menerima konfigurasi docking dari GUI dan mengirim ke ESP32."""
