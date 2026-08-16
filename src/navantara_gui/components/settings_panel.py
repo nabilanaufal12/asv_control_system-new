@@ -133,6 +133,14 @@ class SettingsPanel(QGroupBox):
         self.spin_box_right.setSuffix("°")
         row_box2.addWidget(self.spin_box_right)
         box_layout.addLayout(row_box2)
+        row_box3 = QHBoxLayout()
+        row_box3.addWidget(QLabel("Motor PWM:"))
+        self.spin_box_pwm = QSpinBox()
+        self.spin_box_pwm.setRange(1000, 2000)
+        self.spin_box_pwm.setValue(1300)
+        row_box3.addWidget(self.spin_box_pwm)
+        box_layout.addLayout(row_box3)
+        
         box_avoid_group.setLayout(box_layout)
         main_layout.addWidget(box_avoid_group)
 
@@ -224,8 +232,13 @@ class SettingsPanel(QGroupBox):
         photo_under_layout.addWidget(QLabel("End:"))
         photo_under_layout.addWidget(self.under_wp2_input)
         photo_form_layout.addRow("Underwater WP:", photo_under_layout)
-        photo_form_layout.addRow("Max Foto / Area:", self.photo_count_input)
-        photo_form_layout.addRow("Interval Foto (s):", self.photo_interval_input)
+        
+        photo_count_interval_layout = QHBoxLayout()
+        photo_count_interval_layout.addWidget(QLabel("Max Foto:"))
+        photo_count_interval_layout.addWidget(self.photo_count_input)
+        photo_count_interval_layout.addWidget(QLabel("Interval (s):"))
+        photo_count_interval_layout.addWidget(self.photo_interval_input)
+        photo_form_layout.addRow("Photo Config:", photo_count_interval_layout)
 
         # --- Portrait Config Inputs ---
         self.spin_portrait_speed = QSpinBox()
@@ -333,6 +346,7 @@ class SettingsPanel(QGroupBox):
         self.spin_box_dist.valueChanged.connect(self._on_box_avoidance_changed)
         self.spin_box_left.valueChanged.connect(self._on_box_avoidance_changed)
         self.spin_box_right.valueChanged.connect(self._on_box_avoidance_changed)
+        self.spin_box_pwm.valueChanged.connect(self._on_box_avoidance_changed)
 
         # Event Handler Photo Mission Segments (Auto Update)
         self.surf_wp1_input.valueChanged.connect(self._on_set_photo_mission)
@@ -410,6 +424,8 @@ class SettingsPanel(QGroupBox):
             self.spin_box_left.setValue(defs["box_servo_left"])
         if "box_servo_right" in defs:
             self.spin_box_right.setValue(defs["box_servo_right"])
+        if "box_pwm" in defs:
+            self.spin_box_pwm.setValue(defs["box_pwm"])
 
         if "photo_surf1" in defs:
             self.surf_wp1_input.setValue(int(defs["photo_surf1"]))
@@ -461,6 +477,7 @@ class SettingsPanel(QGroupBox):
             "box_obs_dist": self.spin_box_dist.value(),
             "box_servo_left": self.spin_box_left.value(),
             "box_servo_right": self.spin_box_right.value(),
+            "box_pwm": self.spin_box_pwm.value(),
             "photo_surf1": self.surf_wp1_input.value(),
             "photo_surf2": self.surf_wp2_input.value(),
             "photo_under1": self.under_wp1_input.value(),
@@ -611,6 +628,7 @@ class SettingsPanel(QGroupBox):
             "distance": self.spin_box_dist.value(),
             "left": self.spin_box_left.value(),
             "right": self.spin_box_right.value(),
+            "pwm": self.spin_box_pwm.value(),
         }
         self.send_box_avoidance_config.emit(payload)
         

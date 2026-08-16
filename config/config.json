@@ -108,6 +108,26 @@
     "placeholders": {
       "latitude": "e.g., -6.9175",
       "longitude": "e.g., 107.6191"
+    },
+    "panel_defaults": {
+      "ai_speed": 1500,
+      "front_motor": 1800,
+      "servo_left": 70,
+      "servo_right": 110,
+      "obs_dist": 165,
+      "box_obs_dist": 165,
+      "box_servo_left": 70,
+      "box_servo_right": 110,
+      "photo_surf1": 13,
+      "photo_surf2": 14,
+      "photo_under1": 11,
+      "photo_under2": 12,
+      "photo_count": 10,
+      "photo_interval": 0.8,
+      "portrait_speed": 1600,
+      "portrait_rev_speed": 1400,
+      "portrait_stop": 3,
+      "portrait_reverse": 2
     }
   }
 }

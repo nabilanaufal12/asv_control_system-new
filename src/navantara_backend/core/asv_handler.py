@@ -113,6 +113,7 @@ class AsvState:
     box_avoidance_distance: float = 165.0
     box_servo_left_cmd: int = 70
     box_servo_right_cmd: int = 110
+    box_motor_pwm_cmd: int = 1300
     docking_state: int = 0
     docking_enabled: bool = True  # [ON/OFF] Toggle aktif/nonaktif docking mission
 
@@ -627,6 +628,7 @@ class AsvHandler:
                                 with self.state_lock:
                                     box_servo_kiri_aktif = self.current_state.box_servo_left_cmd
                                     box_servo_kanan_aktif = self.current_state.box_servo_right_cmd
+                                    box_pwm_aktif = self.current_state.box_motor_pwm_cmd
                                 
                                 if obj_class == "kotak-biru":
                                     if current_arena == "Arena_B":
@@ -643,10 +645,10 @@ class AsvHandler:
 
                                 if turn_direction == "LEFT":
                                     servo_cmd = box_servo_kiri_aktif
-                                    motor_depan_kanan = pwm_depan_aktif
+                                    motor_depan_kanan = box_pwm_aktif
                                 elif turn_direction == "RIGHT":
                                     servo_cmd = box_servo_kanan_aktif
-                                    motor_depan_kiri = pwm_depan_aktif
+                                    motor_depan_kiri = box_pwm_aktif
                                 else:
                                     servo_cmd = servo_default
                                     
@@ -866,17 +868,20 @@ class AsvHandler:
             dist = float(payload.get("distance", 165.0))
             left_val = int(payload.get("left", 70))
             right_val = int(payload.get("right", 110))
+            pwm_val = int(payload.get("pwm", 1300))
             
-            # Validasi range servo
+            # Validasi range servo dan pwm
             left_val = max(0, min(90, left_val))
             right_val = max(90, min(180, right_val))
+            pwm_val = max(1000, min(2000, pwm_val))
 
             with self.state_lock:
                 self.current_state.box_avoidance_distance = dist
                 self.current_state.box_servo_left_cmd = left_val
                 self.current_state.box_servo_right_cmd = right_val
+                self.current_state.box_motor_pwm_cmd = pwm_val
 
-            logging.info(f"[AsvHandler] Box Avoidance Config Updated -> Dist: {dist}cm, Left: {left_val}, Right: {right_val}")
+            logging.info(f"[AsvHandler] Box Avoidance Config Updated -> Dist: {dist}cm, Left: {left_val}, Right: {right_val}, PWM: {pwm_val}")
         except ValueError:
             logging.warning("[AsvHandler] Payload Box Avoidance Config tidak valid")
 
