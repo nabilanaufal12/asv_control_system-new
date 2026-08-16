@@ -456,15 +456,11 @@ class MainWindow(QMainWindow):
 
         if mission_data:
             arena = mission_data.get("arena")
-            waypoints = mission_data.get("waypoints", [])
-            print(f"Mengirim konfigurasi {arena} dengan {len(waypoints)} waypoint langsung ke sistem...")
+            print(f"Mengirim konfigurasi {arena} langsung ke sistem...")
 
-            # Set current arena dan muat waypoint ke GUI
+            # Set current arena
             self.waypoints_panel.current_arena = arena
-            if waypoints:
-                self.waypoints_panel.load_waypoints_to_list(waypoints)
-            
-            # Kirim perintah update arena & waypoints ke backend
-            self.waypoints_panel.send_waypoints.emit({"arena": arena, "waypoints": waypoints})
+            # Langsung kirim perintah update arena ke backend tanpa menyentuh waypoints
+            self.waypoints_panel.send_waypoints.emit({"arena": arena})
 
     # Keyboard events for manual drive removed
