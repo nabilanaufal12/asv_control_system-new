@@ -37,10 +37,19 @@ class MjpegStreamThread(QThread):
                         self.frame_ready.emit(jpg)
         except Exception as e:
             print(f"[MjpegStreamThread] Error streaming from {self.url}: {e}")
+        finally:
+            self.running = False
+
+    def request_stop(self):
+        """Non-blocking: hanya set flag, tidak menunggu thread selesai.
+        Aman dipanggil dari dalam event handler Socket.IO."""
+        self.running = False
 
     def stop(self):
+        """Blocking: set flag DAN tunggu thread selesai.
+        Hanya dipanggil saat shutdown aplikasi (bukan saat disconnect)."""
         self.running = False
-        self.wait()
+        self.wait(3000)  # Timeout 3 detik agar tidak hang selamanya
 
 class ApiClient(QObject):
     """
@@ -93,29 +102,18 @@ class ApiClient(QObject):
             self.connection_status_changed.emit(True, "Terhubung ke Backend")
             print("Berhasil terhubung! Meminta stream data dari server...")
             self.sio.start_background_task(self.initial_stream_request)
-
-            # Start video threads
-            if self.cam1_thread is None or not self.cam1_thread.running:
-                self.cam1_thread = MjpegStreamThread(f"{self.base_url}/video_feed_1")
-                # Parse the raw jpeg bytes directly in VideoView, but VideoView expects numpy array or base64.
-                # Since MjpegStreamThread emits `bytes`, let's just connect it directly, 
-                # but VideoView needs to handle bytes.
-                self.cam1_thread.frame_ready.connect(self.frame_cam1_updated.emit)
-                self.cam1_thread.start()
-                
-            if self.cam2_thread is None or not self.cam2_thread.running:
-                self.cam2_thread = MjpegStreamThread(f"{self.base_url}/video_feed_2")
-                self.cam2_thread.frame_ready.connect(self.frame_cam2_updated.emit)
-                self.cam2_thread.start()
+            # Mulai thread video (non-blocking, tidak menghambat event handler ini)
+            self._start_video_threads()
 
         @self.sio.event
         def disconnect():
-            # Stop video threads
+            # [FIX] Gunakan request_stop() (non-blocking) bukan stop() (blocking)
+            # Stop yang blocking di sini menyebabkan deadlock dan crash 'QThread: Destroyed while thread is still running'.
             if self.cam1_thread:
-                self.cam1_thread.stop()
+                self.cam1_thread.request_stop()
             if self.cam2_thread:
-                self.cam2_thread.stop()
-                
+                self.cam2_thread.request_stop()
+
             # Reset state lengkap saat koneksi terputus
             self.full_gui_state = {}
             self.connection_status_changed.emit(False, "Koneksi terputus")
@@ -140,9 +138,25 @@ class ApiClient(QObject):
             except Exception as e:
                 print(f"[ApiClient] Gagal memproses sync_waypoints: {e}")
 
-        
+    def _start_video_threads(self):
+        """Memulai (atau me-restart) kedua thread streaming MJPEG."""
+        # Hentikan thread lama secara non-blocking jika masih berjalan
+        if self.cam1_thread is not None:
+            self.cam1_thread.request_stop()
+        if self.cam2_thread is not None:
+            self.cam2_thread.request_stop()
+
+        # Buat dan mulai thread baru
+        self.cam1_thread = MjpegStreamThread(f"{self.base_url}/video_feed_1")
+        self.cam1_thread.frame_ready.connect(self.frame_cam1_updated.emit)
+        self.cam1_thread.start()
+
+        self.cam2_thread = MjpegStreamThread(f"{self.base_url}/video_feed_2")
+        self.cam2_thread.frame_ready.connect(self.frame_cam2_updated.emit)
+        self.cam2_thread.start()
 
     def initial_stream_request(self):
+
         """Fungsi yang dijalankan di latar belakang untuk meminta stream awal."""
         self.sio.sleep(0.1)
         self.request_data_stream(True)
@@ -174,6 +188,7 @@ class ApiClient(QObject):
         except Exception:
             pass
         self.sio.disconnect()
+        # Saat shutdown aplikasi, pakai stop() yang blocking agar thread selesai sepenuhnya
         if self.cam1_thread:
             self.cam1_thread.stop()
         if self.cam2_thread:
