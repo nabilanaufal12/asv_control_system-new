@@ -1,7 +1,18 @@
-#include <Wire.h> // Library untuk komunikasi I2C (untuk CMPS12)
-#include <ESP32Servo.h> // Library untuk mengontrol Servo dan ESC
-#include <Preferences.h> // Library untuk menyimpan data di memori non-volatile (NVS/EEPROM)
-#include <ArduinoJson.h> // Library untuk memproses dan mengirim data JSON (telemetri)
+#include <Wire.h>           // Library untuk komunikasi I2C (untuk CMPS12 & OLED)
+#include <ESP32Servo.h>     // Library untuk mengontrol Servo dan ESC
+#include <Preferences.h>    // Library untuk menyimpan data di memori non-volatile (NVS/EEPROM)
+#include <ArduinoJson.h>    // Library untuk memproses dan mengirim data JSON (telemetri)
+#include <Adafruit_GFX.h>   // Library grafis dasar untuk OLED
+#include <Adafruit_SSD1306.h> // Library driver OLED SSD1306 (DSP-0109)
+
+// ---------------- OLED DSP-0109 (SSD1306, 128x64) ----------------
+#define OLED_WIDTH    128
+#define OLED_HEIGHT   64
+#define OLED_ADDR     0x3C // Alamat I2C default SSD1306
+#define OLED_RESET    -1   // Reset pin tidak digunakan (berbagi dengan ESP32 RST)
+Adafruit_SSD1306 oled(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+bool oledOk = false;             // Flag: OLED berhasil diinisialisasi
+unsigned long lastOledUpdate = 0; // Timestamp terakhir OLED diperbarui
 
 // ---------------- GPS (Custom UBX Parser, TANPA LIBRARY!) ----------------
 HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
@@ -505,6 +516,23 @@ void setup() {
   Wire.begin(21, 22); 
   Wire.setTimeOut(150); // Mencegah I2C blocking tak terhingga jika kena EMI
 
+  // ========================================================
+  // 3. INISIALISASI OLED DSP-0109
+  // ========================================================
+  if (oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    oledOk = true;
+    oled.clearDisplay();
+    oled.setTextColor(SSD1306_WHITE);
+    oled.setTextSize(1);
+    oled.setCursor(0, 0);
+    oled.println("  NAVANTARA ASV");
+    oled.println("  Booting...");
+    oled.display();
+    Serial.println("[OLED] DSP-0109 (SSD1306) berhasil diinisialisasi.");
+  } else {
+    Serial.println("[OLED] GAGAL: SSD1306 tidak ditemukan di 0x3C!");
+  }
+
   // Inisialisasi PPM
   pinMode(PPM_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(PPM_PIN), ppmISR, RISING);
@@ -512,7 +540,7 @@ void setup() {
   loadDataFromMemory(); 
 
   Serial.println("");
-  Serial.println("🌍 GPS + WAYPOINT SYSTEM (INTEGRATED)");
+  Serial.println("GPS + WAYPOINT SYSTEM (INTEGRATED)");
   Serial.println("================================");
   Serial.print("Data tersimpan: ");
   Serial.print(dataIndex);
@@ -579,6 +607,51 @@ void readGPS_UBX() {
   }
 }
 
+// ============================================================
+// Fungsi update OLED — dipanggil di dalam loop() setiap 500ms
+// ============================================================
+void updateOLED() {
+  if (!oledOk) return;
+  if (millis() - lastOledUpdate < 500) return;
+  lastOledUpdate = millis();
+
+  oled.clearDisplay();
+
+  // --- Baris 1: Judul ---
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.println("=== NAVANTARA ASV ===");
+
+  // --- Baris 2: HDG (Heading Kompas) ---
+  // Tampil besar di tengah layar agar mudah dibaca dari jauh
+  oled.setTextSize(2);
+  oled.setCursor(0, 14);
+  oled.print("HDG ");
+  oled.print((int)round(heading));
+  oled.println((char)247); // Karakter derajat °
+
+  // --- Baris 3 & 4: COG & Satelit (font kecil) ---
+  oled.setTextSize(1);
+  oled.setCursor(0, 36);
+  oled.print("COG: ");
+  oled.print(cog, 1);
+  oled.println((char)247);
+
+  oled.setCursor(0, 48);
+  oled.print("SAT: ");
+  oled.print(sats);
+  // Tampilkan status fix GPS agar mudah dimonitor lapangan
+  if (gpsFixType >= 3) {
+    oled.print(" [FIX 3D]");
+  } else if (gpsFixType == 2) {
+    oled.print(" [FIX 2D]");
+  } else {
+    oled.print(" [NO FIX]");
+  }
+
+  oled.display();
+}
+
 void loop() {
   // 1. BACA SERIAL TERUS MENERUS TANPA HENTI (Mencegah Buffer Overflow)
   checkSerialInput(); 
@@ -586,7 +659,10 @@ void loop() {
   // 2. BACA GPS UBX TERUS MENERUS (Mencegah Buffer Overflow pada 115200 baud)
   readGPS_UBX();
 
-  // 3. Batasi kecepatan sensor & aktuator ke 20Hz (50ms)
+  // 3. Update OLED setiap 500ms (non-blocking)
+  updateOLED();
+
+  // 4. Batasi kecepatan sensor & aktuator ke 20Hz (50ms)
   if (millis() - lastLoopTime < 50) {
     return;
   }
