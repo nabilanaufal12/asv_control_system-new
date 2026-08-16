@@ -327,6 +327,9 @@ def create_app():
     def stream_telemetry():
         """
         Endpoint streaming Server-Sent Events (SSE) untuk telemetri.
+        Catatan: captures & race_id TIDAK lagi dikirim via SSE untuk menghindari
+        disk I/O glob.glob() setiap 100ms. Keduanya dikirim via Socket.IO event
+        'new_capture' hanya saat ada foto baru yang tersimpan.
         """
 
         def telemetry_stream():
@@ -336,18 +339,11 @@ def create_app():
                     with current_app.asv_handler.state_lock:
                         data = asdict(current_app.asv_handler.current_state)
 
-                    # Sisipkan nama-nama file gambar terkini ke payload SSE
+                    # Sisipkan race_id terkini (hanya baca integer, tidak ada disk I/O)
                     try:
                         logger_instance = current_app.asv_handler.logger
-                        captures_dir = logger_instance.get_current_capture_dir()
-                        search_path = os.path.join(captures_dir, "*.jpg")
-                        full_paths = glob.glob(search_path)
-                        filenames = [os.path.basename(f) for f in full_paths]
-                        filenames.sort()
-                        data["captures"] = filenames
                         data["current_race_id"] = logger_instance.current_race_id
                     except Exception:
-                        data["captures"] = []
                         data["current_race_id"] = None
 
                     json_data = json.dumps(data)
@@ -363,6 +359,7 @@ def create_app():
         return Response(
             stream_with_context(telemetry_stream()), content_type="text/event-stream"
         )
+
 
     # --- AKHIR DARI ENDPOINT BARU ---
 

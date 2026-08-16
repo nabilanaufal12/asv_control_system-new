@@ -144,6 +144,48 @@ document.addEventListener("DOMContentLoaded", () => {
   // Muat daftar race secara otomatis
   fetchCsvLogList();
 
+  // Polling periodik: refresh daftar race setiap 15 detik
+  // Ini memastikan dropdown race selalu up-to-date saat backend membuat race baru
+  setInterval(() => {
+    if (!userIsViewingHistory) {
+      fetchCsvLogList();
+    }
+  }, 15000);
+
+  // Koneksi Socket.IO untuk event real-time (new_capture, dll)
+  // Berbeda dengan SSE yang hanya mengirim telemetri, Socket.IO dipakai
+  // untuk event yang dipicu oleh aksi spesifik (foto baru tersimpan)
+  try {
+    const sio = io(SERVER_IP);
+
+    sio.on("new_capture", function(payload) {
+      // Dipanggil setiap kali foto portrait berhasil disimpan di backend
+      console.log("[Socket] new_capture diterima:", payload);
+      const raceId = payload.race_id;
+      const newFile = payload.file;
+
+      if (!raceId) return;
+
+      // Jika user sedang melihat race lama, jangan auto-refresh galerinya
+      if (userIsViewingHistory && String(currentHistoryRaceId) !== String(raceId)) return;
+
+      // Fetch ulang daftar foto dari server untuk race ini (hanya satu request kecil)
+      fetch(`${SERVER_IP}/api/races/${raceId}/gallery`)
+        .then(r => r.json())
+        .then(files => {
+          lastRenderedCaptures = "[]"; // paksa render ulang
+          renderGallery(files, raceId);
+        })
+        .catch(e => console.error("[Socket] Gagal fetch gallery setelah new_capture:", e));
+    });
+
+    sio.on("connect_error", function() {
+      // Silent fail: Socket.IO opsional, SSE tetap berjalan sebagai data utama
+    });
+  } catch(e) {
+    console.warn("[Socket.IO] Tidak dapat terhubung, galeri hanya update via polling.", e);
+  }
+
   if (ELEMENTS.closeModalBtn && ELEMENTS.modal) {
     ELEMENTS.closeModalBtn.addEventListener("click", () => {
       ELEMENTS.modal.style.display = "none";

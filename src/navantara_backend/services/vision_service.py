@@ -871,6 +871,18 @@ class VisionService:
                 with open(save_path, "wb") as f:
                     f.write(buffer)
                 print(f"[Capture] Berhasil disimpan: {filename}")
+
+                # Emit event ke semua klien web agar galeri langsung refresh
+                # tanpa harus menunggu SSE atau polling
+                try:
+                    race_id = self.asv_handler.logger.current_race_id if hasattr(self.asv_handler, "logger") else None
+                    self.socketio.emit("new_capture", {
+                        "file": filename,
+                        "race_id": race_id,
+                    })
+                except Exception as emit_err:
+                    logging.warning(f"[Capture] Gagal emit new_capture: {emit_err}")
+
                 return {
                     "status": "success",
                     "file": filename,
@@ -1289,6 +1301,16 @@ class VisionService:
 
         cv2.imwrite(save_path, snapshot)
         print(f"[Photography] Auto-Capture ({mode}) Disimpan: {save_path}")
+
+        # Emit event ke semua klien web agar galeri langsung refresh
+        try:
+            race_id = self.asv_handler.logger.current_race_id if hasattr(self.asv_handler, "logger") else None
+            self.socketio.emit("new_capture", {
+                "file": filename,
+                "race_id": race_id,
+            })
+        except Exception as emit_err:
+            logging.warning(f"[Photography] Gagal emit new_capture: {emit_err}")
 
     def validate_and_trigger_investigation(self, poi_data, frame, current_state):
         self.recent_detections.append(poi_data["class"])
