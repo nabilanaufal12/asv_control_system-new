@@ -115,8 +115,8 @@ unsigned long dockingTimer = 0;
 int dockMotorUtama = 1200;          // PWM motor utama saat docking
 unsigned long dockChargeMs = 3000;  // Durasi maju menabrak dock (ms)
 int dockTurnDirection = 0;          // 0=KIRI (Arena A), 1=KANAN (Arena B)
-int dockServoLeft = 0;              // Sudut servo saat docking Arena A
-int dockServoRight = 180;           // Sudut servo saat docking Arena B
+int dockServoLeft = 180;            // Sudut servo saat docking Arena A (Patah KIRI secara fisik)
+int dockServoRight = 0;             // Sudut servo saat docking Arena B (Patah KANAN secara fisik)
 bool dockingEnabled = true;         // [ON/OFF] Flag aktif/nonaktif docking mission
 
 // --- KONTROL DARI JETSON/KOMUNIKASI SERIAL ---

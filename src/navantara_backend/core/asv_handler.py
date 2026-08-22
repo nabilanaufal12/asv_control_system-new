@@ -123,8 +123,8 @@ class AsvState:
     dock_motor_utama: int = 1200
     dock_motor_depan: int = 1400
     dock_charge_duration_ms: int = 3000
-    dock_servo_left: int = 0
-    dock_servo_right: int = 180
+    dock_servo_left: int = 180
+    dock_servo_right: int = 0
     docking_state: int = 0
     docking_enabled: bool = True  # [ON/OFF] Toggle aktif/nonaktif docking mission
 
@@ -161,6 +161,9 @@ class AsvHandler:
         # Buffer untuk menerima sinkronisasi waypoint dari ESP32
         self._sync_waypoints_buffer = []
         self._docking_swing_triggered = False
+        self._docking_near_target = False
+        self._docking_last_seen_time = 0.0
+        self._docking_last_target_x = 0.0
 
         pid_config = self.config.get("navigation", {}).get("heading_pid", {})
         self.pid_controller = PIDController(
@@ -529,6 +532,11 @@ class AsvHandler:
                     logging.info("[AsvHandler] MANUAL CONTROL -> Standby (Kirim W)")
 
                 elif control_mode == "AUTO":
+                    total_wps = len(self.current_state.waypoints) if self.current_state.waypoints else 0
+                    is_last_wp = (total_wps > 0) and (self.current_state.nav_target_wp_index >= total_wps - 1)
+                    with self.state_lock:
+                        current_docking_state = self.current_state.docking_state
+
                     mission_completed = bool(
                         waypoints and current_waypoint_index >= len(waypoints)
                     )
@@ -592,13 +600,9 @@ class AsvHandler:
                                 servo_cmd = servo_default
 
                         elif obj_class in ["kotak-biru", "kotak-hijau", "kotak-merah"]:
-                            total_wps = len(self.current_state.waypoints) if self.current_state.waypoints else 0
-                            is_last_wp = (total_wps > 0) and (self.current_state.nav_target_wp_index >= total_wps - 1)
-                            
                             if obj_class == "kotak-biru" and is_last_wp:
                                 # --- LOGIKA DOCKING (BOLA BIRU) DI WP TERAKHIR ---
                                 with self.state_lock:
-                                    current_docking_state = self.current_state.docking_state
                                     is_docking_enabled = self.current_state.docking_enabled
                                     dock_front_pwm = self.current_state.dock_motor_depan
 
@@ -610,23 +614,48 @@ class AsvHandler:
                                         desc = f"Docking -> SEDANG SWING ({current_arena}) DI ESP32..."
                                     command_to_send = None
                                 else:
-                                    # 2. Cek apakah bola sudah cukup dekat untuk trigger swing docking
                                     center_x = vision_target_frame_width / 2
                                     box_width = self.current_state.vision_target.get("width", 0)
+                                    target_point = vision_target_center_x
+                                    proximity_ratio = (box_width / vision_target_frame_width) if vision_target_frame_width > 0 else 0
+                                    dist_cm = self.current_state.vision_target.get("distance_cm")
 
-                                    if is_docking_enabled and vision_target_frame_width > 0 and box_width > 0:
-                                        proximity_ratio = box_width / vision_target_frame_width
-                                        if proximity_ratio > 0.40:
-                                            self._docking_swing_triggered = True
-                                            command_to_send = "S,DOCK_SWING\n"
-                                            desc = f"Docking -> BOLA TARGET {current_arena} SANGAT DEKAT! TRIGGER SWING DOCKING!"
-                                            logging.warning(f"[AsvHandler] DOCKING SWING TRIGGERED ONCE by Proximity ({proximity_ratio:.2f})")
+                                    # Deteksi jarak dekat (<= 1 meter / proximity > 0.22 / dist < 120cm):
+                                    is_close_range = (proximity_ratio > 0.22) or (dist_cm is not None and dist_cm < 120.0)
 
-                                    # 3. Jika belum dekat / belum memicu SWING, lakukan tracking kemudi menuju bola
+                                    if is_close_range:
+                                        self._docking_near_target = True
+                                        self._docking_last_seen_time = time.time()
+                                        self._docking_last_target_x = target_point
+
+                                    # Tentukan titik target X yang diinginkan di layar kamera:
+                                    # - Jarak Jauh (> 1 meter): Bola dijaga di TENGAH KAMERA (center_x)
+                                    # - Jarak Dekat (<= 1 meter):
+                                    #     * Arena A: Bola digeser ke KANAN kamera (desired_x = center_x + frame_width * 0.32)
+                                    #     * Arena B: Bola digeser ke KIRI kamera (desired_x = center_x - frame_width * 0.32)
+                                    if "B" in current_arena:
+                                        # Arena B: Target di Kiri lambung depan
+                                        desired_x = (center_x - vision_target_frame_width * 0.32) if is_close_range else center_x
+                                        target_side = "Kiri"
+                                        is_at_contact_edge = (target_point <= vision_target_frame_width * 0.22) and (proximity_ratio >= 0.35)
+                                    else:
+                                        # Arena A: Target di Kanan lambung depan
+                                        desired_x = (center_x + vision_target_frame_width * 0.32) if is_close_range else center_x
+                                        target_side = "Kanan"
+                                        is_at_contact_edge = (target_point >= vision_target_frame_width * 0.78) and (proximity_ratio >= 0.35)
+
+                                    # 2. Pemicu Manuver SWING DOCKING:
+                                    # Terpicu jika lambung depan menyentuh bola di tepi luar atau ukuran bola sangat besar
+                                    if is_docking_enabled and (is_at_contact_edge or proximity_ratio > 0.48):
+                                        self._docking_swing_triggered = True
+                                        command_to_send = "S,DOCK_SWING\n"
+                                        desc = f"Docking -> LAMBUNG {target_side.upper()} MENYENTUH BOLA! TRIGGER SWING DOCKING!"
+                                        logging.warning(f"[AsvHandler] DOCKING SWING TRIGGERED: Lambung {target_side} menyentuh bola (X={target_point:.1f}, Prox={proximity_ratio:.2f})")
+
+                                    # 3. Kemudi Tracking Presisi:
                                     if not command_to_send:
-                                        target_point = vision_target_center_x
-                                        error_x = target_point - center_x
-                                        tolerance = 35
+                                        error_x = target_point - desired_x
+                                        tolerance = 25
                                         max_tracking_deflection = 35
 
                                         if error_x < -tolerance:
@@ -634,22 +663,23 @@ class AsvHandler:
                                             offset = (error_x / center_x) * max_tracking_deflection
                                             servo_cmd = int(90 + offset)
                                             motor_depan_kanan = dock_front_pwm
-                                            desc = f"Docking -> Track Bola ({current_arena}) Belok Kiri (Err: {error_x:.1f})"
+                                            desc = f"Docking -> Track Bola ({target_side}) Belok Kiri (Err: {error_x:.1f})"
                                         elif error_x > tolerance:
                                             turn_direction = "TRACKING_RIGHT"
                                             offset = (error_x / center_x) * max_tracking_deflection
                                             servo_cmd = int(90 + offset)
                                             motor_depan_kiri = dock_front_pwm
-                                            desc = f"Docking -> Track Bola ({current_arena}) Belok Kanan (Err: {error_x:.1f})"
+                                            desc = f"Docking -> Track Bola ({target_side}) Belok Kanan (Err: {error_x:.1f})"
                                         else:
                                             turn_direction = "TRACKING_CENTER"
                                             servo_cmd = servo_default
-                                            desc = f"Docking -> Kunci Bola ({current_arena}) Tengah Lurus"
+                                            desc = f"Docking -> Kunci Bola ({target_side}) Lurus"
 
                                         servo_cmd = max(35, min(145, servo_cmd))
                                         
                             elif obj_class in ["kotak-biru", "kotak-hijau"]:
                                 self._docking_swing_triggered = False
+                                self._docking_near_target = False
                                 # --- LOGIKA AVOIDANCE (KOTAK BIRU & HIJAU) ---
                                 with self.state_lock:
                                     box_servo_kiri_aktif = self.current_state.box_servo_left_cmd
@@ -746,7 +776,15 @@ class AsvHandler:
                     else:
                         with self.state_lock:
                             self.current_state.last_pixel_error = 0
-                        if self.serial_handler.is_connected:
+
+                        # Cek apakah bola docking baru saja hilang setelah menyentuh tepi samping lambung
+                        if is_last_wp and getattr(self, "_docking_near_target", False) and not getattr(self, "_docking_swing_triggered", False) and (time.time() - getattr(self, "_docking_last_seen_time", 0.0) < 1.2):
+                            self._docking_swing_triggered = True
+                            command_to_send = "S,DOCK_SWING\n"
+                            logging.warning(f"[AsvHandler] DOCKING SWING TRIGGERED: Bola keluar pandangan samping setelah kontak dekat (Last X={getattr(self, '_docking_last_target_x', 0.0):.1f})")
+                        elif is_last_wp and (getattr(self, "_docking_swing_triggered", False) or current_docking_state in [1, 2]):
+                            command_to_send = None
+                        elif self.serial_handler.is_connected:
                             command_to_send = "W\n"
                             logging.info("[AsvHandler] WAYPOINT CONTROL -> Mengirim: W")
                         else:
@@ -922,6 +960,7 @@ class AsvHandler:
 
     def _handle_debug_counter(self, payload):
         self._docking_swing_triggered = False
+        self._docking_near_target = False
         action = payload.get("action")
         cmd = ""
 
@@ -1081,6 +1120,7 @@ class AsvHandler:
 
     def _handle_set_waypoints(self, payload):
         self._docking_swing_triggered = False
+        self._docking_near_target = False
         waypoints_data = payload.get("waypoints")
         raw_arena = payload.get("arena") or payload.get("arena_id")
 
@@ -1252,11 +1292,11 @@ class AsvHandler:
             servo_left = int(payload.get("servo_left", 0))
             servo_right = int(payload.get("servo_right", 180))
 
-            # Validasi range
+            # Validasi range (0 s/d 180 derajat untuk kedua sisi)
             motor_utama = max(1000, min(2000, motor_utama))
             motor_depan = max(1000, min(2000, motor_depan))
-            servo_left = max(0, min(90, servo_left))
-            servo_right = max(90, min(180, servo_right))
+            servo_left = max(0, min(180, servo_left))
+            servo_right = max(0, min(180, servo_right))
 
             with self.state_lock:
                 self.current_state.dock_motor_utama = motor_utama

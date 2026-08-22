@@ -316,17 +316,17 @@ class SettingsPanel(QGroupBox):
         )
 
         self.spin_dock_left = QSpinBox()
-        self.spin_dock_left.setRange(0, 90)
+        self.spin_dock_left.setRange(0, 180)
         self.spin_dock_left.setValue(
-            self.config.get("docking_defaults", {}).get("servo_left", 0)
+            self.config.get("docking_defaults", {}).get("servo_left", 180)
         )
         self.spin_dock_left.setPrefix("Left: ")
         self.spin_dock_left.setSuffix("°")
 
         self.spin_dock_right = QSpinBox()
-        self.spin_dock_right.setRange(90, 180)
+        self.spin_dock_right.setRange(0, 180)
         self.spin_dock_right.setValue(
-            self.config.get("docking_defaults", {}).get("servo_right", 180)
+            self.config.get("docking_defaults", {}).get("servo_right", 0)
         )
         self.spin_dock_right.setPrefix("Right: ")
         self.spin_dock_right.setSuffix("°")

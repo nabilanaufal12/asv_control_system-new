@@ -133,8 +133,8 @@
       "portrait_reverse": 2,
       "dock_motor": 1200,
       "dock_front": 1400,
-      "dock_left": 0,
-      "dock_right": 180,
+      "dock_left": 180,
+      "dock_right": 0,
       "dock_charge": 3
     }
   }
