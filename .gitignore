@@ -55,3 +55,8 @@ navigation_simulation.py
 *.pt
 *.weights
 !besto.pt
+
+#File Catatan
+Catatan.md
+SOP_Checklist_NAVANTARA.csv
+SOP_Checklist_NAVANTARA.html

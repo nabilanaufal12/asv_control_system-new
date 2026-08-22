@@ -286,7 +286,7 @@ class SettingsPanel(QGroupBox):
         docking_layout.addWidget(self.chk_dock_enable)
 
         dock_row1 = QHBoxLayout()
-        dock_row1.addWidget(QLabel("PWM Utama:"))
+        dock_row1.addWidget(QLabel("Speed (PWM):"))
         self.spin_dock_motor = QSpinBox()
         self.spin_dock_motor.setRange(1000, 2000)
         self.spin_dock_motor.setValue(
@@ -294,23 +294,46 @@ class SettingsPanel(QGroupBox):
         )
         dock_row1.addWidget(self.spin_dock_motor)
 
-
-
+        dock_row1.addWidget(QLabel("Front Motor:"))
+        self.spin_dock_front = QSpinBox()
+        self.spin_dock_front.setRange(1000, 2000)
+        self.spin_dock_front.setValue(
+            self.config.get("docking_defaults", {}).get("motor_depan_pwm", 1400)
+        )
+        dock_row1.addWidget(self.spin_dock_front)
         docking_layout.addLayout(dock_row1)
 
         dock_row2 = QHBoxLayout()
-        dock_row2.addWidget(QLabel("Durasi (s):"))
+        dock_row2.addWidget(QLabel("Swing Angle:"))
+        self.spin_dock_left = QSpinBox()
+        self.spin_dock_left.setRange(0, 90)
+        self.spin_dock_left.setValue(
+            self.config.get("docking_defaults", {}).get("servo_left", 0)
+        )
+        self.spin_dock_left.setPrefix("Left: ")
+        self.spin_dock_left.setSuffix("°")
+        dock_row2.addWidget(self.spin_dock_left)
+
+        self.spin_dock_right = QSpinBox()
+        self.spin_dock_right.setRange(90, 180)
+        self.spin_dock_right.setValue(
+            self.config.get("docking_defaults", {}).get("servo_right", 180)
+        )
+        self.spin_dock_right.setPrefix("Right: ")
+        self.spin_dock_right.setSuffix("°")
+        dock_row2.addWidget(self.spin_dock_right)
+        docking_layout.addLayout(dock_row2)
+
+        dock_row3 = QHBoxLayout()
+        dock_row3.addWidget(QLabel("Durasi (s):"))
         self.spin_dock_charge = QSpinBox()
-        self.spin_dock_charge.setRange(1, 10)
+        self.spin_dock_charge.setRange(1, 15)
         self.spin_dock_charge.setValue(
             self.config.get("docking_defaults", {}).get("charge_duration_ms", 3000)
             // 1000
         )
-        dock_row2.addWidget(self.spin_dock_charge)
-
-
-
-        docking_layout.addLayout(dock_row2)
+        dock_row3.addWidget(self.spin_dock_charge)
+        docking_layout.addLayout(dock_row3)
 
         docking_mission_box.setLayout(docking_layout)
         main_layout.addWidget(docking_mission_box)
@@ -362,6 +385,9 @@ class SettingsPanel(QGroupBox):
         self.spin_portrait_reverse.valueChanged.connect(self._on_set_photo_mission)
 
         self.spin_dock_motor.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_front.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_left.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_right.valueChanged.connect(self._on_set_dock_config)
         self.spin_dock_charge.valueChanged.connect(self._on_set_dock_config)
         self.chk_dock_enable.stateChanged.connect(self._on_dock_enable_changed)
 
@@ -409,6 +435,16 @@ class SettingsPanel(QGroupBox):
 
         if "ai_speed" in defs:
             self.spin_ai_speed.setValue(defs["ai_speed"])
+        if "dock_motor" in defs:
+            self.spin_dock_motor.setValue(defs["dock_motor"])
+        if "dock_front" in defs:
+            self.spin_dock_front.setValue(defs["dock_front"])
+        if "dock_left" in defs:
+            self.spin_dock_left.setValue(defs["dock_left"])
+        if "dock_right" in defs:
+            self.spin_dock_right.setValue(defs["dock_right"])
+        if "dock_charge" in defs:
+            self.spin_dock_charge.setValue(defs["dock_charge"])
         if "front_motor" in defs:
             self.spin_front.setValue(defs["front_motor"])
         if "servo_left" in defs:
@@ -488,6 +524,11 @@ class SettingsPanel(QGroupBox):
             "portrait_rev_speed": self.spin_portrait_rev_speed.value(),
             "portrait_stop": self.spin_portrait_stop.value(),
             "portrait_reverse": self.spin_portrait_reverse.value(),
+            "dock_motor": self.spin_dock_motor.value(),
+            "dock_front": self.spin_dock_front.value(),
+            "dock_left": self.spin_dock_left.value(),
+            "dock_right": self.spin_dock_right.value(),
+            "dock_charge": self.spin_dock_charge.value(),
         }
 
         if "docking_defaults" not in self.config:
@@ -495,6 +536,15 @@ class SettingsPanel(QGroupBox):
         self.config["docking_defaults"][
             "motor_utama_pwm"
         ] = self.spin_dock_motor.value()
+        self.config["docking_defaults"][
+            "motor_depan_pwm"
+        ] = self.spin_dock_front.value()
+        self.config["docking_defaults"][
+            "servo_left"
+        ] = self.spin_dock_left.value()
+        self.config["docking_defaults"][
+            "servo_right"
+        ] = self.spin_dock_right.value()
         self.config["docking_defaults"]["charge_duration_ms"] = (
             self.spin_dock_charge.value() * 1000
         )
@@ -605,6 +655,9 @@ class SettingsPanel(QGroupBox):
         try:
             payload = {
                 "motor_utama_pwm": self.spin_dock_motor.value(),
+                "motor_depan_pwm": self.spin_dock_front.value(),
+                "servo_left": self.spin_dock_left.value(),
+                "servo_right": self.spin_dock_right.value(),
                 "charge_duration_ms": self.spin_dock_charge.value() * 1000,
             }
             self.send_dock_config.emit(payload)

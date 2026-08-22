@@ -114,6 +114,13 @@ class AsvState:
     box_servo_left_cmd: int = 70
     box_servo_right_cmd: int = 110
     box_motor_pwm_cmd: int = 1300
+    
+    # Docking Parameters
+    dock_motor_utama: int = 1200
+    dock_motor_depan: int = 1400
+    dock_charge_duration_ms: int = 3000
+    dock_servo_left: int = 0
+    dock_servo_right: int = 180
     docking_state: int = 0
     docking_enabled: bool = True  # [ON/OFF] Toggle aktif/nonaktif docking mission
 
@@ -596,17 +603,20 @@ class AsvHandler:
                                 tolerance = 40
                                 max_tracking_deflection = 30
 
+                                with self.state_lock:
+                                    dock_front_pwm = self.current_state.dock_motor_depan
+
                                 if error_x < -tolerance:
                                     turn_direction = "TRACKING_LEFT"
                                     offset = (error_x / center_x) * max_tracking_deflection
                                     servo_cmd = int(90 + offset)
-                                    motor_depan_kanan = pwm_depan_aktif
+                                    motor_depan_kanan = dock_front_pwm
                                     desc = f"Kotak Biru -> Track Ujung Kiri (Err: {error_x:.1f})"
                                 elif error_x > tolerance:
                                     turn_direction = "TRACKING_RIGHT"
                                     offset = (error_x / center_x) * max_tracking_deflection
                                     servo_cmd = int(90 + offset)
-                                    motor_depan_kiri = pwm_depan_aktif
+                                    motor_depan_kiri = dock_front_pwm
                                     desc = f"Kotak Biru -> Track Ujung Kanan (Err: {error_x:.1f})"
                                 else:
                                     turn_direction = "TRACKING_CENTER"
@@ -1202,26 +1212,38 @@ class AsvHandler:
     def _handle_set_dock_config(self, payload):
         """Menerima konfigurasi docking dari GUI dan mengirim ke ESP32."""
         try:
-            motor_utama = payload.get("motor_utama_pwm", 1200)
-            motor_depan = payload.get("motor_depan_pwm", 1400)
-            charge_ms = payload.get("charge_duration_ms", 3000)
-            tol = payload.get("heading_tolerance_deg", 5)
+            motor_utama = int(payload.get("motor_utama_pwm", 1200))
+            motor_depan = int(payload.get("motor_depan_pwm", 1400))
+            charge_ms = int(payload.get("charge_duration_ms", 3000))
+            servo_left = int(payload.get("servo_left", 0))
+            servo_right = int(payload.get("servo_right", 180))
+
+            # Validasi range
+            motor_utama = max(1000, min(2000, motor_utama))
+            motor_depan = max(1000, min(2000, motor_depan))
+            servo_left = max(0, min(90, servo_left))
+            servo_right = max(90, min(180, servo_right))
 
             with self.state_lock:
+                self.current_state.dock_motor_utama = motor_utama
+                self.current_state.dock_motor_depan = motor_depan
+                self.current_state.dock_charge_duration_ms = charge_ms
+                self.current_state.dock_servo_left = servo_left
+                self.current_state.dock_servo_right = servo_right
                 arena = self.current_state.active_arena
 
             direction = 1 if "B" in arena else 0  # 0=KIRI(A), 1=KANAN(B)
 
             if self.serial_handler.is_connected:
                 self.serial_handler.send_command(
-                    f"S,DOCK,{motor_utama},{motor_depan},{charge_ms},{tol},{direction}\n"
+                    f"S,DOCK,{motor_utama},{charge_ms},{direction},{servo_left},{servo_right}\n"
                 )
                 logging.info(
-                    f"[AsvHandler] Dock Config dikirim ke ESP32: {motor_utama},{motor_depan},{charge_ms},{tol},{direction}"
+                    f"[AsvHandler] Dock Config dikirim ke ESP32: {motor_utama},{charge_ms},{direction},{servo_left},{servo_right}"
                 )
 
             self.logger.log_event(
-                f"[GUI Command] Set Dock Config -> {motor_utama},{motor_depan},{charge_ms},{tol},{direction}"
+                f"[GUI Command] Set Dock Config -> Motor:{motor_utama}, Front:{motor_depan}, Charge:{charge_ms}ms, Dir:{direction}, Left:{servo_left}, Right:{servo_right}"
             )
         except Exception as e:
             logging.error(f"Error handling SET_DOCK_CONFIG: {e}")

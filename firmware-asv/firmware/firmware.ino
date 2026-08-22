@@ -115,6 +115,8 @@ unsigned long dockingTimer = 0;
 int dockMotorUtama = 1200;          // PWM motor utama saat docking
 unsigned long dockChargeMs = 3000;  // Durasi maju menabrak dock (ms)
 int dockTurnDirection = 0;          // 0=KIRI (Arena A), 1=KANAN (Arena B)
+int dockServoLeft = 0;              // Sudut servo saat docking Arena A
+int dockServoRight = 180;           // Sudut servo saat docking Arena B
 bool dockingEnabled = true;         // [ON/OFF] Flag aktif/nonaktif docking mission
 
 // --- KONTROL DARI JETSON/KOMUNIKASI SERIAL ---
@@ -443,18 +445,32 @@ void checkSerialInput() {
                 Serial.println("[DOCK] Command DOCK_SWING diterima! Mengeksekusi manuver...");
               }
             } else if (subCmd.startsWith("DOCK,")) {
-              // Format BARU: S,DOCK,motorUtama,chargeMs,direction
+              // Format: S,DOCK,motorUtama,chargeMs,direction,servoLeft,servoRight
               int c1 = subCmd.indexOf(',');
               int c2 = subCmd.indexOf(',', c1 + 1);
               int c3 = subCmd.indexOf(',', c2 + 1);
+              int c4 = subCmd.indexOf(',', c3 + 1);
+              int c5 = subCmd.indexOf(',', c4 + 1);
               if (c1 > 0 && c2 > 0 && c3 > 0) {
                 dockMotorUtama = subCmd.substring(c1 + 1, c2).toInt();
                 dockChargeMs = subCmd.substring(c2 + 1, c3).toInt();
-                dockTurnDirection = subCmd.substring(c3 + 1).toInt();
+                if (c4 > 0) {
+                  dockTurnDirection = subCmd.substring(c3 + 1, c4).toInt();
+                  if (c5 > 0) {
+                    dockServoLeft = subCmd.substring(c4 + 1, c5).toInt();
+                    dockServoRight = subCmd.substring(c5 + 1).toInt();
+                  } else {
+                    dockServoLeft = subCmd.substring(c4 + 1).toInt();
+                  }
+                } else {
+                  dockTurnDirection = subCmd.substring(c3 + 1).toInt();
+                }
                 dockingState = DK_IDLE; // Reset state jika config berubah
                 Serial.println("Dock Config: Motor=" + String(dockMotorUtama) +
                               " Charge=" + String(dockChargeMs) + "ms" +
-                              " Dir=" + String(dockTurnDirection));
+                              " Dir=" + String(dockTurnDirection) +
+                              " Left=" + String(dockServoLeft) +
+                              " Right=" + String(dockServoRight));
               }
             }
           }
@@ -887,11 +903,11 @@ void loop() {
             finalMotor = dockMotorUtama; // Gas maju/dorong
             
             if (dockTurnDirection == 0) {
-              // Arena A: Mengincar bola kiri. Bokong harus ke Kanan. Servo dipatahkan ke KIRI (0)
-              finalServo = 0; 
+              // Arena A: Mengincar bola kiri. Bokong harus ke Kanan. Servo dipatahkan ke KIRI (dockServoLeft)
+              finalServo = dockServoLeft; 
             } else {
-              // Arena B: Mengincar bola kanan. Bokong harus ke Kiri. Servo dipatahkan ke KANAN (180)
-              finalServo = 180;
+              // Arena B: Mengincar bola kanan. Bokong harus ke Kiri. Servo dipatahkan ke KANAN (dockServoRight)
+              finalServo = dockServoRight;
             }
             
             finalMotorDepanKiri = 1000;
