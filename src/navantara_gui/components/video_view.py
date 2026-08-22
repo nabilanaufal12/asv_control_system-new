@@ -31,14 +31,14 @@ class VideoView(QWidget):
         # --- UI SETUP ---
         self.start_stop_button = QPushButton("Stop Stream")
         self.start_stop_button.setStyleSheet(
-            "background-color: #F44336; color: white; font-weight: bold; padding: 5px;"
+            "background-color: #F44336; color: white; font-weight: bold; padding: 6px 14px; border-radius: 4px;"
         )
 
         self.invert_button = QPushButton("Swap Camera (Surface ↔ UW)")
         self.invert_button.setCheckable(True)
         self.invert_button.setEnabled(True)
         self.invert_button.setStyleSheet(
-            "background-color: #607D8B; color: white; font-weight: bold; padding: 5px;"
+            "background-color: #607D8B; color: white; font-weight: bold; padding: 6px 14px; border-radius: 4px;"
         )
 
         self.label_video_1 = QLabel("SURFACE CAMERA (CAM 1)\n\n[ OFFLINE / NO SIGNAL ]")
@@ -49,17 +49,20 @@ class VideoView(QWidget):
         )
         self._style_label(self.label_video_2)
 
-        video_splitter = QSplitter(Qt.Horizontal)
-        video_splitter.addWidget(self.label_video_1)
-        video_splitter.addWidget(self.label_video_2)
+        self.video_splitter = QSplitter(Qt.Horizontal)
+        self.video_splitter.addWidget(self.label_video_1)
+        self.video_splitter.addWidget(self.label_video_2)
+        self.video_splitter.setChildrenCollapsible(False)
 
         # Paksa rasio splitter agar 50:50 merata
-        video_splitter.setStretchFactor(0, 1)
-        video_splitter.setStretchFactor(1, 1)
-        video_splitter.setSizes([1000, 1000])
+        self.video_splitter.setStretchFactor(0, 1)
+        self.video_splitter.setStretchFactor(1, 1)
+        self.video_splitter.setSizes([1000, 1000])
 
         layout = QVBoxLayout(self)
-        layout.addWidget(video_splitter, 1)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.video_splitter, 1)
         self.setLayout(layout)
 
         self.start_stop_button.clicked.connect(self.toggle_camera_stream)
@@ -67,14 +70,15 @@ class VideoView(QWidget):
 
     def _style_label(self, label):
         label.setAlignment(Qt.AlignCenter)
-        label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         label.setStyleSheet(
-            "background-color: #1a1a1a;"
+            "background-color: #000000;"
             "color: #e74c3c;"
             "font-family: 'Courier New', Courier, monospace;"
-            "font-size: 16px;"
+            "font-size: 15px;"
             "font-weight: bold;"
-            "border: 2px dashed #333;"
+            "border: 1px solid #333333;"
+            "border-radius: 4px;"
         )
 
     @Slot(object)
