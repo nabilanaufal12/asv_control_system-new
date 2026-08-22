@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
         layout_tengah.addLayout(top_stream_bar, 0)
 
         # Video View di Tengah
-        self.video_view.setMinimumHeight(450)
+        self.video_view.setMinimumHeight(350)
         layout_tengah.addWidget(self.video_view, 1)
 
         # Baris Bawah: Photo Capture Configuration

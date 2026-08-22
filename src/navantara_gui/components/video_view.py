@@ -70,7 +70,8 @@ class VideoView(QWidget):
 
     def _style_label(self, label):
         label.setAlignment(Qt.AlignCenter)
-        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        label.setMinimumSize(1, 1)
         label.setStyleSheet(
             "background-color: #000000;"
             "color: #e74c3c;"
@@ -100,7 +101,6 @@ class VideoView(QWidget):
             q_img = None
 
             # --- KASUS 1: Data adalah NumPy Array (OpenCV Image) ---
-            # Ini yang dikirim oleh api_client.py Anda sekarang
             if isinstance(frame_data, np.ndarray):
                 if frame_data.size == 0:
                     return
@@ -126,16 +126,14 @@ class VideoView(QWidget):
 
             # --- TAMPILKAN KE LABEL ---
             if q_img and not q_img.isNull():
-                # Scaling gambar agar pas di label tanpa merusak rasio
-                pixmap = QPixmap.fromImage(q_img)
-                scaled_pix = pixmap.scaled(
-                    label_widget.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                label_widget.setPixmap(scaled_pix)
+                target_size = label_widget.size()
+                if target_size.width() > 10 and target_size.height() > 10:
+                    scaled_pix = pixmap = QPixmap.fromImage(q_img).scaled(
+                        target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                    )
+                    label_widget.setPixmap(scaled_pix)
 
         except Exception:
-            # Supaya log tidak penuh spam error, kita print sekali saja jika perlu
-            # print(f"GUI Error (_display_frame): {e}")
             pass
 
     def toggle_camera_stream(self):
