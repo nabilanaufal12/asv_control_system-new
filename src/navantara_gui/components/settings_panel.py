@@ -4,10 +4,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QLabel,
     QHBoxLayout,
+    QGridLayout,
     QComboBox,
     QPushButton,
     QMessageBox,
-    QFormLayout,
     QSpinBox,
     QDoubleSpinBox,
     QCheckBox,
@@ -42,276 +42,279 @@ class SettingsPanel(QGroupBox):
         super().__init__(title)
         self.config = config
         main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(6, 8, 6, 8)
+        main_layout.setSpacing(8)
 
-        # --- [BAGIAN KONTROL AI VISION & MISI] ---
-        ai_control_group = QGroupBox("AI Engine & Thruster Parameters")
-        ai_layout = QVBoxLayout()
+        # Helper untuk styling QGridLayout agar konsisten di semua group
+        def setup_grid_layout():
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(8)
+            grid.setVerticalSpacing(6)
+            grid.setContentsMargins(8, 10, 8, 8)
+            grid.setColumnStretch(0, 0)
+            grid.setColumnStretch(1, 1)
+            grid.setColumnStretch(2, 0)
+            grid.setColumnStretch(3, 1)
+            return grid
 
-        # Row 1: PWM Utama & PWM Depan
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Speed (PWM):"))
+        # =====================================================================
+        # 1. AI Engine & Thruster Parameters (Misi Bola Merah - Hijau)
+        # =====================================================================
+        ai_control_group = QGroupBox("AI Engine Thruster Parameters")
+        ai_grid = setup_grid_layout()
+
         self.spin_ai_speed = QSpinBox()
         self.spin_ai_speed.setRange(1000, 2000)
-        self.spin_ai_speed.setValue(1300)
-        row1.addWidget(self.spin_ai_speed)
+        self.spin_ai_speed.setValue(1500)
 
-        row1.addWidget(QLabel("Front Motor:"))
         self.spin_front = QSpinBox()
         self.spin_front.setRange(1000, 2000)
-        self.spin_front.setValue(1500)
-        row1.addWidget(self.spin_front)
+        self.spin_front.setValue(1800)
 
-        ai_layout.addLayout(row1)
-
-        # Row 2: Avoidance Angle (Left, Right)
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Avoid Angle:"))
         self.spin_left = QSpinBox()
         self.spin_left.setRange(0, 90)
         self.spin_left.setValue(70)
         self.spin_left.setPrefix("Left: ")
         self.spin_left.setSuffix("°")
-        row2.addWidget(self.spin_left)
 
         self.spin_right = QSpinBox()
         self.spin_right.setRange(90, 180)
         self.spin_right.setValue(110)
         self.spin_right.setPrefix("Right: ")
         self.spin_right.setSuffix("°")
-        row2.addWidget(self.spin_right)
 
-        ai_layout.addLayout(row2)
-
-        # Row 3: AI Activation & AI Model
-        row3 = QHBoxLayout()
-        row3.addWidget(QLabel("Obstacle Dist:"))
         self.spin_obs_dist = QSpinBox()
         self.spin_obs_dist.setRange(0, 500)
         self.spin_obs_dist.setValue(165)
         self.spin_obs_dist.setSingleStep(10)
         self.spin_obs_dist.setSuffix(" cm")
-        row3.addWidget(self.spin_obs_dist)
 
-        row3.addWidget(QLabel("Model:"))
         self.combo_model = QComboBox()
         self.combo_model.addItems(
             ["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"]
         )
-        row3.addWidget(self.combo_model)
 
-        ai_layout.addLayout(row3)
+        ai_grid.addWidget(QLabel("Speed (PWM):"), 0, 0)
+        ai_grid.addWidget(self.spin_ai_speed, 0, 1)
+        ai_grid.addWidget(QLabel("Front Motor:"), 0, 2)
+        ai_grid.addWidget(self.spin_front, 0, 3)
 
-        ai_control_group.setLayout(ai_layout)
+        ai_grid.addWidget(QLabel("Avoid Angle:"), 1, 0)
+        ai_grid.addWidget(self.spin_left, 1, 1)
+        ai_grid.addWidget(QLabel("Avoid Angle:"), 1, 2)
+        ai_grid.addWidget(self.spin_right, 1, 3)
+
+        ai_grid.addWidget(QLabel("Obstacle Dist:"), 2, 0)
+        ai_grid.addWidget(self.spin_obs_dist, 2, 1)
+        ai_grid.addWidget(QLabel("Model:"), 2, 2)
+        ai_grid.addWidget(self.combo_model, 2, 3)
+
+        ai_control_group.setLayout(ai_grid)
         main_layout.addWidget(ai_control_group)
 
-        # --- [BAGIAN BOX AVOIDANCE] ---
+        # =====================================================================
+        # 2. Box Detection Settings (Misi Kotak Biru - Hijau)
+        # =====================================================================
         box_avoid_group = QGroupBox("Box Detection Settings")
-        box_layout = QVBoxLayout()
-        
-        row_box1 = QHBoxLayout()
-        row_box1.addWidget(QLabel("Speed (PWM):"))
+        box_grid = setup_grid_layout()
+
         self.spin_box_speed = QSpinBox()
         self.spin_box_speed.setRange(1000, 2000)
         self.spin_box_speed.setValue(1500)
-        row_box1.addWidget(self.spin_box_speed)
 
-        row_box1.addWidget(QLabel("Front Motor:"))
         self.spin_box_front = QSpinBox()
         self.spin_box_front.setRange(1000, 2000)
         self.spin_box_front.setValue(1800)
-        row_box1.addWidget(self.spin_box_front)
-        box_layout.addLayout(row_box1)
-        
-        row_box2 = QHBoxLayout()
-        row_box2.addWidget(QLabel("Avoid Angle:"))
+
         self.spin_box_left = QSpinBox()
         self.spin_box_left.setRange(0, 90)
         self.spin_box_left.setValue(70)
         self.spin_box_left.setPrefix("Left: ")
         self.spin_box_left.setSuffix("°")
-        row_box2.addWidget(self.spin_box_left)
-        
+
         self.spin_box_right = QSpinBox()
         self.spin_box_right.setRange(90, 180)
         self.spin_box_right.setValue(110)
         self.spin_box_right.setPrefix("Right: ")
         self.spin_box_right.setSuffix("°")
-        row_box2.addWidget(self.spin_box_right)
-        box_layout.addLayout(row_box2)
 
-        row_box3 = QHBoxLayout()
-        row_box3.addWidget(QLabel("Obstacle Dist:"))
         self.spin_box_dist = QSpinBox()
         self.spin_box_dist.setRange(0, 500)
         self.spin_box_dist.setValue(165)
         self.spin_box_dist.setSuffix(" cm")
-        row_box3.addWidget(self.spin_box_dist)
-        box_layout.addLayout(row_box3)
-        
-        box_avoid_group.setLayout(box_layout)
+
+        box_grid.addWidget(QLabel("Speed (PWM):"), 0, 0)
+        box_grid.addWidget(self.spin_box_speed, 0, 1)
+        box_grid.addWidget(QLabel("Front Motor:"), 0, 2)
+        box_grid.addWidget(self.spin_box_front, 0, 3)
+
+        box_grid.addWidget(QLabel("Avoid Angle:"), 1, 0)
+        box_grid.addWidget(self.spin_box_left, 1, 1)
+        box_grid.addWidget(QLabel("Avoid Angle:"), 1, 2)
+        box_grid.addWidget(self.spin_box_right, 1, 3)
+
+        box_grid.addWidget(QLabel("Obstacle Dist:"), 2, 0)
+        box_grid.addWidget(self.spin_box_dist, 2, 1)
+
+        box_avoid_group.setLayout(box_grid)
         main_layout.addWidget(box_avoid_group)
 
-        # --- [BAGIAN WP RANGES] ---
+        # =====================================================================
+        # 3. Vision Target WP Ranges
+        # =====================================================================
         wp_ranges_group = QGroupBox("Vision Target WP Ranges")
-        wp_ranges_layout = QFormLayout()
+        wp_grid = setup_grid_layout()
 
-        # Bola (Avoidance)
-        bola_layout = QHBoxLayout()
         self.spin_wp_bola_start = QSpinBox()
         self.spin_wp_bola_start.setRange(0, 100)
+        self.spin_wp_bola_start.setPrefix("Start: ")
+
         self.spin_wp_bola_end = QSpinBox()
         self.spin_wp_bola_end.setRange(0, 100)
-        bola_layout.addWidget(QLabel("Start:"))
-        bola_layout.addWidget(self.spin_wp_bola_start)
-        bola_layout.addWidget(QLabel("End:"))
-        bola_layout.addWidget(self.spin_wp_bola_end)
-        wp_ranges_layout.addRow("Avoidance (Bola):", bola_layout)
+        self.spin_wp_bola_end.setPrefix("End: ")
 
-        # Kotak Biru (Underwater)
-        kotak_biru_layout = QHBoxLayout()
         self.spin_wp_biru_start = QSpinBox()
         self.spin_wp_biru_start.setRange(0, 100)
+        self.spin_wp_biru_start.setPrefix("Start: ")
+
         self.spin_wp_biru_end = QSpinBox()
         self.spin_wp_biru_end.setRange(0, 100)
-        kotak_biru_layout.addWidget(QLabel("Start:"))
-        kotak_biru_layout.addWidget(self.spin_wp_biru_start)
-        kotak_biru_layout.addWidget(QLabel("End:"))
-        kotak_biru_layout.addWidget(self.spin_wp_biru_end)
-        wp_ranges_layout.addRow("Track UW (K. Biru):", kotak_biru_layout)
+        self.spin_wp_biru_end.setPrefix("End: ")
 
-        # Kotak Hijau (Surface)
-        kotak_hijau_layout = QHBoxLayout()
         self.spin_wp_hijau_start = QSpinBox()
         self.spin_wp_hijau_start.setRange(0, 100)
+        self.spin_wp_hijau_start.setPrefix("Start: ")
+
         self.spin_wp_hijau_end = QSpinBox()
         self.spin_wp_hijau_end.setRange(0, 100)
-        kotak_hijau_layout.addWidget(QLabel("Start:"))
-        kotak_hijau_layout.addWidget(self.spin_wp_hijau_start)
-        kotak_hijau_layout.addWidget(QLabel("End:"))
-        kotak_hijau_layout.addWidget(self.spin_wp_hijau_end)
-        wp_ranges_layout.addRow("Track Sfc (K. Hijau):", kotak_hijau_layout)
+        self.spin_wp_hijau_end.setPrefix("End: ")
 
-        wp_ranges_group.setLayout(wp_ranges_layout)
+        wp_grid.addWidget(QLabel("Bola Avoid:"), 0, 0)
+        wp_grid.addWidget(self.spin_wp_bola_start, 0, 1)
+        wp_grid.addWidget(QLabel("—"), 0, 2, alignment=Qt.AlignCenter)
+        wp_grid.addWidget(self.spin_wp_bola_end, 0, 3)
+
+        wp_grid.addWidget(QLabel("Track UW (Biru):"), 1, 0)
+        wp_grid.addWidget(self.spin_wp_biru_start, 1, 1)
+        wp_grid.addWidget(QLabel("—"), 1, 2, alignment=Qt.AlignCenter)
+        wp_grid.addWidget(self.spin_wp_biru_end, 1, 3)
+
+        wp_grid.addWidget(QLabel("Track Sfc (Hijau):"), 2, 0)
+        wp_grid.addWidget(self.spin_wp_hijau_start, 2, 1)
+        wp_grid.addWidget(QLabel("—"), 2, 2, alignment=Qt.AlignCenter)
+        wp_grid.addWidget(self.spin_wp_hijau_end, 2, 3)
+
+        wp_ranges_group.setLayout(wp_grid)
         main_layout.addWidget(wp_ranges_group)
 
-        # --- [TAMBAHAN BARU] Photo Mission Segments (Pindahan dari Kanan) ---
+        # =====================================================================
+        # 4. Photo Mission Settings
+        # =====================================================================
         photo_mission_box = QGroupBox("Photo Mission Settings")
-        photo_mission_layout = QVBoxLayout()
+        photo_grid = setup_grid_layout()
 
-        photo_form_layout = QFormLayout()
         self.surf_wp1_input = QSpinBox()
         self.surf_wp1_input.setRange(0, 100)
         self.surf_wp1_input.setValue(13)
+        self.surf_wp1_input.setPrefix("Start: ")
 
         self.surf_wp2_input = QSpinBox()
         self.surf_wp2_input.setRange(0, 100)
         self.surf_wp2_input.setValue(14)
+        self.surf_wp2_input.setPrefix("End: ")
 
         self.under_wp1_input = QSpinBox()
         self.under_wp1_input.setRange(0, 100)
         self.under_wp1_input.setValue(11)
+        self.under_wp1_input.setPrefix("Start: ")
 
         self.under_wp2_input = QSpinBox()
         self.under_wp2_input.setRange(0, 100)
         self.under_wp2_input.setValue(12)
+        self.under_wp2_input.setPrefix("End: ")
 
         self.photo_count_input = QSpinBox()
         self.photo_count_input.setRange(1, 100)
-        self.photo_count_input.setValue(5)
+        self.photo_count_input.setValue(10)
 
         self.photo_interval_input = QDoubleSpinBox()
         self.photo_interval_input.setRange(0.5, 10.0)
-        self.photo_interval_input.setSingleStep(0.5)
-        self.photo_interval_input.setValue(2.0)
+        self.photo_interval_input.setSingleStep(0.1)
+        self.photo_interval_input.setValue(0.8)
+        self.photo_interval_input.setSuffix(" s")
 
-        # Surface WP
-        photo_surf_layout = QHBoxLayout()
-        photo_surf_layout.addWidget(QLabel("Start:"))
-        photo_surf_layout.addWidget(self.surf_wp1_input)
-        photo_surf_layout.addWidget(QLabel("End:"))
-        photo_surf_layout.addWidget(self.surf_wp2_input)
-        photo_form_layout.addRow("Surface WP:", photo_surf_layout)
-
-        # Underwater WP
-        photo_under_layout = QHBoxLayout()
-        photo_under_layout.addWidget(QLabel("Start:"))
-        photo_under_layout.addWidget(self.under_wp1_input)
-        photo_under_layout.addWidget(QLabel("End:"))
-        photo_under_layout.addWidget(self.under_wp2_input)
-        photo_form_layout.addRow("Underwater WP:", photo_under_layout)
-        
-        photo_count_interval_layout = QHBoxLayout()
-        photo_count_interval_layout.addWidget(QLabel("Max Foto:"))
-        photo_count_interval_layout.addWidget(self.photo_count_input)
-        photo_count_interval_layout.addWidget(QLabel("Interval (s):"))
-        photo_count_interval_layout.addWidget(self.photo_interval_input)
-        photo_form_layout.addRow("Photo Config:", photo_count_interval_layout)
-
-        # --- Portrait Config Inputs ---
         self.spin_portrait_speed = QSpinBox()
         self.spin_portrait_speed.setRange(1000, 2000)
-        self.spin_portrait_speed.setValue(1200)
+        self.spin_portrait_speed.setValue(1600)
 
         self.spin_portrait_rev_speed = QSpinBox()
         self.spin_portrait_rev_speed.setRange(1000, 2000)
         self.spin_portrait_rev_speed.setValue(1400)
 
-        photo_speed_layout = QHBoxLayout()
-        photo_speed_layout.addWidget(QLabel("Portrait:"))
-        photo_speed_layout.addWidget(self.spin_portrait_speed)
-        photo_speed_layout.addWidget(QLabel("Reverse:"))
-        photo_speed_layout.addWidget(self.spin_portrait_rev_speed)
-        photo_form_layout.addRow("Speed (PWM):", photo_speed_layout)
-
         self.spin_portrait_stop = QSpinBox()
         self.spin_portrait_stop.setRange(1, 15)
         self.spin_portrait_stop.setValue(3)
+        self.spin_portrait_stop.setSuffix(" s")
 
         self.spin_portrait_reverse = QSpinBox()
         self.spin_portrait_reverse.setRange(1, 15)
         self.spin_portrait_reverse.setValue(2)
+        self.spin_portrait_reverse.setSuffix(" s")
 
-        photo_duration_layout = QHBoxLayout()
-        photo_duration_layout.addWidget(QLabel("Stop:"))
-        photo_duration_layout.addWidget(self.spin_portrait_stop)
-        photo_duration_layout.addWidget(QLabel("Reverse:"))
-        photo_duration_layout.addWidget(self.spin_portrait_reverse)
-        photo_form_layout.addRow("Durasi (Detik):", photo_duration_layout)
+        # Row 0: Surface WP
+        photo_grid.addWidget(QLabel("Surface WP:"), 0, 0)
+        photo_grid.addWidget(self.surf_wp1_input, 0, 1)
+        photo_grid.addWidget(QLabel("—"), 0, 2, alignment=Qt.AlignCenter)
+        photo_grid.addWidget(self.surf_wp2_input, 0, 3)
 
-        photo_mission_layout.addLayout(photo_form_layout)
-        photo_mission_box.setLayout(photo_mission_layout)
+        # Row 1: Underwater WP
+        photo_grid.addWidget(QLabel("Underwater WP:"), 1, 0)
+        photo_grid.addWidget(self.under_wp1_input, 1, 1)
+        photo_grid.addWidget(QLabel("—"), 1, 2, alignment=Qt.AlignCenter)
+        photo_grid.addWidget(self.under_wp2_input, 1, 3)
 
+        # Row 2: Photo Config
+        photo_grid.addWidget(QLabel("Max Foto:"), 2, 0)
+        photo_grid.addWidget(self.photo_count_input, 2, 1)
+        photo_grid.addWidget(QLabel("Interval:"), 2, 2)
+        photo_grid.addWidget(self.photo_interval_input, 2, 3)
+
+        # Row 3: Speed (Portrait & Reverse)
+        photo_grid.addWidget(QLabel("Speed Portrait:"), 3, 0)
+        photo_grid.addWidget(self.spin_portrait_speed, 3, 1)
+        photo_grid.addWidget(QLabel("Speed Reverse:"), 3, 2)
+        photo_grid.addWidget(self.spin_portrait_rev_speed, 3, 3)
+
+        # Row 4: Duration (Stop & Reverse)
+        photo_grid.addWidget(QLabel("Durasi Stop:"), 4, 0)
+        photo_grid.addWidget(self.spin_portrait_stop, 4, 1)
+        photo_grid.addWidget(QLabel("Durasi Rev:"), 4, 2)
+        photo_grid.addWidget(self.spin_portrait_reverse, 4, 3)
+
+        photo_mission_box.setLayout(photo_grid)
         main_layout.addWidget(photo_mission_box)
 
-        # --- [TAMBAHAN BARU] Docking Mission Settings ---
+        # =====================================================================
+        # 5. Docking Settings
+        # =====================================================================
         docking_mission_box = QGroupBox("Docking Settings")
-        docking_layout = QVBoxLayout()
+        dock_grid = setup_grid_layout()
 
-        # Checkbox Enable/Disable Docking
         self.chk_dock_enable = QCheckBox("Enable Docking Mission")
-        self.chk_dock_enable.setChecked(True)  # Default ON
-        docking_layout.addWidget(self.chk_dock_enable)
+        self.chk_dock_enable.setChecked(True)
 
-        dock_row1 = QHBoxLayout()
-        dock_row1.addWidget(QLabel("Speed (PWM):"))
         self.spin_dock_motor = QSpinBox()
         self.spin_dock_motor.setRange(1000, 2000)
         self.spin_dock_motor.setValue(
             self.config.get("docking_defaults", {}).get("motor_utama_pwm", 1200)
         )
-        dock_row1.addWidget(self.spin_dock_motor)
 
-        dock_row1.addWidget(QLabel("Front Motor:"))
         self.spin_dock_front = QSpinBox()
         self.spin_dock_front.setRange(1000, 2000)
         self.spin_dock_front.setValue(
             self.config.get("docking_defaults", {}).get("motor_depan_pwm", 1400)
         )
-        dock_row1.addWidget(self.spin_dock_front)
-        docking_layout.addLayout(dock_row1)
 
-        dock_row2 = QHBoxLayout()
-        dock_row2.addWidget(QLabel("Swing Angle:"))
         self.spin_dock_left = QSpinBox()
         self.spin_dock_left.setRange(0, 90)
         self.spin_dock_left.setValue(
@@ -319,7 +322,6 @@ class SettingsPanel(QGroupBox):
         )
         self.spin_dock_left.setPrefix("Left: ")
         self.spin_dock_left.setSuffix("°")
-        dock_row2.addWidget(self.spin_dock_left)
 
         self.spin_dock_right = QSpinBox()
         self.spin_dock_right.setRange(90, 180)
@@ -328,27 +330,37 @@ class SettingsPanel(QGroupBox):
         )
         self.spin_dock_right.setPrefix("Right: ")
         self.spin_dock_right.setSuffix("°")
-        dock_row2.addWidget(self.spin_dock_right)
-        docking_layout.addLayout(dock_row2)
 
-        dock_row3 = QHBoxLayout()
-        dock_row3.addWidget(QLabel("Durasi (s):"))
         self.spin_dock_charge = QSpinBox()
         self.spin_dock_charge.setRange(1, 15)
         self.spin_dock_charge.setValue(
             self.config.get("docking_defaults", {}).get("charge_duration_ms", 3000)
             // 1000
         )
-        dock_row3.addWidget(self.spin_dock_charge)
-        docking_layout.addLayout(dock_row3)
+        self.spin_dock_charge.setSuffix(" s")
 
-        docking_mission_box.setLayout(docking_layout)
+        dock_grid.addWidget(self.chk_dock_enable, 0, 0, 1, 4)
+
+        dock_grid.addWidget(QLabel("Speed (PWM):"), 1, 0)
+        dock_grid.addWidget(self.spin_dock_motor, 1, 1)
+        dock_grid.addWidget(QLabel("Front Motor:"), 1, 2)
+        dock_grid.addWidget(self.spin_dock_front, 1, 3)
+
+        dock_grid.addWidget(QLabel("Swing Angle:"), 2, 0)
+        dock_grid.addWidget(self.spin_dock_left, 2, 1)
+        dock_grid.addWidget(QLabel("Swing Angle:"), 2, 2)
+        dock_grid.addWidget(self.spin_dock_right, 2, 3)
+
+        dock_grid.addWidget(QLabel("Durasi Charge:"), 3, 0)
+        dock_grid.addWidget(self.spin_dock_charge, 3, 1)
+
+        docking_mission_box.setLayout(dock_grid)
         main_layout.addWidget(docking_mission_box)
 
         # --- Tombol Simpan Default ---
         self.save_default_button = QPushButton("Save as Default Config")
         self.save_default_button.setStyleSheet(
-            "background-color: #4CAF50; color: white; font-weight: bold; margin-top: 10px; padding: 5px;"
+            "background-color: #4CAF50; color: white; font-weight: bold; margin-top: 6px; padding: 6px;"
         )
         main_layout.addWidget(self.save_default_button)
 
