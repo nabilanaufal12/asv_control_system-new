@@ -822,8 +822,38 @@ void loop() {
                          || (counter > surfStart && counter <= surfEnd);
     bool isAtPortraitEnd = (counter == uwEnd) || (counter == surfEnd);
 
+    // === DOCKING SWING (Fase Manuver Ayunan ke Dermaga - Prioritas Tertinggi) ===
+    if (dockingState == DK_SWING) {
+      status = "DK_SWING";
+      finalMotor = dockMotorUtama; // Gas dorong maju
+      finalDir = 1500;             // Arah maju
+      
+      if (dockTurnDirection == 0) {
+        // Arena A: Mengincar bola kiri. Buritan ke Kanan. Servo dipatahkan ke KIRI (dockServoLeft)
+        finalServo = dockServoLeft; 
+      } else {
+        // Arena B: Mengincar bola kanan. Buritan ke Kiri. Servo dipatahkan ke KANAN (dockServoRight)
+        finalServo = dockServoRight;
+      }
+      
+      finalMotorDepanKiri = 1000;
+      finalMotorDepanKanan = 1000;
+
+      if (millis() - dockingTimer >= dockChargeMs) {
+        dockingState = DK_COMPLETE;
+        Serial.println("[DOCK] DOCKING SWING COMPLETE! Matikan mesin.");
+      }
+    }
+    // === DOCKING COMPLETE (Fase Mesin Mati Total di Dermaga) ===
+    else if (dockingState == DK_COMPLETE) {
+      finalServo = 90;
+      finalMotor = 1000;
+      finalMotorDepanKiri = 1000;
+      finalMotorDepanKanan = 1000;
+      status = "DK_COMPLETE";
+    }
     // === PORTRAIT STOP (Motor utama mati, motor depan boleh jika AI aktif) ===
-    if (portraitState == PT_STOP) {
+    else if (portraitState == PT_STOP) {
       status = "PT_STOP";
       finalMotor = 1000;
       finalServo = 90;
@@ -877,7 +907,7 @@ void loop() {
         if (counter >= dataIndex) { 
           wp_target_idx = dataIndex;
 
-          // === DOCKING STATE MACHINE ===
+          // === DOCKING STATE MACHINE (FALLBACK SAAT DI TITIK AKHIR WP) ===
           if (!dockingEnabled) {
             // Docking dinonaktifkan: langsung anggap WP_COMPLETE, berhenti di titik akhir
             finalServo = 90;
@@ -885,45 +915,13 @@ void loop() {
             finalMotorDepanKiri = 1000;
             finalMotorDepanKanan = 1000;
             status = "WP_COMPLETE";
-          } else if (dockingState == DK_IDLE) {
-            // Fase 0: IDLE (Pasif)
-            // Kapal menunggu perintah dari AI. Selama fase ini, ESP32 hanya mengeksekusi
-            // manuver yang dikirim AI (Edge Tracking) via command S,VIS atau A,...
-            // Jadi di sini kita biarkan motor stop JIKA tidak ada perintah dari luar.
-            // (Sebenarnya command A,... akan meng-override nilai-nilai ini sementara)
+          } else {
+            // Menunggu pemicu AI atau trigger kedekatan
             finalServo = 90;
             finalMotor = 1000;
             finalMotorDepanKiri = 1000;
             finalMotorDepanKanan = 1000;
             status = "DK_TRACKING_AI";
-          } else if (dockingState == DK_SWING) {
-            // Fase 1: SWING
-            // AI menembakkan trigger S,DOCK_SWING. Kapal patahkan servo mentok dan ngegas.
-            status = "DK_SWING";
-            finalMotor = dockMotorUtama; // Gas maju/dorong
-            
-            if (dockTurnDirection == 0) {
-              // Arena A: Mengincar bola kiri. Bokong harus ke Kanan. Servo dipatahkan ke KIRI (dockServoLeft)
-              finalServo = dockServoLeft; 
-            } else {
-              // Arena B: Mengincar bola kanan. Bokong harus ke Kiri. Servo dipatahkan ke KANAN (dockServoRight)
-              finalServo = dockServoRight;
-            }
-            
-            finalMotorDepanKiri = 1000;
-            finalMotorDepanKanan = 1000;
-
-            if (millis() - dockingTimer >= dockChargeMs) {
-              dockingState = DK_COMPLETE;
-              Serial.println("DOCKING SWING COMPLETE! Matikan mesin.");
-            }
-          } else if (dockingState == DK_COMPLETE) {
-            // Fase 2: Berhenti total (Cut-Off)
-            finalServo = 90;
-            finalMotor = 1000;
-            finalMotorDepanKiri = 1000;
-            finalMotorDepanKanan = 1000;
-            status = "DK_COMPLETE";
           }
         } else { 
           double targetLat = latitudes[counter];
