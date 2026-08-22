@@ -109,16 +109,21 @@ class SettingsPanel(QGroupBox):
         box_layout = QVBoxLayout()
         
         row_box1 = QHBoxLayout()
-        row_box1.addWidget(QLabel("Distance:"))
-        self.spin_box_dist = QSpinBox()
-        self.spin_box_dist.setRange(0, 500)
-        self.spin_box_dist.setValue(165)
-        self.spin_box_dist.setSuffix(" cm")
-        row_box1.addWidget(self.spin_box_dist)
+        row_box1.addWidget(QLabel("Speed (PWM):"))
+        self.spin_box_speed = QSpinBox()
+        self.spin_box_speed.setRange(1000, 2000)
+        self.spin_box_speed.setValue(1500)
+        row_box1.addWidget(self.spin_box_speed)
+
+        row_box1.addWidget(QLabel("Front Motor:"))
+        self.spin_box_front = QSpinBox()
+        self.spin_box_front.setRange(1000, 2000)
+        self.spin_box_front.setValue(1800)
+        row_box1.addWidget(self.spin_box_front)
         box_layout.addLayout(row_box1)
         
         row_box2 = QHBoxLayout()
-        row_box2.addWidget(QLabel("Angles:"))
+        row_box2.addWidget(QLabel("Avoid Angle:"))
         self.spin_box_left = QSpinBox()
         self.spin_box_left.setRange(0, 90)
         self.spin_box_left.setValue(70)
@@ -133,12 +138,14 @@ class SettingsPanel(QGroupBox):
         self.spin_box_right.setSuffix("°")
         row_box2.addWidget(self.spin_box_right)
         box_layout.addLayout(row_box2)
+
         row_box3 = QHBoxLayout()
-        row_box3.addWidget(QLabel("Motor PWM:"))
-        self.spin_box_pwm = QSpinBox()
-        self.spin_box_pwm.setRange(1000, 2000)
-        self.spin_box_pwm.setValue(1300)
-        row_box3.addWidget(self.spin_box_pwm)
+        row_box3.addWidget(QLabel("Obstacle Dist:"))
+        self.spin_box_dist = QSpinBox()
+        self.spin_box_dist.setRange(0, 500)
+        self.spin_box_dist.setValue(165)
+        self.spin_box_dist.setSuffix(" cm")
+        row_box3.addWidget(self.spin_box_dist)
         box_layout.addLayout(row_box3)
         
         box_avoid_group.setLayout(box_layout)
@@ -365,11 +372,12 @@ class SettingsPanel(QGroupBox):
         self.spin_obs_dist.valueChanged.connect(self._on_obs_dist_changed)
         self.combo_model.currentTextChanged.connect(self._on_model_changed)
         
-        # Event Handler Box Avoidance
+        # Event Handler Box Avoidance Settings
         self.spin_box_dist.valueChanged.connect(self._on_box_avoidance_changed)
         self.spin_box_left.valueChanged.connect(self._on_box_avoidance_changed)
         self.spin_box_right.valueChanged.connect(self._on_box_avoidance_changed)
-        self.spin_box_pwm.valueChanged.connect(self._on_box_avoidance_changed)
+        self.spin_box_speed.valueChanged.connect(self._on_box_avoidance_changed)
+        self.spin_box_front.valueChanged.connect(self._on_box_avoidance_changed)
 
         # Event Handler Photo Mission Segments (Auto Update)
         self.surf_wp1_input.valueChanged.connect(self._on_set_photo_mission)
@@ -460,8 +468,12 @@ class SettingsPanel(QGroupBox):
             self.spin_box_left.setValue(defs["box_servo_left"])
         if "box_servo_right" in defs:
             self.spin_box_right.setValue(defs["box_servo_right"])
-        if "box_pwm" in defs:
-            self.spin_box_pwm.setValue(defs["box_pwm"])
+        if "box_speed" in defs:
+            self.spin_box_speed.setValue(defs["box_speed"])
+        if "box_front_motor" in defs:
+            self.spin_box_front.setValue(defs["box_front_motor"])
+        elif "box_pwm" in defs:
+            self.spin_box_front.setValue(defs["box_pwm"])
 
         if "photo_surf1" in defs:
             self.surf_wp1_input.setValue(int(defs["photo_surf1"]))
@@ -513,7 +525,9 @@ class SettingsPanel(QGroupBox):
             "box_obs_dist": self.spin_box_dist.value(),
             "box_servo_left": self.spin_box_left.value(),
             "box_servo_right": self.spin_box_right.value(),
-            "box_pwm": self.spin_box_pwm.value(),
+            "box_speed": self.spin_box_speed.value(),
+            "box_front_motor": self.spin_box_front.value(),
+            "box_pwm": self.spin_box_front.value(),
             "photo_surf1": self.surf_wp1_input.value(),
             "photo_surf2": self.surf_wp2_input.value(),
             "photo_under1": self.under_wp1_input.value(),
@@ -678,10 +692,12 @@ class SettingsPanel(QGroupBox):
 
     def _on_box_avoidance_changed(self):
         payload = {
+            "speed": self.spin_box_speed.value(),
+            "front_motor": self.spin_box_front.value(),
             "distance": self.spin_box_dist.value(),
             "left": self.spin_box_left.value(),
             "right": self.spin_box_right.value(),
-            "pwm": self.spin_box_pwm.value(),
+            "pwm": self.spin_box_front.value(),
         }
         self.send_box_avoidance_config.emit(payload)
         
