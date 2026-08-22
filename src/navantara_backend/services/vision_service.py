@@ -14,7 +14,11 @@ from pathlib import Path
 from dataclasses import asdict
 
 # --- [MIGRASI: Import Ultralytics] ---
-from ultralytics import YOLO
+from ultralytics import YOLO, settings
+try:
+    settings.update({"sync": False, "checks": False})
+except Exception:
+    pass
 
 # -------------------------------------
 

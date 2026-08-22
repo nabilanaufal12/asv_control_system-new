@@ -1,7 +1,14 @@
 # run_backend_headless.py
-import eventlet
 import os
 import sys
+
+# Matikan semua telemetri & check online pihak ketiga agar startup instan saat offline
+os.environ["YOLO_OFFLINE"] = "1"
+os.environ["YOLO_VERBOSE"] = "False"
+os.environ["ULTRALYTICS_AUTOINSTALL"] = "False"
+os.environ["ULTRALYTICS_TELEMETRY"] = "False"
+
+import eventlet
 import logging
 
 # Monkey patch harus dieksekusi sebelum impor lainnya
