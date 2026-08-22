@@ -48,6 +48,7 @@ TELEMETRY_KEY_MAP = {
     "debug_waypoint_counter": "dbg_cnt",
     "vision_target": "vis",
     "esp_status": "esp_sts",
+    "portrait_state": "p_st",
     "docking_state": "dk_st",
 }
 # --- [AKHIR OPTIMASI] ---
@@ -105,6 +106,7 @@ class AsvState:
     portrait_reverse_speed: int = 1400
     portrait_stop_ms: int = 3000
     portrait_reverse_ms: int = 2000
+    portrait_state: int = 0  # 0=Normal, 1=Slow, 2=Stop, 3=Reverse
     vision_front_motor_cmd: int = 1500
     vision_servo_left_cmd: int = 70
     vision_servo_right_cmd: int = 110
@@ -434,6 +436,8 @@ class AsvHandler:
                 if "w_tot" in data:
                     self.current_state.nav_esp_total_wp = data.get("w_tot")
 
+                if "p_st" in data:
+                    self.current_state.portrait_state = data.get("p_st", 0)
                 if "dk_st" in data:
                     self.current_state.docking_state = data.get("dk_st")
         except Exception as e:
@@ -589,19 +593,15 @@ class AsvHandler:
                             is_last_wp = (total_wps > 0) and (self.current_state.nav_target_wp_index >= total_wps - 1)
                             
                             if obj_class == "kotak-biru" and is_last_wp:
-                                # --- LOGIKA DOCKING (KOTAK BIRU) DI WP TERAKHIR ---
-                                # Mengejar Ujung Bola (Edge Tracking)
+                                # --- LOGIKA DOCKING (BOLA BIRU) DI WP TERAKHIR ---
+                                # Mengarahkan kapal langsung ke bola target yang sudah dikunci (Kiri untuk Arena A, Kanan untuk Arena B)
                                 center_x = vision_target_frame_width / 2
                                 box_width = self.current_state.vision_target.get("width", 0)
 
-                                if current_arena == "Arena_B":
-                                    target_point = vision_target_center_x + (box_width / 2)
-                                else:
-                                    target_point = vision_target_center_x - (box_width / 2)
-
+                                target_point = vision_target_center_x
                                 error_x = target_point - center_x
-                                tolerance = 40
-                                max_tracking_deflection = 30
+                                tolerance = 35
+                                max_tracking_deflection = 35
 
                                 with self.state_lock:
                                     dock_front_pwm = self.current_state.dock_motor_depan
@@ -611,27 +611,27 @@ class AsvHandler:
                                     offset = (error_x / center_x) * max_tracking_deflection
                                     servo_cmd = int(90 + offset)
                                     motor_depan_kanan = dock_front_pwm
-                                    desc = f"Kotak Biru -> Track Ujung Kiri (Err: {error_x:.1f})"
+                                    desc = f"Docking -> Track Bola ({current_arena}) Belok Kiri (Err: {error_x:.1f})"
                                 elif error_x > tolerance:
                                     turn_direction = "TRACKING_RIGHT"
                                     offset = (error_x / center_x) * max_tracking_deflection
                                     servo_cmd = int(90 + offset)
                                     motor_depan_kiri = dock_front_pwm
-                                    desc = f"Kotak Biru -> Track Ujung Kanan (Err: {error_x:.1f})"
+                                    desc = f"Docking -> Track Bola ({current_arena}) Belok Kanan (Err: {error_x:.1f})"
                                 else:
                                     turn_direction = "TRACKING_CENTER"
                                     servo_cmd = servo_default
-                                    desc = "Kotak Biru -> Track Ujung Tengah"
+                                    desc = f"Docking -> Kunci Bola ({current_arena}) Tengah Lurus"
 
-                                servo_cmd = max(40, min(140, servo_cmd))
+                                servo_cmd = max(35, min(145, servo_cmd))
 
                                 is_docking_enabled = self.current_state.docking_enabled
-                                if is_docking_enabled and vision_target_frame_width > 0:
+                                if is_docking_enabled and vision_target_frame_width > 0 and box_width > 0:
                                     proximity_ratio = box_width / vision_target_frame_width
-                                    if proximity_ratio > 0.65:
+                                    if proximity_ratio > 0.40:
                                         command_to_send = "S,DOCK_SWING\n"
-                                        desc = "Kotak Biru -> SANGAT DEKAT! TRIGGER SWING DOCKING!"
-                                        logging.warning("[AsvHandler] DOCKING SWING TRIGGERED by Proximity")
+                                        desc = f"Docking -> BOLA TARGET {current_arena} SANGAT DEKAT! TRIGGER SWING DOCKING!"
+                                        logging.warning(f"[AsvHandler] DOCKING SWING TRIGGERED by Proximity ({proximity_ratio:.2f})")
                                         
                             elif obj_class in ["kotak-biru", "kotak-hijau"]:
                                 # --- LOGIKA AVOIDANCE (KOTAK BIRU & HIJAU) ---

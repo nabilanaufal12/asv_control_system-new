@@ -1083,13 +1083,18 @@ class VisionService:
                 self.asv_handler.current_state.photo_mission_qty_taken_2
             )  # Underwater
 
-            # Evaluasi In Segment (Mulai aktif setelah melewati wp1, yaitu saat target adalah wp2)
+            # Evaluasi In Segment: Aktif saat mendekati WP target dan saat berhenti (PT_STOP).
+            # Otomatis berhenti memotret saat kapal mulai mundur (PT_REVERSE, p_st == 3).
+            pt_state = self.asv_handler.current_state.portrait_state
+            is_reversing = (pt_state == 3)
+
             in_segment_surf = (surf_wp1 != -1 and surf_wp2 != -1) and (
                 surf_wp1 < current_wp <= surf_wp2
-            )
+            ) and not is_reversing
+
             in_segment_under = (under_wp1 != -1 and under_wp2 != -1) and (
                 under_wp1 < current_wp <= under_wp2
-            )
+            ) and not is_reversing
 
             current_state_photo = self.asv_handler.current_state
 
@@ -1185,15 +1190,39 @@ class VisionService:
             # Jika WP di luar range, valid_buoys tetap kosong, AI idle.
 
         if valid_buoys:
-            # Cari objek yang paling dekat dengan kapal
-            closest_buoy = min(
-                valid_buoys,
-                key=lambda b: (
-                    b.get("distance_cm")
-                    if b.get("distance_cm") is not None
-                    else float("inf")
-                ),
-            )
+            with self.asv_handler.state_lock:
+                active_arena = self.asv_handler.current_state.active_arena
+                box_dist_cfg = self.asv_handler.current_state.box_avoidance_distance
+
+            # Logika Khusus Docking di WP Terakhir: Kunci Bola Kiri (Arena A) atau Bola Kanan (Arena B)
+            if is_last_wp:
+                blue_targets = [b for b in valid_buoys if b.get("class") == "kotak-biru"]
+                if blue_targets:
+                    if "B" in active_arena:
+                        # Arena B: Kunci bola biru paling KANAN (center_x terbesar)
+                        closest_buoy = max(blue_targets, key=lambda b: b["center"][0])
+                    else:
+                        # Arena A: Kunci bola biru paling KIRI (center_x terkecil)
+                        closest_buoy = min(blue_targets, key=lambda b: b["center"][0])
+                else:
+                    closest_buoy = min(
+                        valid_buoys,
+                        key=lambda b: (
+                            b.get("distance_cm")
+                            if b.get("distance_cm") is not None
+                            else float("inf")
+                        ),
+                    )
+            else:
+                # Mode Regular: Cari objek yang paling dekat dengan kapal
+                closest_buoy = min(
+                    valid_buoys,
+                    key=lambda b: (
+                        b.get("distance_cm")
+                        if b.get("distance_cm") is not None
+                        else float("inf")
+                    ),
+                )
 
             distance_to_closest = closest_buoy.get("distance_cm")
             if distance_to_closest is None:
@@ -1202,24 +1231,32 @@ class VisionService:
             # Tentukan threshold jarak aktivasi berdasarkan jenis objek
             closest_cls = closest_buoy.get("class", "unknown")
             if closest_cls in ["kotak-biru", "kotak-hijau", "kotak-merah"]:
-                with self.asv_handler.state_lock:
-                    activation_dist = self.asv_handler.current_state.box_avoidance_distance
+                activation_dist = box_dist_cfg
+                if is_last_wp:
+                    # Saat docking di WP terakhir, perbolehkan penguncian visual dari jarak lebih jauh
+                    activation_dist = max(activation_dist, 350.0)
             else:
                 activation_dist = self.obstacle_activation_distance
 
-            # Jika objek berada dalam jarak aktivasi penghindaran
+            # Jika objek berada dalam jarak aktivasi
             if distance_to_closest < activation_dist:
                 self.last_buoy_seen_time = time.time()
+
+                xyxy = closest_buoy.get("xyxy", [0, 0, 0, 0])
+                box_width = xyxy[2] - xyxy[0] if len(xyxy) >= 4 else 0
 
                 payload_obs = {
                     "active": True,
                     "obstacle_class": closest_buoy.get("class", "unknown"),
                     "object_center_x": closest_buoy["center"][0],
                     "frame_width": frame_width,
+                    "width": box_width,
+                    "box": xyxy,
+                    "distance_cm": distance_to_closest,
                 }
 
                 logging.info(
-                    f"[Vision] Target manuver aktif ({closest_buoy.get('class')}) pada jarak {distance_to_closest:.1f}cm."
+                    f"[Vision] Target manuver aktif ({closest_buoy.get('class')}) pada jarak {distance_to_closest:.1f}cm (Pos X: {closest_buoy['center'][0]})."
                 )
 
                 # --- MENGIRIM DATA KE ASV HANDLER ---
