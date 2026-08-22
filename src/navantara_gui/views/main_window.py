@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         # --- Sidebar Kiri (Settings & Mission Config) ---
         layout_sidebar_kiri = QVBoxLayout()
+        layout_sidebar_kiri.setContentsMargins(2, 0, 6, 0)
         layout_sidebar_kiri.setAlignment(Qt.AlignTop)
         layout_sidebar_kiri.addWidget(self.settings_panel)
         layout_sidebar_kiri.addStretch()
@@ -128,7 +129,7 @@ class MainWindow(QMainWindow):
         scroll_area_kiri.setWidgetResizable(True)
         scroll_area_kiri.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kiri.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area_kiri.setMinimumWidth(380)
+        scroll_area_kiri.setMinimumWidth(320)
 
         # --- Sidebar Kanan ---
 
@@ -156,7 +157,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QHBoxLayout
 
         layout_tengah = QVBoxLayout()
-        layout_tengah.setContentsMargins(0, 0, 0, 0)
+        layout_tengah.setContentsMargins(6, 0, 6, 0)
         layout_tengah.setSpacing(6)
 
         # Baris Atas: Tombol Live Stream di Pojok Kanan Atas (tanpa GroupBox)
@@ -184,8 +185,12 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(widget_tengah)  # Menggunakan Container Tengah
         main_splitter.addWidget(widget_sidebar_kanan)
 
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 1)
+        main_splitter.setStretchFactor(2, 0)
+
         gui_settings = self.config.get("gui_settings", {})
-        splitter_sizes = gui_settings.get("main_splitter_sizes", [380, 800, 350])
+        splitter_sizes = gui_settings.get("main_splitter_sizes", [330, 950, 330])
         main_splitter.setSizes(splitter_sizes)
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(2, False)
