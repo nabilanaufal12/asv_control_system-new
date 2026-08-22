@@ -48,9 +48,9 @@ class SettingsPanel(QGroupBox):
         # Helper untuk styling QGridLayout agar konsisten di semua group
         def setup_grid_layout():
             grid = QGridLayout()
-            grid.setHorizontalSpacing(8)
-            grid.setVerticalSpacing(6)
-            grid.setContentsMargins(8, 10, 8, 8)
+            grid.setHorizontalSpacing(6)
+            grid.setVerticalSpacing(5)
+            grid.setContentsMargins(6, 8, 6, 6)
             grid.setColumnStretch(0, 0)
             grid.setColumnStretch(1, 1)
             grid.setColumnStretch(2, 0)
@@ -94,17 +94,17 @@ class SettingsPanel(QGroupBox):
             ["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"]
         )
 
-        ai_grid.addWidget(QLabel("Speed (PWM):"), 0, 0)
+        ai_grid.addWidget(QLabel("Speed:"), 0, 0)
         ai_grid.addWidget(self.spin_ai_speed, 0, 1)
-        ai_grid.addWidget(QLabel("Front Motor:"), 0, 2)
+        ai_grid.addWidget(QLabel("Front:"), 0, 2)
         ai_grid.addWidget(self.spin_front, 0, 3)
 
-        ai_grid.addWidget(QLabel("Avoid Angle:"), 1, 0)
+        ai_grid.addWidget(QLabel("Avoid L:"), 1, 0)
         ai_grid.addWidget(self.spin_left, 1, 1)
-        ai_grid.addWidget(QLabel("Avoid Angle:"), 1, 2)
+        ai_grid.addWidget(QLabel("Avoid R:"), 1, 2)
         ai_grid.addWidget(self.spin_right, 1, 3)
 
-        ai_grid.addWidget(QLabel("Obstacle Dist:"), 2, 0)
+        ai_grid.addWidget(QLabel("Obstacle:"), 2, 0)
         ai_grid.addWidget(self.spin_obs_dist, 2, 1)
         ai_grid.addWidget(QLabel("Model:"), 2, 2)
         ai_grid.addWidget(self.combo_model, 2, 3)
@@ -143,17 +143,17 @@ class SettingsPanel(QGroupBox):
         self.spin_box_dist.setValue(165)
         self.spin_box_dist.setSuffix(" cm")
 
-        box_grid.addWidget(QLabel("Speed (PWM):"), 0, 0)
+        box_grid.addWidget(QLabel("Speed:"), 0, 0)
         box_grid.addWidget(self.spin_box_speed, 0, 1)
-        box_grid.addWidget(QLabel("Front Motor:"), 0, 2)
+        box_grid.addWidget(QLabel("Front:"), 0, 2)
         box_grid.addWidget(self.spin_box_front, 0, 3)
 
-        box_grid.addWidget(QLabel("Avoid Angle:"), 1, 0)
+        box_grid.addWidget(QLabel("Avoid L:"), 1, 0)
         box_grid.addWidget(self.spin_box_left, 1, 1)
-        box_grid.addWidget(QLabel("Avoid Angle:"), 1, 2)
+        box_grid.addWidget(QLabel("Avoid R:"), 1, 2)
         box_grid.addWidget(self.spin_box_right, 1, 3)
 
-        box_grid.addWidget(QLabel("Obstacle Dist:"), 2, 0)
+        box_grid.addWidget(QLabel("Obstacle:"), 2, 0)
         box_grid.addWidget(self.spin_box_dist, 2, 1)
 
         box_avoid_group.setLayout(box_grid)
@@ -189,17 +189,17 @@ class SettingsPanel(QGroupBox):
         self.spin_wp_hijau_end.setRange(0, 100)
         self.spin_wp_hijau_end.setPrefix("End: ")
 
-        wp_grid.addWidget(QLabel("Bola Avoid:"), 0, 0)
+        wp_grid.addWidget(QLabel("Bola:"), 0, 0)
         wp_grid.addWidget(self.spin_wp_bola_start, 0, 1)
         wp_grid.addWidget(QLabel("—"), 0, 2, alignment=Qt.AlignCenter)
         wp_grid.addWidget(self.spin_wp_bola_end, 0, 3)
 
-        wp_grid.addWidget(QLabel("Track UW (Biru):"), 1, 0)
+        wp_grid.addWidget(QLabel("Kotak UW:"), 1, 0)
         wp_grid.addWidget(self.spin_wp_biru_start, 1, 1)
         wp_grid.addWidget(QLabel("—"), 1, 2, alignment=Qt.AlignCenter)
         wp_grid.addWidget(self.spin_wp_biru_end, 1, 3)
 
-        wp_grid.addWidget(QLabel("Track Sfc (Hijau):"), 2, 0)
+        wp_grid.addWidget(QLabel("Kotak Sfc:"), 2, 0)
         wp_grid.addWidget(self.spin_wp_hijau_start, 2, 1)
         wp_grid.addWidget(QLabel("—"), 2, 2, alignment=Qt.AlignCenter)
         wp_grid.addWidget(self.spin_wp_hijau_end, 2, 3)
@@ -268,7 +268,7 @@ class SettingsPanel(QGroupBox):
         photo_grid.addWidget(self.surf_wp2_input, 0, 3)
 
         # Row 1: Underwater WP
-        photo_grid.addWidget(QLabel("Underwater WP:"), 1, 0)
+        photo_grid.addWidget(QLabel("Under WP:"), 1, 0)
         photo_grid.addWidget(self.under_wp1_input, 1, 1)
         photo_grid.addWidget(QLabel("—"), 1, 2, alignment=Qt.AlignCenter)
         photo_grid.addWidget(self.under_wp2_input, 1, 3)
@@ -280,15 +280,15 @@ class SettingsPanel(QGroupBox):
         photo_grid.addWidget(self.photo_interval_input, 2, 3)
 
         # Row 3: Speed (Portrait & Reverse)
-        photo_grid.addWidget(QLabel("Speed Portrait:"), 3, 0)
+        photo_grid.addWidget(QLabel("Spd Port:"), 3, 0)
         photo_grid.addWidget(self.spin_portrait_speed, 3, 1)
-        photo_grid.addWidget(QLabel("Speed Reverse:"), 3, 2)
+        photo_grid.addWidget(QLabel("Spd Rev:"), 3, 2)
         photo_grid.addWidget(self.spin_portrait_rev_speed, 3, 3)
 
         # Row 4: Duration (Stop & Reverse)
-        photo_grid.addWidget(QLabel("Durasi Stop:"), 4, 0)
+        photo_grid.addWidget(QLabel("Stop Time:"), 4, 0)
         photo_grid.addWidget(self.spin_portrait_stop, 4, 1)
-        photo_grid.addWidget(QLabel("Durasi Rev:"), 4, 2)
+        photo_grid.addWidget(QLabel("Rev Time:"), 4, 2)
         photo_grid.addWidget(self.spin_portrait_reverse, 4, 3)
 
         photo_mission_box.setLayout(photo_grid)
@@ -341,17 +341,17 @@ class SettingsPanel(QGroupBox):
 
         dock_grid.addWidget(self.chk_dock_enable, 0, 0, 1, 4)
 
-        dock_grid.addWidget(QLabel("Speed (PWM):"), 1, 0)
+        dock_grid.addWidget(QLabel("Speed:"), 1, 0)
         dock_grid.addWidget(self.spin_dock_motor, 1, 1)
-        dock_grid.addWidget(QLabel("Front Motor:"), 1, 2)
+        dock_grid.addWidget(QLabel("Front:"), 1, 2)
         dock_grid.addWidget(self.spin_dock_front, 1, 3)
 
-        dock_grid.addWidget(QLabel("Swing Angle:"), 2, 0)
+        dock_grid.addWidget(QLabel("Swing L:"), 2, 0)
         dock_grid.addWidget(self.spin_dock_left, 2, 1)
-        dock_grid.addWidget(QLabel("Swing Angle:"), 2, 2)
+        dock_grid.addWidget(QLabel("Swing R:"), 2, 2)
         dock_grid.addWidget(self.spin_dock_right, 2, 3)
 
-        dock_grid.addWidget(QLabel("Durasi Charge:"), 3, 0)
+        dock_grid.addWidget(QLabel("Charge Time:"), 3, 0)
         dock_grid.addWidget(self.spin_dock_charge, 3, 1)
 
         docking_mission_box.setLayout(dock_grid)
