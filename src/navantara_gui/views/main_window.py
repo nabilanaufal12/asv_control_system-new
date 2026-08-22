@@ -114,22 +114,9 @@ class MainWindow(QMainWindow):
         self._apply_theme("light" if self.current_theme == "dark" else "dark")
 
     def setup_ui(self):
-        # --- Sidebar Kiri (Tetap) ---
+        # --- Sidebar Kiri (Settings & Mission Config) ---
         layout_sidebar_kiri = QVBoxLayout()
-        layout_sidebar_kiri.setAlignment(Qt.AlignTop)  # Pastikan semua merapat ke atas
-
-        # Tambahkan tombol kontrol stream ke dalam GroupBox
-        from PySide6.QtWidgets import QHBoxLayout, QGroupBox
-
-        video_ctrl_layout = QHBoxLayout()
-        video_ctrl_layout.addWidget(self.video_view.invert_button)
-        video_ctrl_layout.addWidget(self.video_view.start_stop_button)
-
-        video_group = QGroupBox("Live Video Stream")
-        video_group.setLayout(video_ctrl_layout)
-
-        layout_sidebar_kiri.addWidget(video_group)
-        layout_sidebar_kiri.addWidget(self.control_panel)
+        layout_sidebar_kiri.setAlignment(Qt.AlignTop)
         layout_sidebar_kiri.addWidget(self.settings_panel)
         layout_sidebar_kiri.addStretch()
 
@@ -142,10 +129,6 @@ class MainWindow(QMainWindow):
         scroll_area_kiri.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kiri.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll_area_kiri.setMinimumWidth(380)
-
-        # --- [MODIFIKASI] Tengah: Hapus QTabWidget, gunakan VideoView langsung ---
-        # Sebelumnya: self.tab_tengah = QTabWidget() ...
-        # Sekarang: VideoView menjadi widget utama di tengah
 
         # --- Sidebar Kanan ---
 
@@ -169,15 +152,30 @@ class MainWindow(QMainWindow):
         widget_sidebar_kanan = QWidget()
         widget_sidebar_kanan.setLayout(layout_sidebar_kanan)
 
-        # --- Layout Tengah (Video & Fitur Masa Depan) ---
+        # --- Layout Tengah (Video View + Camera Controls) ---
         layout_tengah = QVBoxLayout()
+        layout_tengah.setContentsMargins(0, 0, 0, 0)
         layout_tengah.setAlignment(Qt.AlignTop)
 
         # Tetapkan tinggi minimum agar video tidak menyusut saat ditarik ke atas
         self.video_view.setMinimumHeight(450)
+        layout_tengah.addWidget(self.video_view, 1)
 
-        layout_tengah.addWidget(self.video_view)
-        layout_tengah.addStretch()  # Mendorong video ke atas, menyisakan ruang kosong di bawah
+        # Bar Kontrol Kamera di Bawah Video
+        from PySide6.QtWidgets import QHBoxLayout, QGroupBox
+
+        video_ctrl_layout = QHBoxLayout()
+        video_ctrl_layout.addWidget(self.video_view.invert_button)
+        video_ctrl_layout.addWidget(self.video_view.start_stop_button)
+
+        video_group = QGroupBox("Live Video Stream")
+        video_group.setLayout(video_ctrl_layout)
+
+        camera_controls_layout = QHBoxLayout()
+        camera_controls_layout.addWidget(video_group, 1)
+        camera_controls_layout.addWidget(self.control_panel, 2)
+
+        layout_tengah.addLayout(camera_controls_layout, 0)
 
         widget_tengah = QWidget()
         widget_tengah.setLayout(layout_tengah)

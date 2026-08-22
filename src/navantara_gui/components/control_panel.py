@@ -1,8 +1,7 @@
 # src/navantara_gui/components/control_panel.py
 from PySide6.QtWidgets import (
     QWidget,
-    QVBoxLayout,
-    QGridLayout,
+    QHBoxLayout,
     QPushButton,
     QGroupBox,
     QLabel,
@@ -12,7 +11,6 @@ import os
 
 
 class ControlPanel(QWidget):
-    # [MODIFIKASI] Sinyal yang lebih spesifik
     surface_overlay_clicked = Signal()
     surface_raw_clicked = Signal()
     underwater_overlay_clicked = Signal()
@@ -24,50 +22,48 @@ class ControlPanel(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # --- [MODIFIKASI UTAMA] Camera Capture Controls ---
         capture_group = QGroupBox("Photo Capture Configuration")
-        # Menggunakan Grid Layout untuk 4 tombol
-        capture_layout = QGridLayout()
+        capture_layout = QHBoxLayout()
 
-        # Label Header
-        capture_layout.addWidget(QLabel("<b>Surface (CAM1):</b>"), 0, 0, 1, 2)
-
-        # Tombol Surface
+        # Surface CAM1 Controls
+        surf_layout = QHBoxLayout()
+        surf_layout.addWidget(QLabel("<b>Surface (CAM1):</b>"))
         self.btn_surf_overlay = QPushButton("Overlay")
         self.btn_surf_overlay.setStyleSheet(
-            "background-color: #00BCD4; color: white; font-weight: bold; padding: 5px;"
+            "background-color: #00BCD4; color: white; font-weight: bold; padding: 5px 10px;"
         )
         self.btn_surf_raw = QPushButton("RAW")
         self.btn_surf_raw.setStyleSheet(
-            "background-color: #9E9E9E; color: white; font-weight: bold; padding: 5px;"
+            "background-color: #9E9E9E; color: white; font-weight: bold; padding: 5px 10px;"
         )
+        surf_layout.addWidget(self.btn_surf_overlay)
+        surf_layout.addWidget(self.btn_surf_raw)
+        capture_layout.addLayout(surf_layout)
 
-        capture_layout.addWidget(self.btn_surf_overlay, 1, 0)
-        capture_layout.addWidget(self.btn_surf_raw, 1, 1)
+        capture_layout.addSpacing(15)
 
-        # Spacer/Label Header Underwater
-        capture_layout.addWidget(QLabel("<b>Underwater (CAM2):</b>"), 2, 0, 1, 2)
-
-        # Tombol Underwater
+        # Underwater CAM2 Controls
+        under_layout = QHBoxLayout()
+        under_layout.addWidget(QLabel("<b>Underwater (CAM2):</b>"))
         self.btn_under_overlay = QPushButton("Overlay")
         self.btn_under_overlay.setStyleSheet(
-            "background-color: #00BCD4; color: white; font-weight: bold; padding: 5px;"
+            "background-color: #00BCD4; color: white; font-weight: bold; padding: 5px 10px;"
         )
         self.btn_under_raw = QPushButton("RAW")
         self.btn_under_raw.setStyleSheet(
-            "background-color: #9E9E9E; color: white; font-weight: bold; padding: 5px;"
+            "background-color: #9E9E9E; color: white; font-weight: bold; padding: 5px 10px;"
         )
-
-        capture_layout.addWidget(self.btn_under_overlay, 3, 0)
-        capture_layout.addWidget(self.btn_under_raw, 3, 1)
+        under_layout.addWidget(self.btn_under_overlay)
+        under_layout.addWidget(self.btn_under_raw)
+        capture_layout.addLayout(under_layout)
 
         capture_group.setLayout(capture_layout)
-        layout.addWidget(capture_group)
-        # --------------------------------------------------
+        main_layout.addWidget(capture_group)
 
-        # [MODIFIKASI] Koneksi tombol baru
+        # Koneksi tombol
         self.btn_surf_overlay.clicked.connect(self.surface_overlay_clicked.emit)
         self.btn_surf_raw.clicked.connect(self.surface_raw_clicked.emit)
         self.btn_under_overlay.clicked.connect(self.underwater_overlay_clicked.emit)
