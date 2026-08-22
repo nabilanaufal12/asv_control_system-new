@@ -160,6 +160,7 @@ class MainWindow(QMainWindow):
         layout_tengah = QVBoxLayout()
         layout_tengah.setContentsMargins(6, 0, 6, 0)
         layout_tengah.setSpacing(6)
+        layout_tengah.setAlignment(Qt.AlignTop)
 
         # Baris Atas: Tombol Live Stream di Pojok Kanan Atas (tanpa GroupBox)
         top_stream_bar = QHBoxLayout()
@@ -170,12 +171,13 @@ class MainWindow(QMainWindow):
 
         layout_tengah.addLayout(top_stream_bar, 0)
 
-        # Video View di Tengah
-        self.video_view.setMinimumHeight(350)
-        layout_tengah.addWidget(self.video_view, 1)
+        # Video View di Atas (Tinggi pas 360px untuk rasio 4:3 tanpa sisa background hitam)
+        self.video_view.setFixedHeight(360)
+        layout_tengah.addWidget(self.video_view, 0)
 
-        # Baris Bawah: Photo Capture Configuration
+        # Baris Bawah: Photo Capture Configuration (Menempel tepat di bawah video)
         layout_tengah.addWidget(self.control_panel, 0)
+        layout_tengah.addStretch(1)
 
         widget_tengah = QWidget()
         widget_tengah.setLayout(layout_tengah)
