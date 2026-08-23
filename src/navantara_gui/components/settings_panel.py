@@ -115,7 +115,7 @@ class SettingsPanel(QGroupBox):
         # =====================================================================
         # 2. Box Detection Settings (Misi Kotak Biru - Hijau)
         # =====================================================================
-        box_avoid_group = QGroupBox("Box Detection Settings")
+        box_avoid_group = QGroupBox("Box Tracking & Avoidance (Fotografi)")
         box_grid = setup_grid_layout()
 
         self.spin_box_speed = QSpinBox()
@@ -127,25 +127,25 @@ class SettingsPanel(QGroupBox):
         self.spin_box_front.setValue(1800)
 
         self.spin_box_left = QSpinBox()
-        self.spin_box_left.setRange(0, 90)
+        self.spin_box_left.setRange(0, 180)
         self.spin_box_left.setValue(70)
         self.spin_box_left.setPrefix("Left: ")
         self.spin_box_left.setSuffix("°")
 
         self.spin_box_right = QSpinBox()
-        self.spin_box_right.setRange(90, 180)
+        self.spin_box_right.setRange(0, 180)
         self.spin_box_right.setValue(110)
         self.spin_box_right.setPrefix("Right: ")
         self.spin_box_right.setSuffix("°")
 
         self.spin_box_dist = QSpinBox()
         self.spin_box_dist.setRange(0, 500)
-        self.spin_box_dist.setValue(165)
+        self.spin_box_dist.setValue(150)
         self.spin_box_dist.setSuffix(" cm")
 
-        box_grid.addWidget(QLabel("Speed:"), 0, 0)
+        box_grid.addWidget(QLabel("Avoid Spd:"), 0, 0)
         box_grid.addWidget(self.spin_box_speed, 0, 1)
-        box_grid.addWidget(QLabel("Front:"), 0, 2)
+        box_grid.addWidget(QLabel("Avoid Front:"), 0, 2)
         box_grid.addWidget(self.spin_box_front, 0, 3)
 
         box_grid.addWidget(QLabel("Avoid L:"), 1, 0)
@@ -153,7 +153,7 @@ class SettingsPanel(QGroupBox):
         box_grid.addWidget(QLabel("Avoid R:"), 1, 2)
         box_grid.addWidget(self.spin_box_right, 1, 3)
 
-        box_grid.addWidget(QLabel("Obstacle:"), 2, 0)
+        box_grid.addWidget(QLabel("Safety Dist:"), 2, 0)
         box_grid.addWidget(self.spin_box_dist, 2, 1)
 
         box_avoid_group.setLayout(box_grid)

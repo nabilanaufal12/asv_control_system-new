@@ -699,7 +699,7 @@ void loop() {
   int finalMotor = 1500;           
   int finalMotorDepanKiri = 1000;  // Pastikan default 1000 (mati)
   int finalMotorDepanKanan = 1000; // Pastikan default 1000 (mati)
-  int finalDir = 1500;             
+  int finalDir = 1000;             // Default Maju (1000us)             
   
   int wp_target_idx = 0;
   double wp_dist_m = 0.0;
@@ -815,7 +815,7 @@ void loop() {
     }
 
     mode = "AUTO";
-    finalDir = 1500; 
+    finalDir = 1000; // Default Arah Maju (1000us)
 
     // --- PORTRAIT ZONE DETECTION ---
     bool isInPortraitZone = (counter > uwStart && counter <= uwEnd) 
@@ -826,7 +826,7 @@ void loop() {
     if (dockingState == DK_SWING) {
       status = "DK_SWING";
       finalMotor = dockMotorUtama; // Gas dorong maju
-      finalDir = 1500;             // Arah maju
+      finalDir = 1000;             // Arah maju
       
       if (dockTurnDirection == 0) {
         // Arena A: Mengincar bola kiri. Buritan ke Kanan. Servo dipatahkan ke KIRI (dockServoLeft)
@@ -848,6 +848,7 @@ void loop() {
     else if (dockingState == DK_COMPLETE) {
       finalServo = 90;
       finalMotor = 1000;
+      finalDir = 1000;
       finalMotorDepanKiri = 1000;
       finalMotorDepanKanan = 1000;
       status = "DK_COMPLETE";
@@ -856,6 +857,7 @@ void loop() {
     else if (portraitState == PT_STOP) {
       status = "PT_STOP";
       finalMotor = 1000;
+      finalDir = 1000;
       finalServo = 90;
       // Izinkan motor depan jika Jetson mendeteksi kotak
       if (serialCommand == 'A') {
@@ -868,17 +870,19 @@ void loop() {
         Serial.println("Portrait: Mulai mundur...");
       }
     }
-    // === PORTRAIT REVERSE (Motor utama mundur, semua motor depan mati) ===
+    // === PORTRAIT REVERSE (Hanya di WP 12 & 14 setelah berhenti: Motor utama mundur, semua motor depan mati) ===
     else if (portraitState == PT_REVERSE) {
       status = "PT_REVERSE";
       finalMotor = portraitReverseSpeed;
-      finalDir = 1000;  // MUNDUR (menggunakan mekanisme DIR yang sudah ada)
+      finalDir = 2000;  // MUNDUR KHUSUS DI TITIK 12 & 14 (2000us)
       finalServo = 90;
+      finalMotorDepanKiri = 1000;
+      finalMotorDepanKanan = 1000;
       if (millis() - portraitTimer >= portraitReverseMs) {
         counter++;
         is_new_wp = true;
         portraitState = PT_NORMAL;
-        finalDir = 1500;  // Kembali maju
+        finalDir = 1000;  // Kembali maju normal (1000us)
         Serial.print("Portrait selesai. Lanjut ke WP #");
         Serial.println(counter);
       }
@@ -887,7 +891,7 @@ void loop() {
     else if (serialCommand == 'A') {
       finalServo = ai_servo_val;
       finalMotor = ai_motor_val;
-      finalDir = 1500;
+      finalDir = 1000; // Maju normal
       finalMotorDepanKiri = ai_motor_depan_kiri_val;
       finalMotorDepanKanan = ai_motor_depan_kanan_val;
       status = "AI_ACTIVE";

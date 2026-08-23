@@ -391,32 +391,36 @@ class AsvHandler:
                 )
                 mode = data.get("mod")
                 if mode:
+                    prev_mode = self.current_state.control_mode
+                    self.current_state.control_mode = mode
+
                     # Cetak informasi di terminal jika mode berubah
-                    if self.current_state.control_mode != mode:
+                    if prev_mode != mode:
                         print("\n======================================")
                         print(
-                            f">>> MODE RC BERUBAH: {self.current_state.control_mode} -> {mode} <<<"
+                            f">>> MODE RC BERUBAH: {prev_mode} -> {mode} <<<"
                         )
                         print("======================================\n")
 
-                    # Deteksi transisi dari MANUAL ke AUTO untuk membuat folder race_x baru
-                    if self.current_state.control_mode == "MANUAL" and mode == "AUTO":
-                        if getattr(self, "_is_first_auto_switch", True):
-                            logging.info(
-                                "[AsvHandler] Mode berubah MANUAL -> AUTO pertama kali. Menggunakan race session yang sudah dibuat saat backend nyala."
-                            )
-                            self._is_first_auto_switch = False
-                        else:
-                            logging.info(
-                                "[AsvHandler] Mode berubah MANUAL -> AUTO. Membuat Race Session baru."
-                            )
-                            self.logger.start_new_race()
-                            
-                        # Reset counter foto ketika memulai putaran AUTO baru
-                        self.current_state.photo_mission_qty_taken_1 = 0
-                        self.current_state.photo_mission_qty_taken_2 = 0
-
-                    self.current_state.control_mode = mode
+                        # Deteksi transisi dari MANUAL ke AUTO untuk membuat folder race_x baru
+                        if prev_mode == "MANUAL" and mode == "AUTO":
+                            if getattr(self, "_is_first_auto_switch", True):
+                                logging.info(
+                                    "[AsvHandler] Mode berubah MANUAL -> AUTO pertama kali. Menggunakan race session yang sudah dibuat saat backend nyala."
+                                )
+                                self._is_first_auto_switch = False
+                            else:
+                                logging.info(
+                                    "[AsvHandler] Mode berubah MANUAL -> AUTO. Membuat Race Session baru."
+                                )
+                                try:
+                                    self.logger.start_new_race()
+                                except Exception as e:
+                                    logging.error(f"[AsvHandler] Error saat start_new_race: {e}")
+                                
+                            # Reset counter foto ketika memulai putaran AUTO baru
+                            self.current_state.photo_mission_qty_taken_1 = 0
+                            self.current_state.photo_mission_qty_taken_2 = 0
 
                 if mode == "MANUAL":
                     self.current_state.manual_servo_cmd = data.get("srv")
@@ -680,35 +684,80 @@ class AsvHandler:
                             elif obj_class in ["kotak-biru", "kotak-hijau"]:
                                 self._docking_swing_triggered = False
                                 self._docking_near_target = False
-                                # --- LOGIKA AVOIDANCE (KOTAK BIRU & HIJAU) ---
+
                                 with self.state_lock:
                                     box_servo_kiri_aktif = self.current_state.box_servo_left_cmd
                                     box_servo_kanan_aktif = self.current_state.box_servo_right_cmd
                                     box_front_aktif = self.current_state.box_front_motor_cmd
                                     box_speed_aktif = self.current_state.box_speed_cmd
-                                
+                                    box_safety_dist = self.current_state.box_avoidance_distance
+                                    portrait_speed_aktif = self.current_state.portrait_speed
+                                    
+                                    current_wp_idx = self.current_state.current_waypoint_index
+                                    uw_wp_end = self.current_state.photo_mission_under_wp2
+                                    surf_wp_end = self.current_state.photo_mission_surf_wp2
+                                    qty_req = self.current_state.photo_mission_qty_requested
+                                    photos_uw = self.current_state.photo_mission_qty_taken_1
+                                    photos_surf = self.current_state.photo_mission_qty_taken_2
+
+                                dist_cm = self.current_state.vision_target.get("distance_cm")
+                                is_too_close = (dist_cm is not None and dist_cm <= box_safety_dist)
+
+                                # Cek apakah sudah selesai mengambil foto untuk kotak ini:
                                 if obj_class == "kotak-biru":
-                                    if current_arena == "Arena_B":
-                                        turn_direction = "LEFT"
-                                    else:
-                                        turn_direction = "RIGHT"
-                                elif obj_class == "kotak-hijau":
-                                    if current_arena == "Arena_B":
-                                        turn_direction = "RIGHT"
-                                    else:
-                                        turn_direction = "LEFT"
-
-                                desc = f"{obj_class} -> Avoidance {turn_direction}"
-                                motor_bawah = box_speed_aktif
-
-                                if turn_direction == "LEFT":
-                                    servo_cmd = box_servo_kiri_aktif
-                                    motor_depan_kanan = box_front_aktif
-                                elif turn_direction == "RIGHT":
-                                    servo_cmd = box_servo_kanan_aktif
-                                    motor_depan_kiri = box_front_aktif
+                                    is_post_capture = (current_wp_idx >= uw_wp_end and photos_uw >= qty_req) or (current_wp_idx > uw_wp_end)
                                 else:
-                                    servo_cmd = servo_default
+                                    is_post_capture = (current_wp_idx >= surf_wp_end and photos_surf >= qty_req) or (current_wp_idx > surf_wp_end)
+
+                                # JIKA SUDAH SELESAI FOTO & MUNDUR, ATAU JARAK TERLALU DEKAT (SAFETY GPS NOISE) -> AVOIDANCE
+                                if is_post_capture or is_too_close:
+                                    motor_bawah = box_speed_aktif
+                                    if obj_class == "kotak-biru":
+                                        turn_direction = "LEFT" if current_arena == "Arena_B" else "RIGHT"
+                                    elif obj_class == "kotak-hijau":
+                                        turn_direction = "RIGHT" if current_arena == "Arena_B" else "LEFT"
+
+                                    if turn_direction == "LEFT":
+                                        servo_cmd = box_servo_kiri_aktif
+                                        motor_depan_kanan = box_front_aktif
+                                        motor_depan_kiri = 1000
+                                    elif turn_direction == "RIGHT":
+                                        servo_cmd = box_servo_kanan_aktif
+                                        motor_depan_kiri = box_front_aktif
+                                        motor_depan_kanan = 1000
+                                    else:
+                                        servo_cmd = servo_default
+
+                                    reason_str = "Pasca Foto" if is_post_capture else f"Safety ({dist_cm:.0f}cm <= {box_safety_dist:.0f}cm)"
+                                    desc = f"{obj_class} -> AVOIDANCE {turn_direction} [{reason_str}]"
+
+                                # JIKA SEDANG MENDEKATI TARGET FOTO DARI JARAK AMAN -> VISION CENTER TRACKING
+                                else:
+                                    center_x = vision_target_frame_width / 2.0
+                                    error_x = vision_target_center_x - center_x
+                                    tolerance = 30.0  # Deadband tengah frame
+                                    max_tracking_deflection = 25.0  # Derajat koreksi kemudi halus
+
+                                    motor_bawah = portrait_speed_aktif
+                                    motor_depan_kiri = 1000
+                                    motor_depan_kanan = 1000
+
+                                    if abs(error_x) <= tolerance:
+                                        turn_direction = "TRACK_CENTER"
+                                        servo_cmd = servo_default
+                                        desc = f"{obj_class} -> Tracking Tengah (Fokus Foto)"
+                                    elif error_x < -tolerance:
+                                        turn_direction = "TRACK_LEFT"
+                                        ratio = min(1.0, abs(error_x) / center_x) if center_x > 0 else 0
+                                        servo_cmd = int(90 - (ratio * max_tracking_deflection))
+                                        desc = f"{obj_class} -> Tracking Kiri (Err: {error_x:.1f})"
+                                    else:
+                                        turn_direction = "TRACK_RIGHT"
+                                        ratio = min(1.0, abs(error_x) / center_x) if center_x > 0 else 0
+                                        servo_cmd = int(90 + (ratio * max_tracking_deflection))
+                                        desc = f"{obj_class} -> Tracking Kanan (Err: {error_x:.1f})"
+
+                                    servo_cmd = max(45, min(135, servo_cmd))
                                     
                             elif obj_class == "kotak-merah":
                                 # --- LOGIKA TRACKING (KOTAK MERAH) ---
@@ -853,6 +902,7 @@ class AsvHandler:
             "SET_DOCK_CONFIG": self._handle_set_dock_config,
             "SET_DOCK_ENABLED": self._handle_set_dock_enabled,
             "ARM_REPLACE_WP": self._handle_arm_replace_wp,
+            "REPLACE_WAYPOINT": self._handle_replace_waypoint,
             "REQUEST_WP_SYNC": self._handle_request_wp_sync,
             "TOGGLE_LOGGING": self._handle_toggle_csv_logging,
             "MANUAL_CAPTURE": self._handle_manual_capture,
