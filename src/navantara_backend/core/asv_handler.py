@@ -112,7 +112,9 @@ class AsvState:
     vision_servo_right_cmd: int = 110
     
     # Box Avoidance Parameters
-    box_avoidance_distance: float = 165.0
+    box_track_distance: float = 165.0
+    box_avoid_distance: float = 100.0
+    box_avoidance_distance: float = 100.0
     box_servo_left_cmd: int = 70
     box_servo_right_cmd: int = 110
     box_speed_cmd: int = 1500
@@ -690,7 +692,8 @@ class AsvHandler:
                                     box_servo_kanan_aktif = self.current_state.box_servo_right_cmd
                                     box_front_aktif = self.current_state.box_front_motor_cmd
                                     box_speed_aktif = self.current_state.box_speed_cmd
-                                    box_safety_dist = self.current_state.box_avoidance_distance
+                                    box_track_dist = getattr(self.current_state, "box_track_distance", 165.0)
+                                    box_avoid_dist = getattr(self.current_state, "box_avoid_distance", 100.0)
                                     portrait_speed_aktif = self.current_state.portrait_speed
                                     
                                     current_wp_idx = self.current_state.current_waypoint_index
@@ -701,7 +704,6 @@ class AsvHandler:
                                     photos_surf = self.current_state.photo_mission_qty_taken_2
 
                                 dist_cm = self.current_state.vision_target.get("distance_cm")
-                                is_too_close = (dist_cm is not None and dist_cm <= box_safety_dist)
 
                                 # Cek apakah sudah selesai mengambil foto untuk kotak ini:
                                 if obj_class == "kotak-biru":
@@ -709,8 +711,11 @@ class AsvHandler:
                                 else:
                                     is_post_capture = (current_wp_idx >= surf_wp_end and photos_surf >= qty_req) or (current_wp_idx > surf_wp_end)
 
-                                # JIKA SUDAH SELESAI FOTO & MUNDUR, ATAU JARAK TERLALU DEKAT (SAFETY GPS NOISE) -> AVOIDANCE
-                                if is_post_capture or is_too_close:
+                                # Cek apakah jarak masuk kategori Avoidance (<= 100cm)
+                                is_avoidance_dist = (dist_cm is not None and dist_cm <= box_avoid_dist)
+
+                                # 1. JIKA SUDAH SELESAI FOTO (PASCA FOTO) ATAU JARAK <= AVOID DISTANCE (SAFETY <= 100CM) -> AVOIDANCE
+                                if is_post_capture or is_avoidance_dist:
                                     motor_bawah = box_speed_aktif
                                     if obj_class == "kotak-biru":
                                         turn_direction = "LEFT" if current_arena == "Arena_B" else "RIGHT"
@@ -728,10 +733,10 @@ class AsvHandler:
                                     else:
                                         servo_cmd = servo_default
 
-                                    reason_str = "Pasca Foto" if is_post_capture else f"Safety ({dist_cm:.0f}cm <= {box_safety_dist:.0f}cm)"
+                                    reason_str = "Pasca Foto" if is_post_capture else f"Safety ({dist_cm:.0f}cm <= {box_avoid_dist:.0f}cm)"
                                     desc = f"{obj_class} -> AVOIDANCE {turn_direction} [{reason_str}]"
 
-                                # JIKA SEDANG MENDEKATI TARGET FOTO DARI JARAK AMAN -> VISION CENTER TRACKING
+                                # 2. JIKA SEDANG MENDEKATI TARGET FOTO DALAM RENTANG TRACK DISTANCE (100CM < DIST <= 165CM) -> VISION CENTER TRACKING
                                 else:
                                     center_x = vision_target_frame_width / 2.0
                                     error_x = vision_target_center_x - center_x
@@ -742,20 +747,21 @@ class AsvHandler:
                                     motor_depan_kiri = 1000
                                     motor_depan_kanan = 1000
 
+                                    dist_str = f"Dist: {dist_cm:.0f}cm" if dist_cm is not None else "Dist: N/A"
                                     if abs(error_x) <= tolerance:
                                         turn_direction = "TRACK_CENTER"
                                         servo_cmd = servo_default
-                                        desc = f"{obj_class} -> Tracking Tengah (Fokus Foto)"
+                                        desc = f"{obj_class} -> Tracking Tengah [{dist_str}]"
                                     elif error_x < -tolerance:
                                         turn_direction = "TRACK_LEFT"
                                         ratio = min(1.0, abs(error_x) / center_x) if center_x > 0 else 0
                                         servo_cmd = int(90 - (ratio * max_tracking_deflection))
-                                        desc = f"{obj_class} -> Tracking Kiri (Err: {error_x:.1f})"
+                                        desc = f"{obj_class} -> Tracking Kiri (Err: {error_x:.1f}) [{dist_str}]"
                                     else:
                                         turn_direction = "TRACK_RIGHT"
                                         ratio = min(1.0, abs(error_x) / center_x) if center_x > 0 else 0
                                         servo_cmd = int(90 + (ratio * max_tracking_deflection))
-                                        desc = f"{obj_class} -> Tracking Kanan (Err: {error_x:.1f})"
+                                        desc = f"{obj_class} -> Tracking Kanan (Err: {error_x:.1f}) [{dist_str}]"
 
                                     servo_cmd = max(45, min(135, servo_cmd))
                                     
@@ -984,27 +990,32 @@ class AsvHandler:
 
     def _handle_update_box_avoidance_config(self, payload):
         try:
-            dist = float(payload.get("distance", 165.0))
+            track_dist = float(payload.get("track_dist", payload.get("distance", 165.0)))
+            avoid_dist = float(payload.get("avoid_dist", payload.get("safety_dist", 100.0)))
             left_val = int(payload.get("left", 70))
             right_val = int(payload.get("right", 110))
             speed_val = int(payload.get("speed", 1500))
             front_val = int(payload.get("front_motor", payload.get("pwm", 1800)))
             
             # Validasi range servo dan pwm
-            left_val = max(0, min(90, left_val))
-            right_val = max(90, min(180, right_val))
+            left_val = max(0, min(180, left_val))
+            right_val = max(0, min(180, right_val))
             speed_val = max(1000, min(2000, speed_val))
             front_val = max(1000, min(2000, front_val))
 
             with self.state_lock:
-                self.current_state.box_avoidance_distance = dist
+                self.current_state.box_track_distance = track_dist
+                self.current_state.box_avoid_distance = avoid_dist
+                self.current_state.box_avoidance_distance = avoid_dist
                 self.current_state.box_servo_left_cmd = left_val
                 self.current_state.box_servo_right_cmd = right_val
                 self.current_state.box_speed_cmd = speed_val
                 self.current_state.box_front_motor_cmd = front_val
                 self.current_state.box_motor_pwm_cmd = front_val
 
-            logging.info(f"[AsvHandler] Box Avoidance Config Updated -> Dist: {dist}cm, Left: {left_val}, Right: {right_val}, Speed: {speed_val}, Front: {front_val}")
+            logging.info(
+                f"[AsvHandler] Box Config Updated -> TrackDist: {track_dist}cm, AvoidDist: {avoid_dist}cm, Left: {left_val}, Right: {right_val}, Speed: {speed_val}, Front: {front_val}"
+            )
         except ValueError:
             logging.warning("[AsvHandler] Payload Box Avoidance Config tidak valid")
 

@@ -118,6 +118,16 @@ class SettingsPanel(QGroupBox):
         box_avoid_group = QGroupBox("Box Tracking & Avoidance (Fotografi)")
         box_grid = setup_grid_layout()
 
+        self.spin_box_track_dist = QSpinBox()
+        self.spin_box_track_dist.setRange(0, 500)
+        self.spin_box_track_dist.setValue(165)
+        self.spin_box_track_dist.setSuffix(" cm")
+
+        self.spin_box_avoid_dist = QSpinBox()
+        self.spin_box_avoid_dist.setRange(0, 500)
+        self.spin_box_avoid_dist.setValue(100)
+        self.spin_box_avoid_dist.setSuffix(" cm")
+
         self.spin_box_speed = QSpinBox()
         self.spin_box_speed.setRange(1000, 2000)
         self.spin_box_speed.setValue(1500)
@@ -138,23 +148,20 @@ class SettingsPanel(QGroupBox):
         self.spin_box_right.setPrefix("Right: ")
         self.spin_box_right.setSuffix("°")
 
-        self.spin_box_dist = QSpinBox()
-        self.spin_box_dist.setRange(0, 500)
-        self.spin_box_dist.setValue(150)
-        self.spin_box_dist.setSuffix(" cm")
+        box_grid.addWidget(QLabel("Track Dist:"), 0, 0)
+        box_grid.addWidget(self.spin_box_track_dist, 0, 1)
+        box_grid.addWidget(QLabel("Avoid Dist:"), 0, 2)
+        box_grid.addWidget(self.spin_box_avoid_dist, 0, 3)
 
-        box_grid.addWidget(QLabel("Avoid Spd:"), 0, 0)
-        box_grid.addWidget(self.spin_box_speed, 0, 1)
-        box_grid.addWidget(QLabel("Avoid Front:"), 0, 2)
-        box_grid.addWidget(self.spin_box_front, 0, 3)
+        box_grid.addWidget(QLabel("Avoid Spd:"), 1, 0)
+        box_grid.addWidget(self.spin_box_speed, 1, 1)
+        box_grid.addWidget(QLabel("Avoid Front:"), 1, 2)
+        box_grid.addWidget(self.spin_box_front, 1, 3)
 
-        box_grid.addWidget(QLabel("Avoid L:"), 1, 0)
-        box_grid.addWidget(self.spin_box_left, 1, 1)
-        box_grid.addWidget(QLabel("Avoid R:"), 1, 2)
-        box_grid.addWidget(self.spin_box_right, 1, 3)
-
-        box_grid.addWidget(QLabel("Safety Dist:"), 2, 0)
-        box_grid.addWidget(self.spin_box_dist, 2, 1)
+        box_grid.addWidget(QLabel("Avoid L:"), 2, 0)
+        box_grid.addWidget(self.spin_box_left, 2, 1)
+        box_grid.addWidget(QLabel("Avoid R:"), 2, 2)
+        box_grid.addWidget(self.spin_box_right, 2, 3)
 
         box_avoid_group.setLayout(box_grid)
         main_layout.addWidget(box_avoid_group)
@@ -385,7 +392,8 @@ class SettingsPanel(QGroupBox):
         self.combo_model.currentTextChanged.connect(self._on_model_changed)
         
         # Event Handler Box Avoidance Settings
-        self.spin_box_dist.valueChanged.connect(self._on_box_avoidance_changed)
+        self.spin_box_track_dist.valueChanged.connect(self._on_box_avoidance_changed)
+        self.spin_box_avoid_dist.valueChanged.connect(self._on_box_avoidance_changed)
         self.spin_box_left.valueChanged.connect(self._on_box_avoidance_changed)
         self.spin_box_right.valueChanged.connect(self._on_box_avoidance_changed)
         self.spin_box_speed.valueChanged.connect(self._on_box_avoidance_changed)
@@ -474,8 +482,16 @@ class SettingsPanel(QGroupBox):
         if "obs_dist" in defs:
             self.spin_obs_dist.setValue(defs["obs_dist"])
             
-        if "box_obs_dist" in defs:
-            self.spin_box_dist.setValue(defs["box_obs_dist"])
+        if "box_track_dist" in defs:
+            self.spin_box_track_dist.setValue(defs["box_track_dist"])
+        elif "box_obs_dist" in defs:
+            self.spin_box_track_dist.setValue(defs["box_obs_dist"])
+
+        if "box_avoid_dist" in defs:
+            self.spin_box_avoid_dist.setValue(defs["box_avoid_dist"])
+        elif "obs_dist" in defs:
+            self.spin_box_avoid_dist.setValue(defs.get("box_avoid_dist", 100))
+
         if "box_servo_left" in defs:
             self.spin_box_left.setValue(defs["box_servo_left"])
         if "box_servo_right" in defs:
@@ -704,9 +720,12 @@ class SettingsPanel(QGroupBox):
 
     def _on_box_avoidance_changed(self):
         payload = {
+            "track_dist": self.spin_box_track_dist.value(),
+            "avoid_dist": self.spin_box_avoid_dist.value(),
+            "distance": self.spin_box_track_dist.value(),
+            "safety_dist": self.spin_box_avoid_dist.value(),
             "speed": self.spin_box_speed.value(),
             "front_motor": self.spin_box_front.value(),
-            "distance": self.spin_box_dist.value(),
             "left": self.spin_box_left.value(),
             "right": self.spin_box_right.value(),
             "pwm": self.spin_box_front.value(),
