@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
         scroll_area_kiri.setWidgetResizable(True)
         scroll_area_kiri.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kiri.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area_kiri.setMinimumWidth(360)
+        scroll_area_kiri.setMinimumWidth(440)
 
         # --- Sidebar Kanan ---
 
@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
         scroll_area_kanan.setWidgetResizable(True)
         scroll_area_kanan.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kanan.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area_kanan.setMinimumWidth(360)
+        scroll_area_kanan.setMinimumWidth(440)
 
         # 2. Kontainer Utama Sidebar Kanan
         layout_sidebar_kanan = QVBoxLayout()
@@ -171,8 +171,8 @@ class MainWindow(QMainWindow):
 
         layout_tengah.addLayout(top_stream_bar, 0)
 
-        # Video View di Atas (Tinggi pas 360px untuk rasio 4:3 tanpa sisa background hitam)
-        self.video_view.setFixedHeight(360)
+        # Video View di Atas (Tinggi pas 300px agar tidak mendominasi/menggencet sidebar)
+        self.video_view.setFixedHeight(300)
         layout_tengah.addWidget(self.video_view, 0)
 
         # Baris Bawah: Photo Capture Configuration (Menempel tepat di bawah video)
@@ -193,7 +193,7 @@ class MainWindow(QMainWindow):
         main_splitter.setStretchFactor(2, 0)
 
         gui_settings = self.config.get("gui_settings", {})
-        splitter_sizes = gui_settings.get("main_splitter_sizes", [370, 1060, 370])
+        splitter_sizes = gui_settings.get("main_splitter_sizes", [450, 820, 450])
         main_splitter.setSizes(splitter_sizes)
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(2, False)
