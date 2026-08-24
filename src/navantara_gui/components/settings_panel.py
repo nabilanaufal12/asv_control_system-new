@@ -1,7 +1,7 @@
 # src/navantara_gui/components/settings_panel.py
 import json
 import os
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 class SettingsPanel(QWidget):
     """
     Panel konfigurasi misi ASV NAVANTARA (Misi 1: Bola, Misi 2: Foto, Misi 3: Docking).
-    Dilengkapi sub-keterangan yang jelas, proporsional, dan bebas tabrakan judul.
+    Dilengkapi sub-keterangan yang jelas, proporsional, dan penyimpanan permanen ke config.json.
     """
 
     vision_speed_updated = Signal(int)
@@ -434,6 +434,11 @@ class SettingsPanel(QWidget):
         gui_cfg = self.config.get("gui_settings", {})
         defs = gui_cfg.get("panel_defaults", {})
 
+        if "ai_model" in defs:
+            idx = self.combo_model.findText(defs["ai_model"])
+            if idx >= 0:
+                self.combo_model.setCurrentIndex(idx)
+
         if "ai_speed" in defs:
             self.spin_ai_speed.setValue(defs["ai_speed"])
         if "front_motor" in defs:
@@ -498,6 +503,8 @@ class SettingsPanel(QWidget):
             self.spin_dock_right.setValue(defs["dock_right"])
         if "dock_charge" in defs:
             self.spin_dock_charge.setValue(defs["dock_charge"])
+        if "dock_enabled" in defs:
+            self.chk_dock_enable.setChecked(defs["dock_enabled"])
 
     def _save_defaults_to_config(self):
         if "vision" not in self.config:
@@ -519,6 +526,7 @@ class SettingsPanel(QWidget):
             self.config["gui_settings"] = {}
 
         self.config["gui_settings"]["panel_defaults"] = {
+            "ai_model": self.combo_model.currentText(),
             "ai_speed": self.spin_ai_speed.value(),
             "front_motor": self.spin_front.value(),
             "servo_left": self.spin_left.value(),
@@ -547,6 +555,7 @@ class SettingsPanel(QWidget):
             "dock_left": self.spin_dock_left.value(),
             "dock_right": self.spin_dock_right.value(),
             "dock_charge": self.spin_dock_charge.value(),
+            "dock_enabled": self.chk_dock_enable.isChecked(),
         }
 
         if "docking_defaults" not in self.config:
@@ -566,8 +575,26 @@ class SettingsPanel(QWidget):
             with open(config_path, "w") as f:
                 json.dump(self.config, f, indent=2)
             print(f"[SettingsPanel] Default konfigurasi berhasil disimpan ke {config_path}")
+            
+            # Efek visual konfirmasi tombol berhasil disimpan
+            self.save_default_button.setText("✅ Saved Successfully!")
+            self.save_default_button.setStyleSheet(
+                "background-color: #1b5e20; color: #a5d6a7; font-weight: bold; margin-top: 2px; padding: 5px; border-radius: 4px;"
+            )
+            QTimer.singleShot(1500, self._reset_save_button)
         except Exception as e:
             print(f"[SettingsPanel] Gagal menyimpan konfigurasi default: {e}")
+            self.save_default_button.setText("❌ Failed to Save")
+            self.save_default_button.setStyleSheet(
+                "background-color: #b71c1c; color: white; font-weight: bold; margin-top: 2px; padding: 5px; border-radius: 4px;"
+            )
+            QTimer.singleShot(2000, self._reset_save_button)
+
+    def _reset_save_button(self):
+        self.save_default_button.setText("💾 Save as Default Config")
+        self.save_default_button.setStyleSheet(
+            "background-color: #2e7d32; color: white; font-weight: bold; margin-top: 2px; padding: 5px; border-radius: 4px;"
+        )
 
     def broadcast_all_settings(self):
         """Kirim semua setting ke backend secara serentak (berguna saat baru connect)."""

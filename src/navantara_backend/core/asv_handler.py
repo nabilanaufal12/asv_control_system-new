@@ -703,19 +703,30 @@ class AsvHandler:
                                     photos_uw = self.current_state.photo_mission_qty_taken_1
                                     photos_surf = self.current_state.photo_mission_qty_taken_2
 
-                                dist_cm = self.current_state.vision_target.get("distance_cm")
+                                # --- Evaluasi Status Misi & Kondisi Multi-Kriteria ---
+                                # 1. Status Pasca Foto per objek
+                                is_post_capture_uw = (current_wp_idx >= uw_wp_end and photos_uw >= qty_req) or (current_wp_idx > uw_wp_end)
+                                is_post_capture_surf = (current_wp_idx >= surf_wp_end and photos_surf >= qty_req) or (current_wp_idx > surf_wp_end)
+                                is_post_capture = is_post_capture_uw if obj_class == "kotak-biru" else is_post_capture_surf
 
-                                # Cek apakah sudah selesai mengambil foto untuk kotak ini:
-                                if obj_class == "kotak-biru":
-                                    is_post_capture = (current_wp_idx >= uw_wp_end and photos_uw >= qty_req) or (current_wp_idx > uw_wp_end)
-                                else:
-                                    is_post_capture = (current_wp_idx >= surf_wp_end and photos_surf >= qty_req) or (current_wp_idx > surf_wp_end)
-
-                                # Cek apakah jarak masuk kategori Avoidance (<= 100cm)
+                                # 2. Status Jarak Bahaya (<= 100 cm)
                                 is_avoidance_dist = (dist_cm is not None and dist_cm <= box_avoid_dist)
 
-                                # 1. JIKA SUDAH SELESAI FOTO (PASCA FOTO) ATAU JARAK <= AVOID DISTANCE (SAFETY <= 100CM) -> AVOIDANCE
-                                if is_post_capture or is_avoidance_dist:
+                                # 3. Status Jalur Transisi Antara Dua Kotak (WP 12 s.d. WP 13)
+                                is_transition_zone = (current_wp_idx >= uw_wp_end and current_wp_idx < surf_wp_end and obj_class == "kotak-biru")
+
+                                # 4. Status Kapal Sedang Mundur / Pasca Reverse di Titik Foto
+                                portrait_sts = getattr(self.current_state, "serial_status", "")
+                                is_maneuver_reverse = ("REVERSE" in portrait_sts or "PT_REVERSE" in portrait_sts)
+
+                                # =========================================================================
+                                # KONDISI AVOIDANCE (Logika OR Lengkap):
+                                # 1) Jarak di bawah 100 cm (Collision Safety Hazard), ATAU
+                                # 2) Sudah selesai foto di titik WP 12 / 14, ATAU
+                                # 3) Sedang dalam fase mundur (PT_REVERSE), ATAU
+                                # 4) Sedang di jalur transisi antara kotak biru dan kotak hijau
+                                # =========================================================================
+                                if is_avoidance_dist or is_post_capture or is_maneuver_reverse or is_transition_zone:
                                     motor_bawah = box_speed_aktif
                                     if obj_class == "kotak-biru":
                                         turn_direction = "LEFT" if current_arena == "Arena_B" else "RIGHT"
@@ -733,7 +744,17 @@ class AsvHandler:
                                     else:
                                         servo_cmd = servo_default
 
-                                    reason_str = "Pasca Foto" if is_post_capture else f"Safety ({dist_cm:.0f}cm <= {box_avoid_dist:.0f}cm)"
+                                    if is_avoidance_dist:
+                                        reason_str = f"Safety ({dist_cm:.0f}cm <= {box_avoid_dist:.0f}cm)"
+                                    elif is_maneuver_reverse:
+                                        reason_str = "Mundur Pasca Foto"
+                                    elif is_transition_zone:
+                                        reason_str = "Transisi WP12-13"
+                                    elif current_wp_idx > surf_wp_end:
+                                        reason_str = "Exit Safety WP14-15"
+                                    else:
+                                        reason_str = "Pasca Foto Selesai"
+
                                     desc = f"{obj_class} -> AVOIDANCE {turn_direction} [{reason_str}]"
 
                                 # 2. JIKA SEDANG MENDEKATI TARGET FOTO DALAM RENTANG TRACK DISTANCE (100CM < DIST <= 165CM) -> VISION CENTER TRACKING

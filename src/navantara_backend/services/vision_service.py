@@ -1231,17 +1231,20 @@ class VisionService:
             total_wps = len(current_state.waypoints) if current_state.waypoints else 0
             is_last_wp = (total_wps > 0) and (current_wp >= total_wps - 1)
 
+            # 1. MISI 1: RINTANGAN BOLA (WP 0 - 10)
             if range_bola[0] <= current_wp <= range_bola[1]:
-                # Mode Avoidance (Bola)
                 if cls in ["bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
-            elif (range_kotak_biru[0] < current_wp <= range_kotak_biru[1]) or is_last_wp:
-                # Mode Tracking Underwater (Kotak Biru) atau Docking di WP Terakhir
-                if cls == "kotak-biru":
+
+            # 2. MISI 2: KOTAK FOTO & SAFETY TRANSISI / EXIT (WP 11 s.d. WP 15)
+            # Mencakup WP 11-12 (Kotak Biru), 12-13 (Transisi), 13-14 (Kotak Hijau), dan 14-15 (Exit Safety)
+            elif (range_kotak_biru[0] <= current_wp <= range_kotak_hijau[1] + 1) and not is_last_wp:
+                if cls in ["kotak-biru", "kotak-hijau"]:
                     valid_buoys.append(det)
-            elif range_kotak_hijau[0] < current_wp <= range_kotak_hijau[1]:
-                # Mode Tracking Surface (Kotak Hijau)
-                if cls == "kotak-hijau":
+
+            # 3. MISI 3: DOCKING (WP > 15 atau WP TERAKHIR)
+            elif is_last_wp or (current_wp > range_kotak_hijau[1] + 1):
+                if cls in ["kotak-biru", "bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
             # Jika WP di luar range, valid_buoys tetap kosong, AI idle.
 
