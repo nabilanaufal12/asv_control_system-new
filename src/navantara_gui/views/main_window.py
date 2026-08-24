@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
         scroll_area_kiri.setWidgetResizable(True)
         scroll_area_kiri.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kiri.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area_kiri.setMinimumWidth(440)
+        scroll_area_kiri.setMinimumWidth(460)
 
         # --- Sidebar Kanan ---
 
@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
         scroll_area_kanan.setWidgetResizable(True)
         scroll_area_kanan.setFrameShape(QScrollArea.NoFrame)
         scroll_area_kanan.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area_kanan.setMinimumWidth(440)
+        scroll_area_kanan.setMinimumWidth(460)
 
         # 2. Kontainer Utama Sidebar Kanan
         layout_sidebar_kanan = QVBoxLayout()
@@ -188,12 +188,12 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(widget_tengah)  # Menggunakan Container Tengah
         main_splitter.addWidget(widget_sidebar_kanan)
 
-        main_splitter.setStretchFactor(0, 0)
-        main_splitter.setStretchFactor(1, 1)
-        main_splitter.setStretchFactor(2, 0)
+        main_splitter.setStretchFactor(0, 1)
+        main_splitter.setStretchFactor(1, 2)
+        main_splitter.setStretchFactor(2, 1)
 
         gui_settings = self.config.get("gui_settings", {})
-        splitter_sizes = gui_settings.get("main_splitter_sizes", [450, 820, 450])
+        splitter_sizes = gui_settings.get("main_splitter_sizes", [480, 800, 480])
         main_splitter.setSizes(splitter_sizes)
         main_splitter.setCollapsible(0, False)
         main_splitter.setCollapsible(2, False)

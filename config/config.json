@@ -101,9 +101,9 @@
   "api_urls": {},
   "gui_settings": {
     "main_splitter_sizes": [
-      450,
-      820,
-      450
+      480,
+      800,
+      480
     ],
     "placeholders": {
       "latitude": "e.g., -6.9175",

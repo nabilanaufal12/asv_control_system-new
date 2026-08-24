@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 class SettingsPanel(QWidget):
     """
     Panel konfigurasi misi ASV NAVANTARA (Misi 1: Bola, Misi 2: Foto, Misi 3: Docking).
-    Dilengkapi sub-keterangan yang jelas dan bebas tabrakan judul.
+    Dilengkapi sub-keterangan yang jelas, proporsional, dan bebas tabrakan judul.
     """
 
     vision_speed_updated = Signal(int)
@@ -40,14 +40,14 @@ class SettingsPanel(QWidget):
         self.config = config
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(2, 2, 2, 2)
+        main_layout.setSpacing(4)
 
         def setup_grid_layout():
             grid = QGridLayout()
             grid.setHorizontalSpacing(6)
-            grid.setVerticalSpacing(4)
-            grid.setContentsMargins(6, 8, 6, 6)
+            grid.setVerticalSpacing(2)
+            grid.setContentsMargins(6, 4, 6, 4)
             grid.setColumnStretch(0, 0)
             grid.setColumnStretch(1, 1)
             grid.setColumnStretch(2, 0)
@@ -56,7 +56,7 @@ class SettingsPanel(QWidget):
 
         def create_sub_header(text):
             label = QLabel(f"• {text}")
-            label.setStyleSheet("font-weight: bold; color: #0277bd; margin-top: 3px; font-size: 9.5pt;")
+            label.setStyleSheet("font-weight: bold; color: #0277bd; margin-top: 1px; margin-bottom: 0px; font-size: 9pt;")
             return label
 
         # =====================================================================
@@ -351,7 +351,7 @@ class SettingsPanel(QWidget):
         # --- Tombol Simpan Default ---
         self.save_default_button = QPushButton("💾 Save as Default Config")
         self.save_default_button.setStyleSheet(
-            "background-color: #2e7d32; color: white; font-weight: bold; margin-top: 4px; padding: 6px; border-radius: 4px;"
+            "background-color: #2e7d32; color: white; font-weight: bold; margin-top: 2px; padding: 5px; border-radius: 4px;"
         )
         main_layout.addWidget(self.save_default_button)
 
