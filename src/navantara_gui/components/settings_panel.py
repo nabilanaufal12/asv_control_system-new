@@ -16,10 +16,10 @@ from PySide6.QtWidgets import (
 )
 
 
-class SettingsPanel(QGroupBox):
+class SettingsPanel(QWidget):
     """
     Panel konfigurasi misi ASV NAVANTARA (Misi 1: Bola, Misi 2: Foto, Misi 3: Docking).
-    Desain ringkas, terpadu, dan responsif.
+    Dilengkapi sub-keterangan yang jelas dan bebas tabrakan judul.
     """
 
     vision_speed_updated = Signal(int)
@@ -35,29 +35,34 @@ class SettingsPanel(QGroupBox):
     send_dock_enabled = Signal(dict)
     send_box_avoidance_config = Signal(dict)
 
-    def __init__(self, config, title="System Configuration"):
-        super().__init__(title)
+    def __init__(self, config, parent=None):
+        super().__init__(parent)
         self.config = config
         
-        main_layout = QVBoxLayout()
+        main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.setSpacing(4)
+        main_layout.setSpacing(8)
 
         def setup_grid_layout():
             grid = QGridLayout()
-            grid.setHorizontalSpacing(4)
-            grid.setVerticalSpacing(2)
-            grid.setContentsMargins(4, 4, 4, 4)
+            grid.setHorizontalSpacing(6)
+            grid.setVerticalSpacing(4)
+            grid.setContentsMargins(6, 8, 6, 6)
             grid.setColumnStretch(0, 0)
             grid.setColumnStretch(1, 1)
             grid.setColumnStretch(2, 0)
             grid.setColumnStretch(3, 1)
             return grid
 
+        def create_sub_header(text):
+            label = QLabel(f"• {text}")
+            label.setStyleSheet("font-weight: bold; color: #0277bd; margin-top: 3px; font-size: 9.5pt;")
+            return label
+
         # =====================================================================
         # 1. MISI 1: RINTANGAN BOLA (Red & Green Buoys)
         # =====================================================================
-        misi1_group = QGroupBox("Misi 1: Rintangan Bola (Red/Green)")
+        misi1_group = QGroupBox("Misi 1: Rintangan Bola (Red/Green Buoy)")
         misi1_grid = setup_grid_layout()
 
         self.spin_wp_bola_start = QSpinBox()
@@ -220,53 +225,62 @@ class SettingsPanel(QGroupBox):
         self.spin_box_right.setPrefix("Right: ")
         self.spin_box_right.setSuffix("°")
 
-        # Row 0: Target WP Kotak UW
-        misi2_grid.addWidget(QLabel("Kotak UW:"), 0, 0)
-        misi2_grid.addWidget(self.under_wp1_input, 0, 1)
-        misi2_grid.addWidget(QLabel("—"), 0, 2, alignment=Qt.AlignCenter)
-        misi2_grid.addWidget(self.under_wp2_input, 0, 3)
+        # --- Penyusunan Layout Misi 2 ---
+        row = 0
+        # Sub-header: Target Waypoint Foto
+        misi2_grid.addWidget(create_sub_header("Target Waypoint Foto:"), row, 0, 1, 4)
+        row += 1
+        misi2_grid.addWidget(QLabel("Kotak UW:"), row, 0)
+        misi2_grid.addWidget(self.under_wp1_input, row, 1)
+        misi2_grid.addWidget(QLabel("—"), row, 2, alignment=Qt.AlignCenter)
+        misi2_grid.addWidget(self.under_wp2_input, row, 3)
+        row += 1
+        misi2_grid.addWidget(QLabel("Kotak Sfc:"), row, 0)
+        misi2_grid.addWidget(self.surf_wp1_input, row, 1)
+        misi2_grid.addWidget(QLabel("—"), row, 2, alignment=Qt.AlignCenter)
+        misi2_grid.addWidget(self.surf_wp2_input, row, 3)
+        row += 1
 
-        # Row 1: Target WP Kotak Sfc
-        misi2_grid.addWidget(QLabel("Kotak Sfc:"), 1, 0)
-        misi2_grid.addWidget(self.surf_wp1_input, 1, 1)
-        misi2_grid.addWidget(QLabel("—"), 1, 2, alignment=Qt.AlignCenter)
-        misi2_grid.addWidget(self.surf_wp2_input, 1, 3)
+        # Sub-header: Jarak Deteksi Kotak
+        misi2_grid.addWidget(create_sub_header("Jarak Deteksi Kotak:"), row, 0, 1, 4)
+        row += 1
+        misi2_grid.addWidget(QLabel("Track Dist:"), row, 0)
+        misi2_grid.addWidget(self.spin_box_track_dist, row, 1)
+        misi2_grid.addWidget(QLabel("Avoid Dist:"), row, 2)
+        misi2_grid.addWidget(self.spin_box_avoid_dist, row, 3)
+        row += 1
 
-        # Row 2: Jarak Deteksi Kotak
-        misi2_grid.addWidget(QLabel("Track Dist:"), 2, 0)
-        misi2_grid.addWidget(self.spin_box_track_dist, 2, 1)
-        misi2_grid.addWidget(QLabel("Avoid Dist:"), 2, 2)
-        misi2_grid.addWidget(self.spin_box_avoid_dist, 2, 3)
+        # Sub-header: Manuver Pemotretan
+        misi2_grid.addWidget(create_sub_header("Manuver Pemotretan (Titik Foto):"), row, 0, 1, 4)
+        row += 1
+        misi2_grid.addWidget(QLabel("Spd Maju:"), row, 0)
+        misi2_grid.addWidget(self.spin_portrait_speed, row, 1)
+        misi2_grid.addWidget(QLabel("Spd Mundur:"), row, 2)
+        misi2_grid.addWidget(self.spin_portrait_rev_speed, row, 3)
+        row += 1
+        misi2_grid.addWidget(QLabel("Waktu Diam:"), row, 0)
+        misi2_grid.addWidget(self.spin_portrait_stop, row, 1)
+        misi2_grid.addWidget(QLabel("Waktu Mundur:"), row, 2)
+        misi2_grid.addWidget(self.spin_portrait_reverse, row, 3)
+        row += 1
+        misi2_grid.addWidget(QLabel("Target Foto:"), row, 0)
+        misi2_grid.addWidget(self.photo_count_input, row, 1)
+        misi2_grid.addWidget(QLabel("Interval:"), row, 2)
+        misi2_grid.addWidget(self.photo_interval_input, row, 3)
+        row += 1
 
-        # Row 3: Speed Maju & Mundur
-        misi2_grid.addWidget(QLabel("Spd Maju:"), 3, 0)
-        misi2_grid.addWidget(self.spin_portrait_speed, 3, 1)
-        misi2_grid.addWidget(QLabel("Spd Mundur:"), 3, 2)
-        misi2_grid.addWidget(self.spin_portrait_rev_speed, 3, 3)
-
-        # Row 4: Waktu Diam & Mundur
-        misi2_grid.addWidget(QLabel("Stop Time:"), 4, 0)
-        misi2_grid.addWidget(self.spin_portrait_stop, 4, 1)
-        misi2_grid.addWidget(QLabel("Rev Time:"), 4, 2)
-        misi2_grid.addWidget(self.spin_portrait_reverse, 4, 3)
-
-        # Row 5: Foto Count & Interval
-        misi2_grid.addWidget(QLabel("Target Foto:"), 5, 0)
-        misi2_grid.addWidget(self.photo_count_input, 5, 1)
-        misi2_grid.addWidget(QLabel("Interval:"), 5, 2)
-        misi2_grid.addWidget(self.photo_interval_input, 5, 3)
-
-        # Row 6: Avoid Speed & Front
-        misi2_grid.addWidget(QLabel("Avoid Spd:"), 6, 0)
-        misi2_grid.addWidget(self.spin_box_speed, 6, 1)
-        misi2_grid.addWidget(QLabel("Avoid Front:"), 6, 2)
-        misi2_grid.addWidget(self.spin_box_front, 6, 3)
-
-        # Row 7: Avoid Left & Right
-        misi2_grid.addWidget(QLabel("Avoid L:"), 7, 0)
-        misi2_grid.addWidget(self.spin_box_left, 7, 1)
-        misi2_grid.addWidget(QLabel("Avoid R:"), 7, 2)
-        misi2_grid.addWidget(self.spin_box_right, 7, 3)
+        # Sub-header: Manuver Menghindar Kotak
+        misi2_grid.addWidget(create_sub_header("Manuver Menghindar (Pasca Foto):"), row, 0, 1, 4)
+        row += 1
+        misi2_grid.addWidget(QLabel("Avoid Spd:"), row, 0)
+        misi2_grid.addWidget(self.spin_box_speed, row, 1)
+        misi2_grid.addWidget(QLabel("Avoid Front:"), row, 2)
+        misi2_grid.addWidget(self.spin_box_front, row, 3)
+        row += 1
+        misi2_grid.addWidget(QLabel("Avoid L:"), row, 0)
+        misi2_grid.addWidget(self.spin_box_left, row, 1)
+        misi2_grid.addWidget(QLabel("Avoid R:"), row, 2)
+        misi2_grid.addWidget(self.spin_box_right, row, 3)
 
         misi2_group.setLayout(misi2_grid)
         main_layout.addWidget(misi2_group)
@@ -337,20 +351,12 @@ class SettingsPanel(QGroupBox):
         # --- Tombol Simpan Default ---
         self.save_default_button = QPushButton("💾 Save as Default Config")
         self.save_default_button.setStyleSheet(
-            "background-color: #2e7d32; color: white; font-weight: bold; margin-top: 2px; padding: 5px; border-radius: 3px;"
+            "background-color: #2e7d32; color: white; font-weight: bold; margin-top: 4px; padding: 6px; border-radius: 4px;"
         )
         main_layout.addWidget(self.save_default_button)
 
         # Set default values from config if available
         self._load_defaults_from_config()
-
-        # Sembunyikan tombol panah spinbox agar tampilan bersih
-        for spin_box in self.findChildren(QSpinBox):
-            spin_box.setButtonSymbols(QSpinBox.NoButtons)
-            spin_box.setAlignment(Qt.AlignCenter)
-        for spin_box in self.findChildren(QDoubleSpinBox):
-            spin_box.setButtonSymbols(QDoubleSpinBox.NoButtons)
-            spin_box.setAlignment(Qt.AlignCenter)
 
         self.setLayout(main_layout)
 

@@ -11,7 +11,8 @@ QGroupBox {
     background-color: #3c3c3c; /* Slightly lighter dark for panel background */
     border: 1px solid #5a5a5a; /* A subtle border to define panels */
     border-radius: 5px;
-    margin-top: 1ex; /* Space for the title */
+    margin-top: 16px; /* Space for the title */
+    padding-top: 12px;
     font-size: 11pt;
     font-weight: bold;
     color: #f0f0f0; /* Light text for group box title */
@@ -20,8 +21,8 @@ QGroupBox {
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top center; /* Position the title */
-    padding: 0 5px;
-    background-color: transparent;
+    padding: 0 8px;
+    background-color: #3c3c3c;
 }
 
 /* QPushbutton Styling */
