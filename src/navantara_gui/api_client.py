@@ -150,7 +150,7 @@ class ApiClient(QObject):
             self._internal_start_video.emit()
 
         @self.sio.event
-        def disconnect():
+        def disconnect(*args):
             self.connection_status_changed.emit(False, "Terputus dari Backend")
             print("Koneksi ke backend terputus.")
             # Hentikan video stream via sinyal ke Main Thread

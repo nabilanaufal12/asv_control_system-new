@@ -77,6 +77,42 @@ def refine_blue_class(roi_frame, current_cls_id):
 
 
 # ==============================================================
+# FAST GRAY-WORLD WHITE BALANCE + CLAHE (UNDERWATER ENHANCEMENT)
+# ==============================================================
+def enhance_underwater_gw_clahe(frame, clip_limit=2.5, grid_size=(8, 8)):
+    """
+    Fast Gray-World White Balance + CLAHE (LAB Space).
+    Dioptimasi menggunakan vektorisasi NumPy & OpenCV untuk inferensi real-time di Jetson Orin Nano (< 9ms).
+    """
+    if frame is None or frame.size == 0:
+        return frame
+
+    # 1. Fast Gray-World Color Balance (Vektorisasi NumPy)
+    b, g, r = cv2.split(frame)
+    avg_b = float(np.mean(b))
+    avg_g = float(np.mean(g))
+    avg_r = float(np.mean(r))
+    avg_all = (avg_b + avg_g + avg_r) / 3.0
+
+    scale_b = avg_all / (avg_b + 1e-5)
+    scale_g = avg_all / (avg_g + 1e-5)
+    scale_r = avg_all / (avg_r + 1e-5)
+
+    b_bal = np.clip(b * scale_b, 0, 255).astype(np.uint8)
+    g_bal = np.clip(g * scale_g, 0, 255).astype(np.uint8)
+    r_bal = np.clip(r * scale_r, 0, 255).astype(np.uint8)
+    balanced = cv2.merge([b_bal, g_bal, r_bal])
+
+    # 2. CLAHE pada Kanal Luminance (L) di Ruang Warna LAB
+    lab = cv2.cvtColor(balanced, cv2.COLOR_BGR2LAB)
+    l, a, b_ch = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=grid_size)
+    l_clahe = clahe.apply(l)
+    enhanced = cv2.cvtColor(cv2.merge([l_clahe, a, b_ch]), cv2.COLOR_LAB2BGR)
+    return enhanced
+
+
+# ==============================================================
 
 
 class ThreadedCamera:
@@ -939,8 +975,24 @@ class VisionService:
         target_size = 640  # Ukuran input model YOLOv11
 
         try:
+            # RULE B: Cek apakah kapal sedang menjalankan misi bawah air (WP 11 s/d 12)
+            # Jika YA: aplikasikan enhancement agar YOLO lebih sensitif mendeteksi kotak bawah air
+            # Jika TIDAK (misal WP 0-10 navigasi permukaan): bypass enhancement untuk FPS maksimal
+            is_underwater_mission = False
+            try:
+                with self.asv_handler.state_lock:
+                    current_wp = self.asv_handler.current_state.nav_target_wp_index
+                    vision_cfg = self.config.get("vision", {})
+                    range_kotak_biru = vision_cfg.get("wp_range_kotak_biru", [11, 12])
+                    if range_kotak_biru[0] <= current_wp <= range_kotak_biru[1]:
+                        is_underwater_mission = True
+            except Exception:
+                pass
+
+            frame_input = enhance_underwater_gw_clahe(frame) if is_underwater_mission else frame
+
             # 1. INFERENCE (AI Processing)
-            frame_resized = cv2.resize(frame, (target_size, target_size))
+            frame_resized = cv2.resize(frame_input, (target_size, target_size))
             scale_x = orig_w / target_size
             scale_y = orig_h / target_size
 
@@ -1321,6 +1373,9 @@ class VisionService:
             if frame_to_use is None:
                 print("[Mission] Gagal Auto-Capture Underwater: Frame CAM2 None.")
                 return
+
+            # RULE A: Selalu aplikasikan Fast Gray-World + CLAHE pada frame underwater sebelum disimpan
+            frame_to_use = enhance_underwater_gw_clahe(frame_to_use)
 
         else:
             print(f"[Mission] Mode tidak dikenal: {mode}")
