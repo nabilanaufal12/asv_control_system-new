@@ -214,6 +214,16 @@ class ApiClient(QObject):
         self.request_data_stream(True)
 
     @Slot(bool)
+    def toggle_video_stream(self, start: bool):
+        """Memulai atau menghentikan thread video MJPEG lokal (tanpa mematikan telemetri ASV)."""
+        if start:
+            self._internal_start_video.emit()
+            print("[ApiClient] Memulai stream video kamera.")
+        else:
+            self._internal_stop_video.emit()
+            print("[ApiClient] Menjeda stream video kamera.")
+
+    @Slot(bool)
     def request_data_stream(self, start: bool):
         """Mengirim event untuk memulai atau menghentikan stream data dari server."""
         if start:
@@ -224,7 +234,7 @@ class ApiClient(QObject):
         if self.sio.connected:
             self.sio.emit("request_stream", {"status": start})
             print(
-                f"Mengirim permintaan untuk {'memulai' if start else 'menghentikan'} stream."
+                f"Mengirim permintaan untuk {'memulai' if start else 'menghentikan'} stream data."
             )
         else:
             print("Tidak bisa meminta stream, belum terhubung ke server.")

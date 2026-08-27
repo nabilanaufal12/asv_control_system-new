@@ -254,7 +254,7 @@ class MainWindow(QMainWindow):
         self.header.theme_changed_requested.connect(self.toggle_theme)
 
         self.video_view.toggle_camera_requested.connect(
-            self.api_client.request_data_stream
+            self.api_client.toggle_video_stream
         )
 
         self.video_view.inversion_changed.connect(
