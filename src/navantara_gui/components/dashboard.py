@@ -183,51 +183,84 @@ class NavigationStatusMonitor(QGroupBox):
 
 class SensorDisplay(QGroupBox):
     """
-    [COMPONENT LAMA] Menampilkan data sensor mentah (Compass, GPS, Speed).
+    Menampilkan data telemetri sensor (Heading, COG, Speed, Lat, Lon, Fix/Hz).
+    Didesain horizontal untuk diletakkan di panel tengah di bawah Photo Capture Configuration.
     """
 
     def __init__(self):
-        super().__init__("Telemetry & Sensor Data")
-        layout = QVBoxLayout()
+        super().__init__("Telemetry Sensor Data")
+        layout = QGridLayout()
+        layout.setVerticalSpacing(8)
+        layout.setHorizontalSpacing(15)
+        layout.setContentsMargins(12, 14, 12, 10)
 
-        # Baris Heading
-        row1 = QHBoxLayout()
-        self.val_heading = QLabel("0.0°")
-        self.val_heading.setStyleSheet("font-size: 16px; font-weight: bold;")
-        row1.addWidget(QLabel("Heading:"))
-        row1.addWidget(self.val_heading)
-        layout.addLayout(row1)
+        # --- Baris 0: Heading, COG, Speed ---
+        # Kolom 0: Heading
+        lbl_hdg = QLabel("Heading:")
+        self.val_heading = QLabel("90.0°")
+        self.val_heading.setStyleSheet("font-size: 14px; font-weight: bold;")
+        h_box_hdg = QHBoxLayout()
+        h_box_hdg.addWidget(lbl_hdg)
+        h_box_hdg.addWidget(self.val_heading)
+        h_box_hdg.addStretch()
 
-        # Baris COG (Course Over Ground)
-        row_cog = QHBoxLayout()
+        # Kolom 1: COG
+        lbl_cog = QLabel("COG:")
         self.val_cog = QLabel("0.0°")
         self.val_cog.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: #3498db;"
+            "font-size: 14px; font-weight: bold; color: #3498db;"
         )
-        row_cog.addWidget(QLabel("COG:"))
-        row_cog.addWidget(self.val_cog)
-        layout.addLayout(row_cog)
+        h_box_cog = QHBoxLayout()
+        h_box_cog.addWidget(lbl_cog)
+        h_box_cog.addWidget(self.val_cog)
+        h_box_cog.addStretch()
 
-        # Baris Latitude
-        row_lat = QHBoxLayout()
-        self.val_lat = QLabel("0.0")
-        row_lat.addWidget(QLabel("Latitude:"))
-        row_lat.addWidget(self.val_lat)
-        layout.addLayout(row_lat)
-
-        # Baris Longitude
-        row_lon = QHBoxLayout()
-        self.val_lon = QLabel("0.0")
-        row_lon.addWidget(QLabel("Longitude:"))
-        row_lon.addWidget(self.val_lon)
-        layout.addLayout(row_lon)
-
-        # Baris Speed
-        row_spd = QHBoxLayout()
+        # Kolom 2: Speed
+        lbl_spd = QLabel("Speed:")
         self.val_speed = QLabel("0.0 km/h")
-        row_spd.addWidget(QLabel("Speed:"))
-        row_spd.addWidget(self.val_speed)
-        layout.addLayout(row_spd)
+        self.val_speed.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: #2ecc71;"
+        )
+        h_box_spd = QHBoxLayout()
+        h_box_spd.addWidget(lbl_spd)
+        h_box_spd.addWidget(self.val_speed)
+        h_box_spd.addStretch()
+
+        # --- Baris 1: Latitude, Longitude, GPS Status / Hz ---
+        # Kolom 0: Latitude
+        lbl_lat = QLabel("Latitude:")
+        self.val_lat = QLabel("0.000000")
+        self.val_lat.setStyleSheet("font-weight: bold;")
+        h_box_lat = QHBoxLayout()
+        h_box_lat.addWidget(lbl_lat)
+        h_box_lat.addWidget(self.val_lat)
+        h_box_lat.addStretch()
+
+        # Kolom 1: Longitude
+        lbl_lon = QLabel("Longitude:")
+        self.val_lon = QLabel("0.000000")
+        self.val_lon.setStyleSheet("font-weight: bold;")
+        h_box_lon = QHBoxLayout()
+        h_box_lon.addWidget(lbl_lon)
+        h_box_lon.addWidget(self.val_lon)
+        h_box_lon.addStretch()
+
+        # Kolom 2: Status Fix GPS
+        lbl_fix = QLabel("GPS Fix:")
+        self.val_fix = QLabel("NO FIX")
+        self.val_fix.setStyleSheet("font-weight: bold; color: #e67e22;")
+        h_box_fix = QHBoxLayout()
+        h_box_fix.addWidget(lbl_fix)
+        h_box_fix.addWidget(self.val_fix)
+        h_box_fix.addStretch()
+
+        layout.addLayout(h_box_hdg, 0, 0)
+        layout.addLayout(h_box_cog, 0, 1)
+        layout.addLayout(h_box_spd, 0, 2)
+
+        layout.addLayout(h_box_lat, 1, 0)
+        layout.addLayout(h_box_lon, 1, 1)
+        layout.addLayout(h_box_fix, 1, 2)
 
         self.setLayout(layout)
 
@@ -237,6 +270,8 @@ class SensorDisplay(QGroupBox):
         lat = data.get("latitude", data.get("lat", 0.0))
         lon = data.get("longitude", data.get("lon", 0.0))
         spd = data.get("speed", data.get("sog", 0.0))
+        fix_val = data.get("esp_status", data.get("fix", "NO FIX"))
+        hz_val = data.get("gps_hz", data.get("hz", 0.0))
 
         self.val_heading.setText(f"{float(hdg):.1f}°")
         self.val_cog.setText(f"{float(cog_val):.1f}°")
@@ -244,39 +279,38 @@ class SensorDisplay(QGroupBox):
         self.val_lon.setText(f"{float(lon):.6f}")
         self.val_speed.setText(f"{float(spd):.1f} km/h")
 
+        if hz_val and float(hz_val) > 0:
+            self.val_fix.setText(f"{fix_val} ({float(hz_val):.1f} Hz)")
+        else:
+            self.val_fix.setText(f"{fix_val}")
+
+        if "FIX" in str(fix_val).upper() and "NO" not in str(fix_val).upper():
+            self.val_fix.setStyleSheet("font-weight: bold; color: #2ecc71;")
+        else:
+            self.val_fix.setStyleSheet("font-weight: bold; color: #e67e22;")
+
 
 class Dashboard(QWidget):
     """
-    Panel utama Dashboard yang menggabungkan SensorDisplay (Lama)
-    dan NavigationStatusMonitor (Baru).
+    Panel utama Dashboard yang menggabungkan SensorDisplay
+    dan NavigationStatusMonitor.
     """
 
     def __init__(self, config):
         super().__init__()
         self.config = config
 
-        # Layout Utama Dashboard
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(5, 5, 5, 5)
         self.main_layout.setSpacing(10)
 
-        # 1. Widget Sensor (Lama/Existing)
         self.sensor_display = SensorDisplay()
-        self.main_layout.addWidget(self.sensor_display)
-
-        # 2. Widget Monitoring Cepat (BARU)
         self.status_monitor = NavigationStatusMonitor()
+        self.main_layout.addWidget(self.sensor_display)
         self.main_layout.addWidget(self.status_monitor)
 
     def update_data(self, data):
-        """
-        Menerima data telemetri (full atau minified) dari MainWindow/ApiClient.
-        """
         if not data:
             return
-
-        # Update Sensor Display Lama
         self.sensor_display.update_sensor(data)
-
-        # Update Status Monitor Baru
         self.status_monitor.update_status(data)

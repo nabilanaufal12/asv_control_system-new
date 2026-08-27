@@ -26,7 +26,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Slot, Qt
 
 from navantara_gui.components.control_panel import ControlPanel
-from navantara_gui.components.dashboard import Dashboard
+from navantara_gui.components.dashboard import (
+    NavigationStatusMonitor,
+    SensorDisplay,
+)
 from navantara_gui.components.settings_panel import SettingsPanel
 from navantara_gui.components.video_view import VideoView
 from navantara_gui.components.header import Header
@@ -54,7 +57,8 @@ class MainWindow(QMainWindow):
 
         self.header = Header(config=self.config)
         self.control_panel = ControlPanel(config=self.config)
-        self.system_status_panel = Dashboard(config=self.config)
+        self.sensor_display = SensorDisplay()
+        self.system_status_panel = NavigationStatusMonitor()
         self.settings_panel = SettingsPanel(config=self.config)
         self.video_view = VideoView(config=self.config)
 
@@ -177,6 +181,9 @@ class MainWindow(QMainWindow):
 
         # Baris Bawah: Photo Capture Configuration (Menempel tepat di bawah video)
         layout_tengah.addWidget(self.control_panel, 0)
+
+        # Telemetry Sensor Data di panel video view tepat di bawah Photo Capture Configuration
+        layout_tengah.addWidget(self.sensor_display, 0)
         layout_tengah.addStretch(1)
 
         widget_tengah = QWidget()
@@ -210,17 +217,17 @@ class MainWindow(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
 
-        # --- Persistent Status Bar Labels ---
+        # --- Persistent Status Bar Labels (Pojok Kanan Bawah Window) ---
         self.backend_status_lbl = QLabel("GCS Backend Server: DISCONNECTED")
         self.backend_status_lbl.setStyleSheet(
-            "font-weight: bold; color: red; margin-right: 20px;"
+            "font-weight: bold; color: red; margin-right: 15px;"
         )
 
         self.esp_status_lbl = QLabel("ASV Serial Link (ESP32): DISCONNECTED")
-        self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red;")
+        self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red; margin-right: 10px;")
 
-        self.status_bar.addWidget(self.backend_status_lbl)
-        self.status_bar.addWidget(self.esp_status_lbl)
+        self.status_bar.addPermanentWidget(self.backend_status_lbl)
+        self.status_bar.addPermanentWidget(self.esp_status_lbl)
         self.status_bar.showMessage(
             "Aplikasi Siap (Lite Mode). Menunggu koneksi ke backend..."
         )
@@ -388,7 +395,8 @@ class MainWindow(QMainWindow):
             self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red;")
 
         # Perbarui semua panel
-        self.system_status_panel.update_data(data)
+        self.sensor_display.update_sensor(data)
+        self.system_status_panel.update_status(data)
 
         self.header.update_status(data)
         self.update_button_states()
