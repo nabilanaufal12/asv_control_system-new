@@ -72,18 +72,23 @@ class MainWindow(QMainWindow):
         self._load_themes()
         self._apply_theme(self.current_theme)
 
+        self._is_initializing = True
+
         self.setup_ui()
         self.connect_signals()
 
         # [FIX 2] Panggil set_mode("AUTO") saat startup
-        # Ini akan memperbarui tombol di ControlPanel dan mengirim perintah ke Backend
         self.set_mode("AUTO")
 
-        # Load Lintasan A by default
-        self.load_predefined_mission("A")
+        # Load default lintasan from config.json without dialog popup
+        saved_arena = self.config.get("general", {}).get("default_arena", "Arena_A")
+        arena_letter = "B" if "B" in str(saved_arena).upper() else "A"
+        self.load_predefined_mission(arena_letter, is_startup=True)
 
         print("Memulai koneksi klien API ke server...")
         self.api_client.connect_to_server()
+
+        self._is_initializing = False
 
         self.showMaximized()
 
@@ -488,27 +493,25 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_vision_model_update_requested(self, model_name):
         """Handler penggantian model AI dengan dialog konfirmasi jika kapal sedang AUTO."""
-        if self.current_control_mode == "AUTO":
-            reply = QMessageBox.question(
-                self,
-                "Konfirmasi Ganti Model AI (Mode AUTO Aktif)",
-                f"⚠️ PERINGATAN: Kapal sedang aktif dalam Mode AUTO!\n\n"
-                f"Mengganti model AI ke '{model_name}' akan memuat ulang engine GPU di Jetson dengan jeda inferensi ~1-2 detik.\n\n"
-                f"Apakah Anda yakin ingin mengganti model AI saat kapal sedang melaju?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply != QMessageBox.Yes:
-                print(
-                    f"[GUI] Pergantian model AI ke '{model_name}' dibatalkan demi keamanan misi AUTO."
+        if not getattr(self, "_is_initializing", False) and self.current_control_mode == "AUTO":
+            current_active = getattr(self.settings_panel, "active_ai_model", None)
+            if current_active and current_active != model_name:
+                reply = QMessageBox.question(
+                    self,
+                    "Konfirmasi Ganti Model AI (Mode AUTO Aktif)",
+                    f"⚠️ PERINGATAN: Kapal sedang aktif dalam Mode AUTO!\n\n"
+                    f"Mengganti model AI dari '{current_active}' ke '{model_name}' akan memuat ulang engine GPU di Jetson dengan jeda inferensi ~1-2 detik.\n\n"
+                    f"Apakah Anda yakin ingin mengganti model AI saat kapal sedang melaju?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
                 )
-                if hasattr(self.settings_panel, "set_model_silently") and hasattr(
-                    self.settings_panel, "active_ai_model"
-                ):
-                    self.settings_panel.set_model_silently(
-                        self.settings_panel.active_ai_model
+                if reply != QMessageBox.Yes:
+                    print(
+                        f"[GUI] Pergantian model AI ke '{model_name}' dibatalkan demi keamanan misi AUTO."
                     )
-                return
+                    if hasattr(self.settings_panel, "set_model_silently"):
+                        self.settings_panel.set_model_silently(current_active)
+                    return
 
         if hasattr(self.settings_panel, "active_ai_model"):
             self.settings_panel.active_ai_model = model_name
@@ -517,9 +520,9 @@ class MainWindow(QMainWindow):
         print(f"[GUI] Model AI Vision diperbarui ke: {model_name}")
 
     @Slot(str)
-    def load_predefined_mission(self, mission_id):
+    def load_predefined_mission(self, mission_id, is_startup=False):
         """Handler load lintasan A/B dengan dialog konfirmasi jika kapal sedang AUTO."""
-        if self.current_control_mode == "AUTO":
+        if not is_startup and not getattr(self, "_is_initializing", False) and self.current_control_mode == "AUTO":
             reply = QMessageBox.question(
                 self,
                 "Konfirmasi Load Lintasan (Mode AUTO Aktif)",
