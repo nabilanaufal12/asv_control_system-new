@@ -1,6 +1,7 @@
 # src/navantara_backend/core/asv_handler.py
 import threading
 import time
+import os
 import numpy as np
 import json
 import logging
@@ -141,19 +142,21 @@ class AsvHandler:
         self.last_reconnect_attempt = 0
         self.reconnect_interval = 5.0
 
-        # Baca nilai default AI dari konfigurasi (BARU)
+        # Baca nilai default AI dan Arena dari konfigurasi
         ai_cfg = self.config.get("ai_control_defaults", {})
         vision_motor_cmd = ai_cfg.get("vision_auto_motor_cmd", 1300)
         vision_servo_left = ai_cfg.get("vision_servo_left_cmd", 70)
         vision_servo_right = ai_cfg.get("vision_servo_right_cmd", 110)
+        saved_arena = self.config.get("general", {}).get("default_arena", "Arena_A")
 
-        # Inisialisasi state dengan nilai dari konfigurasi AI.
-        # Nilai lain (termasuk active_arena="B") akan menggunakan default dataclass.
+        # Inisialisasi state dengan nilai dari konfigurasi AI dan Arena default
         self.current_state = AsvState(
             vision_auto_motor_cmd=vision_motor_cmd,
             vision_servo_left_cmd=vision_servo_left,
             vision_servo_right_cmd=vision_servo_right,
+            active_arena=saved_arena,
         )
+        logging.info(f"[AsvHandler] Default Arena aktif dimuat dari config.json: {saved_arena}")
 
         # Dictionary ini menyimpan value terakhir berdasarkan NAMA ASLI (long key)
         # agar logika deteksi perubahan (delta) tetap konsisten.
@@ -1313,6 +1316,21 @@ class AsvHandler:
         else:
             self.serial_handler.connect(port, baud)
 
+    def _save_config(self):
+        """Menyimpan konfigurasi saat ini ke config/config.json secara persisten."""
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(current_dir))),
+                "config",
+                "config.json",
+            )
+            with open(config_path, "w") as f:
+                json.dump(self.config, f, indent=2)
+            logging.info(f"[AsvHandler] Konfigurasi berhasil disimpan ke {config_path}")
+        except Exception as e:
+            logging.error(f"[AsvHandler] Gagal menyimpan config.json: {e}")
+
     def _handle_update_vision_distance(self, payload):
         dist = payload.get("distance", 165)
         self.config["camera_detection"]["obstacle_activation_distance_cm"] = float(dist)
@@ -1393,6 +1411,10 @@ class AsvHandler:
         with self.state_lock:
             if arena_id is not None:
                 self.current_state.active_arena = arena_id
+                if "general" not in self.config:
+                    self.config["general"] = {}
+                self.config["general"]["default_arena"] = arena_id
+                self._save_config()
 
             if waypoints_data is not None:
                 if isinstance(waypoints_data, list):

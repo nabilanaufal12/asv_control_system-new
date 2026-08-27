@@ -44,14 +44,13 @@ class WaypointsPanel(QGroupBox):
         mission_layout = QHBoxLayout()
         self.load_a_button = QPushButton("Load Lintasan A")
         self.load_b_button = QPushButton("Load Lintasan B")
-        btn_style_teal = (
-            "background-color: #009688; color: white; font-weight: bold; padding: 5px;"
-        )
-        self.load_a_button.setStyleSheet(btn_style_teal)
-        self.load_b_button.setStyleSheet(btn_style_teal)
         mission_layout.addWidget(self.load_a_button)
         mission_layout.addWidget(self.load_b_button)
         mission_box.setLayout(mission_layout)
+
+        # Inisialisasi highlight tombol arena berdasarkan config.json
+        saved_arena = self.config.get("general", {}).get("default_arena", "Arena_A")
+        self.update_active_arena_ui(saved_arena)
 
         # --- 1.5. Waypoint Target Counter Controls ---
         counter_box = QGroupBox("Target Waypoint Override")
@@ -203,8 +202,32 @@ class WaypointsPanel(QGroupBox):
         else:
             print("[GUI] Error: Silakan pilih waypoint di tabel terlebih dahulu.")
 
+    def update_active_arena_ui(self, arena_id):
+        """Memperbarui teks dan highlight tombol template arena aktif/default."""
+        clean = str(arena_id).strip().upper()
+        if "B" in clean:
+            self.current_arena = "Arena_B"
+            self.load_b_button.setText("★ Lintasan B (Default)")
+            self.load_b_button.setStyleSheet(
+                "background-color: #2e7d32; color: #ffffff; font-weight: bold; padding: 5px; border: 2px solid #81c784; border-radius: 4px;"
+            )
+            self.load_a_button.setText("Load Lintasan A")
+            self.load_a_button.setStyleSheet(
+                "background-color: #009688; color: white; font-weight: bold; padding: 5px; border-radius: 4px;"
+            )
+        else:
+            self.current_arena = "Arena_A"
+            self.load_a_button.setText("★ Lintasan A (Default)")
+            self.load_a_button.setStyleSheet(
+                "background-color: #2e7d32; color: #ffffff; font-weight: bold; padding: 5px; border: 2px solid #81c784; border-radius: 4px;"
+            )
+            self.load_b_button.setText("Load Lintasan B")
+            self.load_b_button.setStyleSheet(
+                "background-color: #009688; color: white; font-weight: bold; padding: 5px; border-radius: 4px;"
+            )
+
     def _on_load_mission(self, arena_id):
-        self.current_arena = arena_id
+        self.update_active_arena_ui(arena_id)
         self.load_mission_requested.emit(arena_id)
 
     @Slot(list)

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QLabel,
     QFrame,
+    QMessageBox,
 )
 from PySide6.QtCore import Slot, Qt
 
@@ -288,7 +289,7 @@ class MainWindow(QMainWindow):
         )
 
         self.settings_panel.vision_model_updated.connect(
-            lambda m: self.api_client.send_command("UPDATE_VISION_MODEL", {"model": m})
+            self.on_vision_model_update_requested
         )
 
         self.settings_panel.vision_wp_ranges_updated.connect(
@@ -485,7 +486,55 @@ class MainWindow(QMainWindow):
         self.api_client.send_command("MANUAL_CAPTURE", {"type": "underwater"})
 
     @Slot(str)
+    def on_vision_model_update_requested(self, model_name):
+        """Handler penggantian model AI dengan dialog konfirmasi jika kapal sedang AUTO."""
+        if self.current_control_mode == "AUTO":
+            reply = QMessageBox.question(
+                self,
+                "Konfirmasi Ganti Model AI (Mode AUTO Aktif)",
+                f"⚠️ PERINGATAN: Kapal sedang aktif dalam Mode AUTO!\n\n"
+                f"Mengganti model AI ke '{model_name}' akan memuat ulang engine GPU di Jetson dengan jeda inferensi ~1-2 detik.\n\n"
+                f"Apakah Anda yakin ingin mengganti model AI saat kapal sedang melaju?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                print(
+                    f"[GUI] Pergantian model AI ke '{model_name}' dibatalkan demi keamanan misi AUTO."
+                )
+                if hasattr(self.settings_panel, "set_model_silently") and hasattr(
+                    self.settings_panel, "active_ai_model"
+                ):
+                    self.settings_panel.set_model_silently(
+                        self.settings_panel.active_ai_model
+                    )
+                return
+
+        if hasattr(self.settings_panel, "active_ai_model"):
+            self.settings_panel.active_ai_model = model_name
+
+        self.api_client.send_command("UPDATE_VISION_MODEL", {"model": model_name})
+        print(f"[GUI] Model AI Vision diperbarui ke: {model_name}")
+
+    @Slot(str)
     def load_predefined_mission(self, mission_id):
+        """Handler load lintasan A/B dengan dialog konfirmasi jika kapal sedang AUTO."""
+        if self.current_control_mode == "AUTO":
+            reply = QMessageBox.question(
+                self,
+                "Konfirmasi Load Lintasan (Mode AUTO Aktif)",
+                f"⚠️ PERINGATAN: Kapal sedang aktif bernavigasi dalam Mode AUTO!\n\n"
+                f"Memuat template 'Lintasan {mission_id}' akan mengganti arah arena dan seluruh koordinat lintasan misi saat ini.\n\n"
+                f"Apakah Anda yakin ingin memuat Lintasan {mission_id} sekarang?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                print(
+                    f"[GUI] Load Lintasan {mission_id} dibatalkan demi keselamatan navigasi."
+                )
+                return
+
         mission_data = None
         if mission_id == "A":
             mission_data = get_lintasan_a()
@@ -497,11 +546,35 @@ class MainWindow(QMainWindow):
 
         if mission_data:
             arena = mission_data.get("arena")
-            print(f"Mengirim konfigurasi {arena} langsung ke sistem...")
+            arena_id_full = f"Arena_{arena}"
+            print(f"[GUI] Mengirim konfigurasi {arena_id_full} sebagai default ke sistem...")
 
-            # Set current arena
-            self.waypoints_panel.current_arena = arena
-            # Langsung kirim perintah update arena ke backend tanpa menyentuh waypoints
-            self.waypoints_panel.send_waypoints.emit({"arena": arena})
+            # Set current arena di UI
+            self.waypoints_panel.update_active_arena_ui(arena)
+
+            # Simpan default_arena ke config.json agar reload backend tetap ingat lintasan ini
+            if "general" not in self.config:
+                self.config["general"] = {}
+            self.config["general"]["default_arena"] = arena_id_full
+
+            try:
+                import os
+                import json
+                gui_dir = os.path.dirname(os.path.abspath(__file__))
+                config_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(gui_dir))),
+                    "config",
+                    "config.json",
+                )
+                with open(config_path, "w") as f:
+                    json.dump(self.config, f, indent=2)
+                print(
+                    f"[GUI] Default arena ({arena_id_full}) berhasil disimpan ke {config_path}"
+                )
+            except Exception as e:
+                print(f"[GUI] Gagal menyimpan default_arena ke config.json: {e}")
+
+            # Langsung kirim perintah update arena ke backend
+            self.waypoints_panel.send_waypoints.emit({"arena": arena_id_full})
 
     # Keyboard events for manual drive removed

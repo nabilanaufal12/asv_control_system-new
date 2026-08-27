@@ -105,6 +105,7 @@ class SettingsPanel(QWidget):
         self.combo_model.addItems(
             ["Auto", "best.engine", "best100.engine", "best.pt", "best100.pt"]
         )
+        self.active_ai_model = self.combo_model.currentText()
 
         # Row 0: WP Range Bola
         misi1_grid.addWidget(QLabel("WP Bola:"), 0, 0)
@@ -621,6 +622,15 @@ class SettingsPanel(QWidget):
         self._on_set_photo_mission()
         self._on_set_dock_config()
         self._on_dock_enable_changed(self.chk_dock_enable.checkState())
+
+    def set_model_silently(self, text):
+        """Mengubah pilihan model di ComboBox tanpa memicu sinyal vision_model_updated."""
+        self.combo_model.blockSignals(True)
+        idx = self.combo_model.findText(text)
+        if idx >= 0:
+            self.combo_model.setCurrentIndex(idx)
+            self.active_ai_model = text
+        self.combo_model.blockSignals(False)
 
     # --- SLOT HANDLERS ---
     def _on_model_changed(self, text):
