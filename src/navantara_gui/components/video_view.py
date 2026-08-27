@@ -94,7 +94,7 @@ class VideoView(QWidget):
         """
         Fungsi pintar untuk menampilkan frame dari berbagai format data.
         """
-        if frame_data is None:
+        if not self.is_camera_running or frame_data is None:
             return
 
         try:
@@ -138,17 +138,26 @@ class VideoView(QWidget):
 
     def toggle_camera_stream(self):
         self.is_camera_running = not self.is_camera_running
-        self.toggle_camera_requested.emit(self.is_camera_running)
         self.update_ui_controls(self.is_camera_running)
+        self.toggle_camera_requested.emit(self.is_camera_running)
 
         if not self.is_camera_running:
-            self.label_video_1.setText("Stream dijeda.")
+            self.label_video_1.setText("SURFACE CAMERA (CAM 1)\n\n[ STREAM DIJEDA ]")
             self.label_video_1.setPixmap(QPixmap())
-            self.label_video_2.setText("Stream dijeda.")
+            self.label_video_2.setText("UNDERWATER CAMERA (CAM 2)\n\n[ STREAM DIJEDA ]")
             self.label_video_2.setPixmap(QPixmap())
 
     def on_inversion_toggled(self):
         self.inversion_changed.emit(self.invert_button.isChecked())
 
     def update_ui_controls(self, is_running):
-        self.start_stop_button.setText("Stop Stream" if is_running else "Play Stream")
+        if is_running:
+            self.start_stop_button.setText("Stop Stream")
+            self.start_stop_button.setStyleSheet(
+                "background-color: #F44336; color: white; font-weight: bold; padding: 6px 14px; border-radius: 4px;"
+            )
+        else:
+            self.start_stop_button.setText("Play Stream")
+            self.start_stop_button.setStyleSheet(
+                "background-color: #4CAF50; color: white; font-weight: bold; padding: 6px 14px; border-radius: 4px;"
+            )

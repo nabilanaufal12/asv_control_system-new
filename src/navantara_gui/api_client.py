@@ -201,11 +201,11 @@ class ApiClient(QObject):
         # Dipanggil di Main Thread berkat Signal
         if self.cam1_thread:
             self.cam1_thread.request_stop()
-            self.cam1_thread.wait(2000)
+            self.cam1_thread.wait(500)
             self.cam1_thread = None
         if self.cam2_thread:
             self.cam2_thread.request_stop()
-            self.cam2_thread.wait(2000)
+            self.cam2_thread.wait(500)
             self.cam2_thread = None
 
     def initial_stream_request(self):
@@ -216,6 +216,11 @@ class ApiClient(QObject):
     @Slot(bool)
     def request_data_stream(self, start: bool):
         """Mengirim event untuk memulai atau menghentikan stream data dari server."""
+        if start:
+            self._internal_start_video.emit()
+        else:
+            self._internal_stop_video.emit()
+
         if self.sio.connected:
             self.sio.emit("request_stream", {"status": start})
             print(
