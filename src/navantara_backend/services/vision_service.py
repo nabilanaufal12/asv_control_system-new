@@ -9,12 +9,12 @@ import eventlet
 import os
 import eventlet.tpool
 import logging
-import base64
 from pathlib import Path
 from dataclasses import asdict
 
 # --- [MIGRASI: Import Ultralytics] ---
 from ultralytics import YOLO, settings
+
 try:
     settings.update({"sync": False, "checks": False})
 except Exception:
@@ -434,9 +434,13 @@ class VisionService:
                 self.model = new_model
                 self.is_tensorrt = getattr(self.model, "_is_tensorrt", False)
                 if self.is_tensorrt:
-                    print("[VisionService] Mode diubah: TensorRT FP16 (device terkunci).")
+                    print(
+                        "[VisionService] Mode diubah: TensorRT FP16 (device terkunci)."
+                    )
                 else:
-                    print(f"[VisionService] Mode diubah: PyTorch di {self.infer_device}.")
+                    print(
+                        f"[VisionService] Mode diubah: PyTorch di {self.infer_device}."
+                    )
             else:
                 print(
                     "[VisionService] Gagal mengganti model, tetap menggunakan model lama."
@@ -784,7 +788,8 @@ class VisionService:
     def generate_mjpeg_stream(self, cam_id: int):
         import eventlet
         import cv2
-        yield b''  # Memaksa Flask untuk mengirim HTTP Headers (200 OK) segera
+
+        yield b""  # Memaksa Flask untuk mengirim HTTP Headers (200 OK) segera
         while self.running:
             frame = None
             if cam_id == 1:
@@ -795,16 +800,20 @@ class VisionService:
                 with VisionService._frame_lock_cam2:
                     if VisionService._latest_raw_frame_cam2 is not None:
                         frame = VisionService._latest_raw_frame_cam2.copy()
-            
+
             if frame is not None:
                 # Resize for performance and encode
                 gui_frame = cv2.resize(frame, (320, 240))
-                ret, buffer = cv2.imencode('.jpg', gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 40])
+                ret, buffer = cv2.imencode(
+                    ".jpg", gui_frame, [cv2.IMWRITE_JPEG_QUALITY, 40]
+                )
                 if ret:
                     frame_bytes = buffer.tobytes()
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                    )
+
             # Rate limit to ~15-20 FPS to save CPU
             eventlet.sleep(0.05)
 
@@ -916,11 +925,18 @@ class VisionService:
                 # Emit event ke semua klien web agar galeri langsung refresh
                 # tanpa harus menunggu SSE atau polling
                 try:
-                    race_id = self.asv_handler.logger.current_race_id if hasattr(self.asv_handler, "logger") else None
-                    self.socketio.emit("new_capture", {
-                        "file": filename,
-                        "race_id": race_id,
-                    })
+                    race_id = (
+                        self.asv_handler.logger.current_race_id
+                        if hasattr(self.asv_handler, "logger")
+                        else None
+                    )
+                    self.socketio.emit(
+                        "new_capture",
+                        {
+                            "file": filename,
+                            "race_id": race_id,
+                        },
+                    )
                 except Exception as emit_err:
                     logging.warning(f"[Capture] Gagal emit new_capture: {emit_err}")
 
@@ -989,7 +1005,9 @@ class VisionService:
             except Exception:
                 pass
 
-            frame_input = enhance_underwater_gw_clahe(frame) if is_underwater_mission else frame
+            frame_input = (
+                enhance_underwater_gw_clahe(frame) if is_underwater_mission else frame
+            )
 
             # 1. INFERENCE (AI Processing)
             frame_resized = cv2.resize(frame_input, (target_size, target_size))
@@ -1142,15 +1160,19 @@ class VisionService:
             # Evaluasi In Segment: Aktif saat mendekati WP target dan saat berhenti (PT_STOP).
             # Otomatis berhenti memotret saat kapal mulai mundur (PT_REVERSE, p_st == 3).
             pt_state = self.asv_handler.current_state.portrait_state
-            is_reversing = (pt_state == 3)
+            is_reversing = pt_state == 3
 
-            in_segment_surf = (surf_wp1 != -1 and surf_wp2 != -1) and (
-                surf_wp1 < current_wp <= surf_wp2
-            ) and not is_reversing
+            in_segment_surf = (
+                (surf_wp1 != -1 and surf_wp2 != -1)
+                and (surf_wp1 < current_wp <= surf_wp2)
+                and not is_reversing
+            )
 
-            in_segment_under = (under_wp1 != -1 and under_wp2 != -1) and (
-                under_wp1 < current_wp <= under_wp2
-            ) and not is_reversing
+            in_segment_under = (
+                (under_wp1 != -1 and under_wp2 != -1)
+                and (under_wp1 < current_wp <= under_wp2)
+                and not is_reversing
+            )
 
             current_state_photo = self.asv_handler.current_state
 
@@ -1238,7 +1260,9 @@ class VisionService:
 
             # 2. MISI 2: KOTAK FOTO & SAFETY TRANSISI / EXIT (WP 11 s.d. WP 15)
             # Mencakup WP 11-12 (Kotak Biru), 12-13 (Transisi), 13-14 (Kotak Hijau), dan 14-15 (Exit Safety)
-            elif (range_kotak_biru[0] <= current_wp <= range_kotak_hijau[1] + 1) and not is_last_wp:
+            elif (
+                range_kotak_biru[0] <= current_wp <= range_kotak_hijau[1] + 1
+            ) and not is_last_wp:
                 if cls in ["kotak-biru", "kotak-hijau"]:
                     valid_buoys.append(det)
 
@@ -1255,7 +1279,9 @@ class VisionService:
 
             # Logika Khusus Docking di WP Terakhir: Kunci Bola Kiri (Arena A) atau Bola Kanan (Arena B)
             if is_last_wp:
-                blue_targets = [b for b in valid_buoys if b.get("class") == "kotak-biru"]
+                blue_targets = [
+                    b for b in valid_buoys if b.get("class") == "kotak-biru"
+                ]
                 if blue_targets:
                     if "B" in active_arena:
                         # Arena B: Kunci bola biru paling KANAN (center_x terbesar)
@@ -1358,7 +1384,7 @@ class VisionService:
             with VisionService._frame_lock_cam1:
                 if VisionService._latest_processed_frame_cam1 is not None:
                     frame_to_use = VisionService._latest_processed_frame_cam1.copy()
-            
+
             if frame_to_use is None:
                 print("[Mission] Gagal Auto-Capture Surface: Frame CAM1 None.")
                 return
@@ -1372,7 +1398,7 @@ class VisionService:
             with VisionService._frame_lock_cam2:
                 if VisionService._latest_raw_frame_cam2 is not None:
                     frame_to_use = VisionService._latest_raw_frame_cam2.copy()
-                    
+
             if frame_to_use is None:
                 print("[Mission] Gagal Auto-Capture Underwater: Frame CAM2 None.")
                 return
@@ -1385,7 +1411,9 @@ class VisionService:
             return
 
         if frame_to_use is None:
-            print(f"[Mission] Gagal Auto-Capture '{mode}': Frame None (swapped={is_swapped}).")
+            print(
+                f"[Mission] Gagal Auto-Capture '{mode}': Frame None (swapped={is_swapped})."
+            )
             return
 
         # --- PROSES OVERLAY & SIMPAN ---
@@ -1413,11 +1441,18 @@ class VisionService:
 
         # Emit event ke semua klien web agar galeri langsung refresh
         try:
-            race_id = self.asv_handler.logger.current_race_id if hasattr(self.asv_handler, "logger") else None
-            self.socketio.emit("new_capture", {
-                "file": filename,
-                "race_id": race_id,
-            })
+            race_id = (
+                self.asv_handler.logger.current_race_id
+                if hasattr(self.asv_handler, "logger")
+                else None
+            )
+            self.socketio.emit(
+                "new_capture",
+                {
+                    "file": filename,
+                    "race_id": race_id,
+                },
+            )
         except Exception as emit_err:
             logging.warning(f"[Photography] Gagal emit new_capture: {emit_err}")
 

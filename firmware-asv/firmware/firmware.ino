@@ -14,19 +14,35 @@ Adafruit_SSD1306 oled(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
 bool oledOk = false;             // Flag: OLED berhasil diinisialisasi
 unsigned long lastOledUpdate = 0; // Timestamp terakhir OLED diperbarui
 
-// ---------------- GPS (Custom UBX Parser, TANPA LIBRARY!) ----------------
-HardwareSerial gpsSerial(2); // Menggunakan Serial Port 2 ESP32
-#define GPS_BAUD_RATE 115200 // Baud rate GPS (HARUS sudah disimpan di u-center!)
-#define GPS_RX_PIN 16 // Pin RX untuk komunikasi GPS (default Serial 2 RX)
-#define GPS_TX_PIN 17 // Pin TX untuk komunikasi GPS (default Serial 2 TX)
+// ======================================================
+// ESP32 GPS 5 Hz RECEIVER (ZED-F9P NMEA @ 115200 Baud)
+// Tanpa library GPS - Parsing NMEA GGA & RMC
+// ======================================================
+#define GPS_RX 16
+#define GPS_TX 17
+#define GPS_SERIAL Serial2
+#define GPS_BAUD 115200
 
-// --- UBX Parser State Machine ---
-uint8_t ubxState = 0;
-uint16_t ubxPayloadLength = 0;
-uint16_t ubxPayloadCounter = 0;
-uint8_t ubxPayload[100];
-uint8_t ubxCkA = 0, ubxCkB = 0;
-uint8_t gpsFixType = 0; // Variabel global pengganti myGPS.getFixType()
+// --- DATA GPS GLOBAL ---
+double latitude  = 0.0;
+double longitude = 0.0;
+double altitude  = 0.0;
+double hdop      = 0.0;
+double speedKmh  = 0.0;
+int satellites   = 0;
+String fixStatus = "NO FIX";
+uint8_t gpsFixType = 0; // 0=No fix, 1=GPS, 2=DGPS, 4=RTK FIX, 5=RTK FLOAT, 6=DR
+
+// Aliases untuk kompatibilitas penuh logika navigasi firmware
+#define lat latitude
+#define lon longitude
+#define speed speedKmh
+#define sats satellites
+
+// --- BUFFER & MONITORING NMEA ---
+String nmeaBuffer = "";
+unsigned long lastGGA = 0;
+double gpsHz = 0.0;
 
 // ---------------- LED GPS FIX ----------------
 #define LED_GPS 2   // LED ESP32 (GPIO 2) untuk indikasi lock GPS
@@ -517,17 +533,18 @@ void setup() {
   pinMode(LED_GPS, OUTPUT);
   digitalWrite(LED_GPS, LOW); 
 
-  // --- Inisialisasi GPS (Custom UBX Parser) ---
-  // PENTING: Modul GPS HARUS sudah dikonfigurasi via u-center sebelumnya:
-  //   - Baud rate: 115200
-  //   - Output: UBX only (matikan NMEA)
-  //   - Navigation Rate: 5Hz
-  //   - GNSS: GPS + GLONASS
-  //   - Simpan ke Flash (Send CFG-CFG Save)
-  Serial.println("Mendengarkan GPS U-Blox (Custom UBX Parser)...");
-  gpsSerial.setRxBufferSize(1024); // Perbesar buffer agar data 115200bps tidak tumpah
-  gpsSerial.begin(GPS_BAUD_RATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN); 
-  Serial.println("[GPS] Parser UBX-NAV-PVT siap (115200 baud, tanpa library).");
+  // --- Inisialisasi GPS (ZED-F9P NMEA Parser @ 115200 Baud) ---
+  Serial.println();
+  Serial.println("========================================");
+  Serial.println(" ESP32 GPS RECEIVER");
+  Serial.println(" Input : ZED-F9P UART1");
+  Serial.println(" Rate  : 5 Hz");
+  Serial.println(" Baud  : 115200");
+  Serial.println(" Lat/Lon : 8 digit decimal");
+  Serial.println("========================================");
+  GPS_SERIAL.setRxBufferSize(1024); // Perbesar buffer agar data 115200bps tidak tumpah
+  GPS_SERIAL.begin(GPS_BAUD, SERIAL_8N1, GPS_RX, GPS_TX); 
+  Serial.println("[GPS] NMEA Parser siap (115200 baud, tanpa library).");
 
   Wire.begin(21, 22); 
   Wire.setTimeOut(150); // Mencegah I2C blocking tak terhingga jika kena EMI
@@ -568,57 +585,181 @@ void setup() {
 
 // --- Variabel Global Telemetri & Timing ---
 float heading = 0.0;
-double lat = 0.0, lon = 0.0;
-double speed = 0.0; 
 double cog = 0.0; // Course Over Ground
-int sats = 0;
 unsigned long lastLoopTime = 0;
 // ---------------------------------
 
-// --- Custom UBX-NAV-PVT Parser ---
-// Fungsi ini dipanggil otomatis saat 92-byte payload PVT berhasil divalidasi.
-void parsePVT() {
-  gpsFixType = ubxPayload[20];
-  sats = ubxPayload[23];
+// ======================================================
+// GET FIELD NMEA
+// ======================================================
+String getField(const String &data, int index) {
+  int start = 0;
+  int field = 0;
+  for (int i = 0; i <= data.length(); i++) {
+    if (i == data.length() || data.charAt(i) == ',') {
+      if (field == index) {
+        return data.substring(start, i);
+      }
+      field++;
+      start = i + 1;
+    }
+  }
+  return "";
+}
 
-  // Ekstraksi 4 byte gabungan (Little Endian) sesuai Data Sheet u-blox
-  int32_t lon_raw    = ubxPayload[24] | (ubxPayload[25]<<8) | (ubxPayload[26]<<16) | (ubxPayload[27]<<24);
-  int32_t lat_raw    = ubxPayload[28] | (ubxPayload[29]<<8) | (ubxPayload[30]<<16) | (ubxPayload[31]<<24);
-  int32_t gSpeed_raw = ubxPayload[60] | (ubxPayload[61]<<8) | (ubxPayload[62]<<16) | (ubxPayload[63]<<24);
-  int32_t head_raw   = ubxPayload[64] | (ubxPayload[65]<<8) | (ubxPayload[66]<<16) | (ubxPayload[67]<<24);
+// ======================================================
+// NMEA COORDINATE CONVERTER
+// ======================================================
+double nmeaToDecimal(String value, String direction) {
+  if (value.length() < 4) {
+    return 0.0;
+  }
+  double raw = value.toDouble();
+  int degrees = (int)(raw / 100.0);
+  double minutes = raw - (degrees * 100.0);
+  double result = degrees + (minutes / 60.0);
+  if (direction == "S" || direction == "W") {
+    result *= -1.0;
+  }
+  return result;
+}
 
-  if (gpsFixType > 0) {
-    lat   = lat_raw / 10000000.0;
-    lon   = lon_raw / 10000000.0;
-    speed = gSpeed_raw / 1000.0 * 3.6; // m/s -> km/h
-    cog   = head_raw / 100000.0;       // 1e-5 deg -> deg
+// ======================================================
+// PARSE GGA
+// ======================================================
+void parseGGA(const String &sentence) {
+  String latStr = getField(sentence, 2);
+  String latDir = getField(sentence, 3);
+  String lonStr = getField(sentence, 4);
+  String lonDir = getField(sentence, 5);
+  String quality = getField(sentence, 6);
+  String sat = getField(sentence, 7);
+  String hdopValue = getField(sentence, 8);
+  String altitudeValue = getField(sentence, 9);
+
+  if (latStr.length() > 0) {
+    latitude = nmeaToDecimal(latStr, latDir);
+  }
+  if (lonStr.length() > 0) {
+    longitude = nmeaToDecimal(lonStr, lonDir);
+  }
+  if (sat.length() > 0) {
+    satellites = sat.toInt();
+  }
+  if (hdopValue.length() > 0) {
+    hdop = hdopValue.toDouble();
+  }
+  if (altitudeValue.length() > 0) {
+    altitude = altitudeValue.toDouble();
+  }
+
+  // --- FIX STATUS & LED INDICATION ---
+  if (quality == "0") {
+    fixStatus = "NO FIX";
+    gpsFixType = 0;
+    digitalWrite(LED_GPS, LOW);
+  } else if (quality == "1") {
+    fixStatus = "GPS";
+    gpsFixType = 1;
+    digitalWrite(LED_GPS, HIGH);
+  } else if (quality == "2") {
+    fixStatus = "DGPS";
+    gpsFixType = 2;
+    digitalWrite(LED_GPS, HIGH);
+  } else if (quality == "4") {
+    fixStatus = "RTK FIX";
+    gpsFixType = 4;
+    digitalWrite(LED_GPS, HIGH);
+  } else if (quality == "5") {
+    fixStatus = "RTK FLOAT";
+    gpsFixType = 5;
+    digitalWrite(LED_GPS, HIGH);
+  } else if (quality == "6") {
+    fixStatus = "DR";
+    gpsFixType = 6;
     digitalWrite(LED_GPS, HIGH);
   } else {
-    lat = 0.0; lon = 0.0; speed = 0.0; cog = 0.0; sats = 0;
+    fixStatus = "UNKNOWN";
+    gpsFixType = 0;
     digitalWrite(LED_GPS, LOW);
   }
 }
 
-// --- Mesin Penyadap UBX (dipanggil di awal loop) ---
-void readGPS_UBX() {
-  while (gpsSerial.available()) {
-    uint8_t c = gpsSerial.read();
-    switch (ubxState) {
-      case 0: if (c == 0xB5) ubxState = 1; break;
-      case 1: if (c == 0x62) ubxState = 2; else ubxState = 0; break;
-      case 2: if (c == 0x01) { ubxState = 3; ubxCkA = c; ubxCkB = c; } else ubxState = 0; break;
-      case 3: if (c == 0x07) { ubxState = 4; ubxCkA += c; ubxCkB += ubxCkA; } else ubxState = 0; break;
-      case 4: ubxPayloadLength = c; ubxCkA += c; ubxCkB += ubxCkA; ubxState = 5; break;
-      case 5: ubxPayloadLength |= (c << 8); ubxCkA += c; ubxCkB += ubxCkA;
-              if (ubxPayloadLength == 92) { ubxState = 6; ubxPayloadCounter = 0; }
-              else ubxState = 0; break;
-      case 6: ubxPayload[ubxPayloadCounter++] = c;
-              ubxCkA += c; ubxCkB += ubxCkA;
-              if (ubxPayloadCounter == 92) ubxState = 7;
-              break;
-      case 7: if (c == ubxCkA) ubxState = 8; else ubxState = 0; break;
-      case 8: if (c == ubxCkB) parsePVT();
-              ubxState = 0; break;
+// ======================================================
+// PARSE RMC
+// ======================================================
+void parseRMC(const String &sentence) {
+  String speedStr = getField(sentence, 7);
+  if (speedStr.length() > 0) {
+    double knots = speedStr.toDouble();
+    speedKmh = knots * 1.852; // knots -> km/h
+  }
+
+  String cogStr = getField(sentence, 8);
+  if (cogStr.length() > 0) {
+    cog = cogStr.toDouble();
+  }
+}
+
+// ======================================================
+// PRINT DATA GPS KE SERIAL (8 Digit Decimal Precision)
+// ======================================================
+void printGPS() {
+  Serial.print("GPS,");
+  Serial.print(latitude, 8);
+  Serial.print(",");
+  Serial.print(longitude, 8);
+  Serial.print(",");
+  Serial.print(fixStatus);
+  Serial.print(",");
+  Serial.print(satellites);
+  Serial.print(",");
+  Serial.print(hdop, 2);
+  Serial.print(",");
+  Serial.print(speedKmh, 2);
+  Serial.print(",");
+  Serial.print(altitude, 2);
+  Serial.print(",");
+  Serial.println(gpsHz, 2);
+}
+
+// ======================================================
+// PARSE NMEA ROUTER
+// ======================================================
+void parseNMEA(const String &sentence) {
+  if (sentence.startsWith("$GNGGA") || sentence.startsWith("$GPGGA")) {
+    parseGGA(sentence);
+
+    unsigned long now = millis();
+    if (lastGGA != 0) {
+      unsigned long delta = now - lastGGA;
+      if (delta > 0) {
+        gpsHz = 1000.0 / (double)delta;
+      }
+    }
+    lastGGA = now;
+    printGPS();
+  } else if (sentence.startsWith("$GNRMC") || sentence.startsWith("$GPRMC")) {
+    parseRMC(sentence);
+  }
+}
+
+// ======================================================
+// BACA STREAM NMEA DARI ZED-F9P (Non-blocking)
+// ======================================================
+void readGPS_NMEA() {
+  while (GPS_SERIAL.available()) {
+    char c = GPS_SERIAL.read();
+    if (c == '\n') {
+      if (nmeaBuffer.length() > 0) {
+        parseNMEA(nmeaBuffer);
+      }
+      nmeaBuffer = "";
+    } else if (c != '\r') {
+      nmeaBuffer += c;
+    }
+    if (nmeaBuffer.length() > 150) {
+      nmeaBuffer = "";
     }
   }
 }
@@ -639,7 +780,6 @@ void updateOLED() {
   oled.println("=== NAVANTARA ASV ===");
 
   // --- Baris 2: HDG (Heading Kompas) ---
-  // Tampil besar di tengah layar agar mudah dibaca dari jauh
   oled.setTextSize(2);
   oled.setCursor(0, 14);
   oled.print("HDG ");
@@ -655,15 +795,10 @@ void updateOLED() {
 
   oled.setCursor(0, 48);
   oled.print("SAT: ");
-  oled.print(sats);
-  // Tampilkan status fix GPS agar mudah dimonitor lapangan
-  if (gpsFixType >= 3) {
-    oled.print(" [FIX 3D]");
-  } else if (gpsFixType == 2) {
-    oled.print(" [FIX 2D]");
-  } else {
-    oled.print(" [NO FIX]");
-  }
+  oled.print(satellites);
+  oled.print(" [");
+  oled.print(fixStatus);
+  oled.println("]");
 
   oled.display();
 }
@@ -672,8 +807,8 @@ void loop() {
   // 1. BACA SERIAL TERUS MENERUS TANPA HENTI (Mencegah Buffer Overflow)
   checkSerialInput(); 
 
-  // 2. BACA GPS UBX TERUS MENERUS (Mencegah Buffer Overflow pada 115200 baud)
-  readGPS_UBX();
+  // 2. BACA GPS NMEA TERUS MENERUS (Mencegah Buffer Overflow pada 115200 baud)
+  readGPS_NMEA();
 
   // 3. Update OLED setiap 500ms (non-blocking)
   updateOLED();
@@ -1047,11 +1182,15 @@ void loop() {
   jsonDoc["sts"] = status;
 
   jsonDoc["hdg"] = (float)round(heading * 100) / 100;
-  jsonDoc["cog"] = (float)round(cog * 10) / 10; // [NEW] Kirim COG ke Jetson
-  jsonDoc["lat"] = lat;
-  jsonDoc["lon"] = lon;
-  jsonDoc["spd"] = (float)round(speed * 100) / 100;
-  jsonDoc["sat"] = sats;
+  jsonDoc["cog"] = (float)round(cog * 10) / 10; // Kirim COG ke Jetson
+  jsonDoc["lat"] = latitude;
+  jsonDoc["lon"] = longitude;
+  jsonDoc["spd"] = (float)round(speedKmh * 100) / 100;
+  jsonDoc["sat"] = satellites;
+  jsonDoc["fix"] = fixStatus;
+  jsonDoc["hdop"] = (float)round(hdop * 100) / 100;
+  jsonDoc["alt"] = (float)round(altitude * 10) / 10;
+  jsonDoc["hz"] = (float)round(gpsHz * 10) / 10;
 
   jsonDoc["srv"] = finalServo;
   jsonDoc["mot"] = finalMotor;

@@ -296,11 +296,13 @@ class MainWindow(QMainWindow):
         self.waypoints_panel.load_mission_requested.connect(
             self.load_predefined_mission
         )
-        
+
         self.waypoints_panel.counter_action_requested.connect(
-            lambda action: self.api_client.send_command("DEBUG_WP_COUNTER", {"action": action})
+            lambda action: self.api_client.send_command(
+                "DEBUG_WP_COUNTER", {"action": action}
+            )
         )
-        
+
         self.api_client.frame_cam1_updated.connect(self.video_view.update_frame_1)
         self.api_client.frame_cam2_updated.connect(self.video_view.update_frame_2)
 
@@ -318,7 +320,9 @@ class MainWindow(QMainWindow):
             lambda payload: self.api_client.send_command("SET_DOCK_ENABLED", payload)
         )
         self.settings_panel.send_box_avoidance_config.connect(
-            lambda payload: self.api_client.send_command("UPDATE_BOX_AVOIDANCE_CONFIG", payload)
+            lambda payload: self.api_client.send_command(
+                "UPDATE_BOX_AVOIDANCE_CONFIG", payload
+            )
         )
 
         # --- Koneksi Capture RAW/Overlay ---

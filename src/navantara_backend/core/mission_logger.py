@@ -11,7 +11,9 @@ class MissionLogger:
         if base_log_dir is None:
             # Otomatis gunakan folder 'logs' di root project
             project_root = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                )
             )
             self.base_log_dir = os.path.join(project_root, "logs")
         else:
@@ -99,7 +101,11 @@ class MissionLogger:
         Menerima state_data (dict) dan memformatnya menjadi kolom Day, Date, dll.
         """
         with self._lock:
-            if not self.telemetry_file or self.telemetry_file.closed or not self.telemetry_writer:
+            if (
+                not self.telemetry_file
+                or self.telemetry_file.closed
+                or not self.telemetry_writer
+            ):
                 return
             try:
                 now = datetime.now()
@@ -139,7 +145,7 @@ class MissionLogger:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 with open(self.event_log_path, "a") as f:
                     f.write(f"[{timestamp}] {message}\n")
-            except Exception as e:
+            except Exception:
                 pass
 
     def get_current_capture_dir(self):

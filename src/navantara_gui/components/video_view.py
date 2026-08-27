@@ -128,7 +128,7 @@ class VideoView(QWidget):
             if q_img and not q_img.isNull():
                 target_size = label_widget.size()
                 if target_size.width() > 10 and target_size.height() > 10:
-                    scaled_pix = pixmap = QPixmap.fromImage(q_img).scaled(
+                    scaled_pix = QPixmap.fromImage(q_img).scaled(
                         target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
                     )
                     label_widget.setPixmap(scaled_pix)

@@ -38,7 +38,7 @@ class SettingsPanel(QWidget):
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
-        
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(2, 2, 2, 2)
         main_layout.setSpacing(4)
@@ -56,7 +56,9 @@ class SettingsPanel(QWidget):
 
         def create_sub_header(text):
             label = QLabel(f"• {text}")
-            label.setStyleSheet("font-weight: bold; color: #0277bd; margin-top: 1px; margin-bottom: 0px; font-size: 9pt;")
+            label.setStyleSheet(
+                "font-weight: bold; color: #0277bd; margin-top: 1px; margin-bottom: 0px; font-size: 9pt;"
+            )
             return label
 
         # =====================================================================
@@ -251,7 +253,9 @@ class SettingsPanel(QWidget):
         row += 1
 
         # Sub-header: Manuver Pemotretan
-        misi2_grid.addWidget(create_sub_header("Manuver Pemotretan (Titik Foto):"), row, 0, 1, 4)
+        misi2_grid.addWidget(
+            create_sub_header("Manuver Pemotretan (Titik Foto):"), row, 0, 1, 4
+        )
         row += 1
         misi2_grid.addWidget(QLabel("Spd Maju:"), row, 0)
         misi2_grid.addWidget(self.spin_portrait_speed, row, 1)
@@ -270,7 +274,9 @@ class SettingsPanel(QWidget):
         row += 1
 
         # Sub-header: Manuver Menghindar Kotak
-        misi2_grid.addWidget(create_sub_header("Manuver Menghindar (Pasca Foto):"), row, 0, 1, 4)
+        misi2_grid.addWidget(
+            create_sub_header("Manuver Menghindar (Pasca Foto):"), row, 0, 1, 4
+        )
         row += 1
         misi2_grid.addWidget(QLabel("Avoid Spd:"), row, 0)
         misi2_grid.addWidget(self.spin_box_speed, row, 1)
@@ -560,8 +566,12 @@ class SettingsPanel(QWidget):
 
         if "docking_defaults" not in self.config:
             self.config["docking_defaults"] = {}
-        self.config["docking_defaults"]["motor_utama_pwm"] = self.spin_dock_motor.value()
-        self.config["docking_defaults"]["motor_depan_pwm"] = self.spin_dock_front.value()
+        self.config["docking_defaults"][
+            "motor_utama_pwm"
+        ] = self.spin_dock_motor.value()
+        self.config["docking_defaults"][
+            "motor_depan_pwm"
+        ] = self.spin_dock_front.value()
         self.config["docking_defaults"]["servo_left"] = self.spin_dock_left.value()
         self.config["docking_defaults"]["servo_right"] = self.spin_dock_right.value()
         self.config["docking_defaults"]["charge_duration_ms"] = (
@@ -574,8 +584,10 @@ class SettingsPanel(QWidget):
             config_path = os.path.join(project_root, "config", "config.json")
             with open(config_path, "w") as f:
                 json.dump(self.config, f, indent=2)
-            print(f"[SettingsPanel] Default konfigurasi berhasil disimpan ke {config_path}")
-            
+            print(
+                f"[SettingsPanel] Default konfigurasi berhasil disimpan ke {config_path}"
+            )
+
             # Efek visual konfirmasi tombol berhasil disimpan
             self.save_default_button.setText("✅ Saved Successfully!")
             self.save_default_button.setStyleSheet(

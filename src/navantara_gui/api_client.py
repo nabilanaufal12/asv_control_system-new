@@ -1,12 +1,7 @@
 # src/navantara_gui/api_client.py
-import socketio
-import numpy as np
-import cv2
-import base64  # <--- 1. TAMBAHAN PENTING
-
-from PySide6.QtCore import QObject, Signal, Slot, QThread
-
 import urllib.request
+import socketio
+from PySide6.QtCore import QObject, Signal, Slot, QThread
 
 # --- [OPTIMASI KEY MINIFICATION: MAPPING DICTIONARY] ---
 # Untuk decode JSON key pendek kembali ke full key asli AsvState
@@ -56,22 +51,25 @@ class MjpegStreamThread(QThread):
             try:
                 req = urllib.request.Request(self.url)
                 with urllib.request.urlopen(req, timeout=5) as res:
-                    bytes_data = b''
+                    bytes_data = b""
                     while self.running:
                         chunk = res.read(1024)
                         if not chunk:
                             break
                         bytes_data += chunk
-                        a = bytes_data.find(b'\xff\xd8')
-                        b = bytes_data.find(b'\xff\xd9')
+                        a = bytes_data.find(b"\xff\xd8")
+                        b = bytes_data.find(b"\xff\xd9")
                         if a != -1 and b != -1:
-                            jpg = bytes_data[a:b+2]
-                            bytes_data = bytes_data[b+2:]
+                            jpg = bytes_data[a : b + 2]
+                            bytes_data = bytes_data[b + 2 :]
                             self.frame_ready.emit(jpg)
-            except Exception as e:
+            except Exception:
                 if self.running:
-                    print(f"[MjpegStreamThread] Mencoba menyambung ulang ke {self.url}...")
+                    print(
+                        f"[MjpegStreamThread] Mencoba menyambung ulang ke {self.url}..."
+                    )
                     import time
+
                     time.sleep(1.5)  # Tunggu sebelum reconnect agar tidak spam CPU
             finally:
                 pass  # Terus loop selama self.running == True
@@ -86,6 +84,7 @@ class MjpegStreamThread(QThread):
         Hanya dipanggil saat shutdown aplikasi (bukan saat disconnect)."""
         self.running = False
         self.wait(3000)  # Timeout 3 detik agar tidak hang selamanya
+
 
 class ApiClient(QObject):
     """
@@ -155,7 +154,7 @@ class ApiClient(QObject):
             print("Koneksi ke backend terputus.")
             # Hentikan video stream via sinyal ke Main Thread
             self._internal_stop_video.emit()
-            
+
             # Reset state lengkap saat koneksi terputus
             self.full_gui_state = {}
 
@@ -188,11 +187,11 @@ class ApiClient(QObject):
     def _start_video_threads_safe(self):
         # Dipanggil di Main Thread berkat Signal
         self._stop_video_threads_safe()
-        
+
         self.cam1_thread = MjpegStreamThread(f"{self.base_url}/video_feed_1")
         self.cam1_thread.frame_ready.connect(self.frame_cam1_updated.emit)
         self.cam1_thread.start()
-        
+
         self.cam2_thread = MjpegStreamThread(f"{self.base_url}/video_feed_2")
         self.cam2_thread.frame_ready.connect(self.frame_cam2_updated.emit)
         self.cam2_thread.start()
@@ -210,7 +209,6 @@ class ApiClient(QObject):
             self.cam2_thread = None
 
     def initial_stream_request(self):
-
         """Fungsi yang dijalankan di latar belakang untuk meminta stream awal."""
         self.sio.sleep(0.1)
         self.request_data_stream(True)

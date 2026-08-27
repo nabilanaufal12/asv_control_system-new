@@ -106,17 +106,23 @@ def create_app():
     # Daftarkan blueprint API (yang berisi /live_video_feed)
 
     # --- HTTP MJPEG Endpoints ---
-    @app.route('/video_feed_1')
+    @app.route("/video_feed_1")
     def video_feed_1():
         from flask import Response
-        return Response(current_app.vision_service.generate_mjpeg_stream(1),
-                        mimetype='multipart/x-mixed-replace; boundary=frame')
 
-    @app.route('/video_feed_2')
+        return Response(
+            current_app.vision_service.generate_mjpeg_stream(1),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+        )
+
+    @app.route("/video_feed_2")
     def video_feed_2():
         from flask import Response
-        return Response(current_app.vision_service.generate_mjpeg_stream(2),
-                        mimetype='multipart/x-mixed-replace; boundary=frame')
+
+        return Response(
+            current_app.vision_service.generate_mjpeg_stream(2),
+            mimetype="multipart/x-mixed-replace; boundary=frame",
+        )
 
     app.register_blueprint(api_blueprint)
 
@@ -359,7 +365,6 @@ def create_app():
         return Response(
             stream_with_context(telemetry_stream()), content_type="text/event-stream"
         )
-
 
     # --- AKHIR DARI ENDPOINT BARU ---
 
