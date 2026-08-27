@@ -51,8 +51,8 @@ class MainWindow(QMainWindow):
         self.current_latitude = 0.0
         self.current_longitude = 0.0
 
-        # [FIX 1] Set default internal mode ke AUTO agar konsisten dengan Backend
-        self.current_control_mode = "AUTO"
+        # Set default internal mode ke MANUAL (mengikuti kondisi default RC)
+        self.current_control_mode = "MANUAL"
 
         self.is_rc_override = False  # Lacak status override RC
 
@@ -76,9 +76,6 @@ class MainWindow(QMainWindow):
 
         self.setup_ui()
         self.connect_signals()
-
-        # [FIX 2] Panggil set_mode("AUTO") saat startup
-        self.set_mode("AUTO")
 
         # Load default lintasan from config.json without dialog popup
         saved_arena = self.config.get("general", {}).get("default_arena", "Arena_A")
@@ -405,8 +402,15 @@ class MainWindow(QMainWindow):
             "lon", data.get("longitude", self.current_longitude)
         )
 
+        # Update mode kendali real-time dari telemetri
+        mode_val = data.get("control_mode", data.get("mode"))
+        if mode_val:
+            self.current_control_mode = str(mode_val).upper()
+
         status_text = data.get("status", "")
         self.is_rc_override = "RC MANUAL OVERRIDE" in status_text.upper()
+        if self.is_rc_override:
+            self.current_control_mode = "MANUAL"
 
         # Update ESP32 status
         is_esp_connected = data.get("conn", data.get("is_connected_to_serial", False))
