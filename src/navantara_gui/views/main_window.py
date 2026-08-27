@@ -17,11 +17,11 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
-    QStatusBar,
     QScrollArea,
     QApplication,
     QSplitter,
     QLabel,
+    QFrame,
 )
 from PySide6.QtCore import Slot, Qt
 
@@ -150,15 +150,12 @@ class MainWindow(QMainWindow):
         layout_sidebar_kanan.setContentsMargins(6, 0, 2, 0)
         layout_sidebar_kanan.addWidget(
             scroll_area_kanan, 1
-        )  # Stretch factor 1 agar mengisi ruang sisa
-        layout_sidebar_kanan.addWidget(
-            self.system_status_panel, 0
-        )  # Stretch factor 0 agar ukurannya fixed di bawah
+        )  # Waypoints Panel mengambil ruang penuh
 
         widget_sidebar_kanan = QWidget()
         widget_sidebar_kanan.setLayout(layout_sidebar_kanan)
 
-        # --- Layout Tengah (Video View + Camera Controls) ---
+        # --- Layout Tengah (Video View + Controls + Monitoring Dashboard) ---
         from PySide6.QtWidgets import QHBoxLayout
 
         layout_tengah = QVBoxLayout()
@@ -179,11 +176,49 @@ class MainWindow(QMainWindow):
         self.video_view.setFixedHeight(300)
         layout_tengah.addWidget(self.video_view, 0)
 
-        # Baris Bawah: Photo Capture Configuration (Menempel tepat di bawah video)
+        # Baris Tengah: Photo Capture Configuration
         layout_tengah.addWidget(self.control_panel, 0)
 
-        # Telemetry Sensor Data di panel video view tepat di bawah Photo Capture Configuration
-        layout_tengah.addWidget(self.sensor_display, 0)
+        # Baris Bawah 1: Telemetry Sensor Data & Navigation System Status (Berdampingan di Panel Tengah)
+        layout_monitoring = QHBoxLayout()
+        layout_monitoring.setContentsMargins(0, 0, 0, 0)
+        layout_monitoring.setSpacing(8)
+        layout_monitoring.addWidget(self.sensor_display, 1)
+        layout_monitoring.addWidget(self.system_status_panel, 1)
+
+        layout_tengah.addLayout(layout_monitoring, 0)
+
+        # Baris Bawah 2: Status Bar Koneksi (Di dalam Panel Tengah, bukan di footer window)
+        status_bar_frame = QFrame()
+        status_bar_frame.setFrameShape(QFrame.StyledPanel)
+        status_bar_frame.setStyleSheet(
+            "background-color: rgba(128, 128, 128, 0.08); border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 4px;"
+        )
+        layout_status_bar = QHBoxLayout(status_bar_frame)
+        layout_status_bar.setContentsMargins(10, 4, 10, 4)
+        layout_status_bar.setSpacing(12)
+
+        self.info_status_lbl = QLabel(
+            "Aplikasi Siap (Lite Mode). Menunggu koneksi ke backend..."
+        )
+        self.info_status_lbl.setStyleSheet("font-style: italic; color: #888888;")
+
+        self.backend_status_lbl = QLabel("GCS Backend: DISCONNECTED")
+        self.backend_status_lbl.setStyleSheet("font-weight: bold; color: red;")
+
+        self.esp_status_lbl = QLabel("ASV Serial Link (ESP32): DISCONNECTED")
+        self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red;")
+
+        sep = QLabel("|")
+        sep.setStyleSheet("color: #888888;")
+
+        layout_status_bar.addWidget(self.info_status_lbl)
+        layout_status_bar.addStretch()
+        layout_status_bar.addWidget(self.backend_status_lbl)
+        layout_status_bar.addWidget(sep)
+        layout_status_bar.addWidget(self.esp_status_lbl)
+
+        layout_tengah.addWidget(status_bar_frame, 0)
         layout_tengah.addStretch(1)
 
         widget_tengah = QWidget()
@@ -213,24 +248,6 @@ class MainWindow(QMainWindow):
         widget_pusat = QWidget()
         widget_pusat.setLayout(layout_keseluruhan)
         self.setCentralWidget(widget_pusat)
-
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-
-        # --- Persistent Status Bar Labels (Pojok Kanan Bawah Window) ---
-        self.backend_status_lbl = QLabel("GCS Backend Server: DISCONNECTED")
-        self.backend_status_lbl.setStyleSheet(
-            "font-weight: bold; color: red; margin-right: 15px;"
-        )
-
-        self.esp_status_lbl = QLabel("ASV Serial Link (ESP32): DISCONNECTED")
-        self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red; margin-right: 10px;")
-
-        self.status_bar.addPermanentWidget(self.backend_status_lbl)
-        self.status_bar.addPermanentWidget(self.esp_status_lbl)
-        self.status_bar.showMessage(
-            "Aplikasi Siap (Lite Mode). Menunggu koneksi ke backend..."
-        )
 
     def connect_signals(self):
         """Menghubungkan semua sinyal dan slot antar komponen."""
@@ -440,23 +457,22 @@ class MainWindow(QMainWindow):
     def on_connection_status_change(self, is_connected, message):
         # Update Backend status label
         if is_connected:
-            self.backend_status_lbl.setText("GCS Backend Server: CONNECTED")
+            self.backend_status_lbl.setText("GCS Backend: CONNECTED")
             self.backend_status_lbl.setStyleSheet(
-                "font-weight: bold; color: #2ecc71; margin-right: 20px;"
+                "font-weight: bold; color: #2ecc71;"
             )
             # Sinkronisasi otomatis pengaturan GUI Windows ke Jetson Backend
             self.settings_panel.broadcast_all_settings()
         else:
-            self.backend_status_lbl.setText("GCS Backend Server: DISCONNECTED")
-            self.backend_status_lbl.setStyleSheet(
-                "font-weight: bold; color: red; margin-right: 20px;"
-            )
+            self.backend_status_lbl.setText("GCS Backend: DISCONNECTED")
+            self.backend_status_lbl.setStyleSheet("font-weight: bold; color: red;")
 
             # Jika backend putus, ESP32 pasti putus
             self.esp_status_lbl.setText("ASV Serial Link (ESP32): DISCONNECTED")
             self.esp_status_lbl.setStyleSheet("font-weight: bold; color: red;")
 
-        self.status_bar.showMessage(message, 3000)  # Tampilkan pesan sementara 3 detik
+        if hasattr(self, "info_status_lbl") and message:
+            self.info_status_lbl.setText(message)
 
     @Slot()
     def on_request_manual_capture_surface(self):

@@ -184,85 +184,69 @@ class NavigationStatusMonitor(QGroupBox):
 class SensorDisplay(QGroupBox):
     """
     Menampilkan data telemetri sensor (Heading, COG, Speed, Lat, Lon, Fix/Hz).
-    Didesain horizontal untuk diletakkan di panel tengah di bawah Photo Capture Configuration.
+    Didesain berdampingan dengan NavigationStatusMonitor di bawah Photo Capture Configuration.
     """
 
     def __init__(self):
         super().__init__("Telemetry Sensor Data")
-        layout = QGridLayout()
-        layout.setVerticalSpacing(8)
-        layout.setHorizontalSpacing(15)
-        layout.setContentsMargins(12, 14, 12, 10)
+        self.layout = QGridLayout()
+        self.layout.setVerticalSpacing(5)
+        self.layout.setHorizontalSpacing(15)
+        self.layout.setContentsMargins(10, 10, 10, 10)
 
-        # --- Baris 0: Heading, COG, Speed ---
-        # Kolom 0: Heading
-        lbl_hdg = QLabel("Heading:")
+        # --- Baris 0 ---
+        # Kiri: Heading
+        self.lbl_hdg = QLabel("Heading:")
         self.val_heading = QLabel("90.0°")
         self.val_heading.setStyleSheet("font-size: 14px; font-weight: bold;")
-        h_box_hdg = QHBoxLayout()
-        h_box_hdg.addWidget(lbl_hdg)
-        h_box_hdg.addWidget(self.val_heading)
-        h_box_hdg.addStretch()
-
-        # Kolom 1: COG
-        lbl_cog = QLabel("COG:")
+        # Kanan: COG
+        self.lbl_cog = QLabel("COG:")
         self.val_cog = QLabel("0.0°")
         self.val_cog.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: #3498db;"
         )
-        h_box_cog = QHBoxLayout()
-        h_box_cog.addWidget(lbl_cog)
-        h_box_cog.addWidget(self.val_cog)
-        h_box_cog.addStretch()
 
-        # Kolom 2: Speed
-        lbl_spd = QLabel("Speed:")
+        # --- Baris 1 ---
+        # Kiri: Speed
+        self.lbl_spd = QLabel("Speed:")
         self.val_speed = QLabel("0.0 km/h")
         self.val_speed.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: #2ecc71;"
         )
-        h_box_spd = QHBoxLayout()
-        h_box_spd.addWidget(lbl_spd)
-        h_box_spd.addWidget(self.val_speed)
-        h_box_spd.addStretch()
-
-        # --- Baris 1: Latitude, Longitude, GPS Status / Hz ---
-        # Kolom 0: Latitude
-        lbl_lat = QLabel("Latitude:")
-        self.val_lat = QLabel("0.000000")
-        self.val_lat.setStyleSheet("font-weight: bold;")
-        h_box_lat = QHBoxLayout()
-        h_box_lat.addWidget(lbl_lat)
-        h_box_lat.addWidget(self.val_lat)
-        h_box_lat.addStretch()
-
-        # Kolom 1: Longitude
-        lbl_lon = QLabel("Longitude:")
-        self.val_lon = QLabel("0.000000")
-        self.val_lon.setStyleSheet("font-weight: bold;")
-        h_box_lon = QHBoxLayout()
-        h_box_lon.addWidget(lbl_lon)
-        h_box_lon.addWidget(self.val_lon)
-        h_box_lon.addStretch()
-
-        # Kolom 2: Status Fix GPS
-        lbl_fix = QLabel("GPS Fix:")
+        # Kanan: GPS Fix / Rate
+        self.lbl_fix = QLabel("GPS Fix:")
         self.val_fix = QLabel("NO FIX")
         self.val_fix.setStyleSheet("font-weight: bold; color: #e67e22;")
-        h_box_fix = QHBoxLayout()
-        h_box_fix.addWidget(lbl_fix)
-        h_box_fix.addWidget(self.val_fix)
-        h_box_fix.addStretch()
 
-        layout.addLayout(h_box_hdg, 0, 0)
-        layout.addLayout(h_box_cog, 0, 1)
-        layout.addLayout(h_box_spd, 0, 2)
+        # --- Baris 2 ---
+        # Kiri: Latitude
+        self.lbl_lat = QLabel("Latitude:")
+        self.val_lat = QLabel("0.000000")
+        self.val_lat.setStyleSheet("font-weight: bold;")
+        # Kanan: Longitude
+        self.lbl_lon = QLabel("Longitude:")
+        self.val_lon = QLabel("0.000000")
+        self.val_lon.setStyleSheet("font-weight: bold;")
 
-        layout.addLayout(h_box_lat, 1, 0)
-        layout.addLayout(h_box_lon, 1, 1)
-        layout.addLayout(h_box_fix, 1, 2)
+        # Baris 0
+        self.layout.addWidget(self.lbl_hdg, 0, 0)
+        self.layout.addWidget(self.val_heading, 0, 1)
+        self.layout.addWidget(self.lbl_cog, 0, 2)
+        self.layout.addWidget(self.val_cog, 0, 3)
 
-        self.setLayout(layout)
+        # Baris 1
+        self.layout.addWidget(self.lbl_spd, 1, 0)
+        self.layout.addWidget(self.val_speed, 1, 1)
+        self.layout.addWidget(self.lbl_fix, 1, 2)
+        self.layout.addWidget(self.val_fix, 1, 3)
+
+        # Baris 2
+        self.layout.addWidget(self.lbl_lat, 2, 0)
+        self.layout.addWidget(self.val_lat, 2, 1)
+        self.layout.addWidget(self.lbl_lon, 2, 2)
+        self.layout.addWidget(self.val_lon, 2, 3)
+
+        self.setLayout(self.layout)
 
     def update_sensor(self, data):
         hdg = data.get("heading", data.get("hdg", 0.0))
