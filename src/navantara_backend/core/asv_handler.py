@@ -125,14 +125,19 @@ class AsvState:
     box_front_motor_cmd: int = 1800
     box_motor_pwm_cmd: int = 1800
 
-    # Docking Parameters
-    dock_motor_utama: int = 1200
-    dock_motor_depan: int = 1400
-    dock_charge_duration_ms: int = 3000
-    dock_servo_left: int = 180
-    dock_servo_right: int = 0
-    docking_state: int = 0
+    # Docking Parameters (2-Stage: TURNING + CHARGING)
     docking_enabled: bool = True  # [ON/OFF] Toggle aktif/nonaktif docking mission
+    docking_state: int = 0
+    # Tahap 1: Turning
+    dock_turn_motor_pwm: int = 1400       # PWM motor belakang saat turning
+    dock_turn_servo: int = 0              # Sudut servo saat turning (otomatis sesuai arena)
+    dock_turn_angle: int = 90             # Sudut belok dari heading WP terakhir (derajat)
+    # Tahap 2: Charging (Dorong ke Dermaga)
+    dock_charge_motor_rear_pwm: int = 1400   # PWM motor belakang saat charging
+    dock_charge_motor_front_cw_pwm: int = 1800   # PWM motor depan CW (maju)
+    dock_charge_motor_front_ccw_pwm: int = 1800  # PWM motor depan CCW (mundur)
+    dock_charge_servo: int = 90           # Sudut servo saat charging (otomatis sesuai arena)
+    dock_charge_duration_s: float = 3.0   # Durasi charging dalam detik
 
 
 class AsvHandler:
@@ -168,10 +173,11 @@ class AsvHandler:
 
         # Buffer untuk menerima sinkronisasi waypoint dari ESP32
         self._sync_waypoints_buffer = []
-        self._docking_swing_triggered = False
-        self._docking_near_target = False
-        self._docking_last_seen_time = 0.0
-        self._docking_last_target_x = 0.0
+        # --- Docking 2-Stage State Machine (Jetson-Controlled) ---
+        self._dock_phase = "IDLE"          # "IDLE" | "TURNING" | "CHARGING" | "COMPLETE"
+        self._dock_target_heading = 0.0    # Heading target setelah turning
+        self._dock_captured_heading = 0.0  # Heading saat pertama kali masuk docking
+        self._dock_charge_start_time = 0.0 # Waktu mulai tahap charging
 
         pid_config = self.config.get("navigation", {}).get("heading_pid", {})
         self.pid_controller = PIDController(
@@ -251,12 +257,16 @@ class AsvHandler:
                     )
                 elif esp_status == "WP_COMPLETE":
                     processed_status = "MISI SELESAI"
-                elif esp_status == "DK_TURNING":
-                    processed_status = "DOCKING: TURNING"
-                elif esp_status == "DK_CHARGING":
-                    processed_status = "DOCKING: CHARGING"
-                elif esp_status == "DK_COMPLETE":
+                elif self._dock_phase == "TURNING":
+                    processed_status = f"DOCKING: TURNING ({self._dock_captured_heading:.0f}° → {self._dock_target_heading:.0f}°)"
+                elif self._dock_phase == "CHARGING":
+                    elapsed = time.time() - self._dock_charge_start_time
+                    remaining = max(0, self.current_state.dock_charge_duration_s - elapsed)
+                    processed_status = f"DOCKING: CHARGING ({remaining:.1f}s left)"
+                elif self._dock_phase == "COMPLETE":
                     processed_status = "DOCKING SELESAI"
+                elif esp_status == "DK_TRACKING_AI":
+                    processed_status = "DOCKING: MENUNGGU JETSON..."
                 elif esp_status == "NO_WAYPOINTS":
                     processed_status = "AUTO IDLE (NO WPs)"
                 elif esp_status == "GPS_INVALID":
@@ -645,128 +655,16 @@ class AsvHandler:
                                 servo_cmd = servo_default
 
                         elif obj_class in ["kotak-biru", "kotak-hijau", "kotak-merah"]:
-                            if obj_class == "kotak-biru" and is_last_wp:
-                                # --- LOGIKA DOCKING (BOLA BIRU) DI WP TERAKHIR ---
-                                with self.state_lock:
-                                    is_docking_enabled = (
-                                        self.current_state.docking_enabled
-                                    )
-                                    dock_front_pwm = self.current_state.dock_motor_depan
+                            # [DOCKING LAMA - DINONAKTIFKAN]
+                            # Logika docking berbasis vision (tracking bola biru) sudah diganti
+                            # dengan logika docking 2-tahap berbasis heading compass.
+                            # Lihat blok docking baru di bawah (setelah eksekusi serial).
+                            #
+                            # if obj_class == "kotak-biru" and is_last_wp:
+                            #     ... (logika tracking bola biru lama) ...
+                            #     ... (trigger S,DOCK_SWING) ...
 
-                                # 1. Jika ESP32 sedang mengeksekusi SWING (1) atau sudah COMPLETE (2), JANGAN kirim perintah apapun!
-                                if current_docking_state in [1, 2] or getattr(
-                                    self, "_docking_swing_triggered", False
-                                ):
-                                    if current_docking_state == 2:
-                                        desc = f"Docking -> DOCKING SELESAI ({current_arena}) [Mesin Mati]"
-                                    else:
-                                        desc = f"Docking -> SEDANG SWING ({current_arena}) DI ESP32..."
-                                    command_to_send = None
-                                else:
-                                    center_x = vision_target_frame_width / 2
-                                    box_width = self.current_state.vision_target.get(
-                                        "width", 0
-                                    )
-                                    target_point = vision_target_center_x
-                                    proximity_ratio = (
-                                        (box_width / vision_target_frame_width)
-                                        if vision_target_frame_width > 0
-                                        else 0
-                                    )
-                                    dist_cm = self.current_state.vision_target.get(
-                                        "distance_cm"
-                                    )
-
-                                    # Deteksi jarak dekat (<= 1 meter / proximity > 0.22 / dist < 120cm):
-                                    is_close_range = (proximity_ratio > 0.22) or (
-                                        dist_cm is not None and dist_cm < 120.0
-                                    )
-
-                                    if is_close_range:
-                                        self._docking_near_target = True
-                                        self._docking_last_seen_time = time.time()
-                                        self._docking_last_target_x = target_point
-
-                                    # Tentukan titik target X yang diinginkan di layar kamera:
-                                    # - Jarak Jauh (> 1 meter): Bola dijaga di TENGAH KAMERA (center_x)
-                                    # - Jarak Dekat (<= 1 meter):
-                                    #     * Arena A: Bola digeser ke KANAN kamera (desired_x = center_x + frame_width * 0.32)
-                                    #     * Arena B: Bola digeser ke KIRI kamera (desired_x = center_x - frame_width * 0.32)
-                                    if "B" in current_arena:
-                                        # Arena B: Target di Kiri lambung depan
-                                        desired_x = (
-                                            (
-                                                center_x
-                                                - vision_target_frame_width * 0.32
-                                            )
-                                            if is_close_range
-                                            else center_x
-                                        )
-                                        target_side = "Kiri"
-                                        is_at_contact_edge = (
-                                            target_point
-                                            <= vision_target_frame_width * 0.22
-                                        ) and (proximity_ratio >= 0.35)
-                                    else:
-                                        # Arena A: Target di Kanan lambung depan
-                                        desired_x = (
-                                            (
-                                                center_x
-                                                + vision_target_frame_width * 0.32
-                                            )
-                                            if is_close_range
-                                            else center_x
-                                        )
-                                        target_side = "Kanan"
-                                        is_at_contact_edge = (
-                                            target_point
-                                            >= vision_target_frame_width * 0.78
-                                        ) and (proximity_ratio >= 0.35)
-
-                                    # 2. Pemicu Manuver SWING DOCKING:
-                                    # Terpicu jika lambung depan menyentuh bola di tepi luar atau ukuran bola sangat besar
-                                    if is_docking_enabled and (
-                                        is_at_contact_edge or proximity_ratio > 0.48
-                                    ):
-                                        self._docking_swing_triggered = True
-                                        command_to_send = "S,DOCK_SWING\n"
-                                        desc = f"Docking -> LAMBUNG {target_side.upper()} MENYENTUH BOLA! TRIGGER SWING DOCKING!"
-                                        logging.warning(
-                                            f"[AsvHandler] DOCKING SWING TRIGGERED: Lambung {target_side} menyentuh bola (X={target_point:.1f}, Prox={proximity_ratio:.2f})"
-                                        )
-
-                                    # 3. Kemudi Tracking Presisi:
-                                    if not command_to_send:
-                                        error_x = target_point - desired_x
-                                        tolerance = 25
-                                        max_tracking_deflection = 35
-
-                                        if error_x < -tolerance:
-                                            turn_direction = "TRACKING_LEFT"
-                                            offset = (
-                                                error_x / center_x
-                                            ) * max_tracking_deflection
-                                            servo_cmd = int(90 + offset)
-                                            motor_depan_kanan = dock_front_pwm
-                                            desc = f"Docking -> Track Bola ({target_side}) Belok Kiri (Err: {error_x:.1f})"
-                                        elif error_x > tolerance:
-                                            turn_direction = "TRACKING_RIGHT"
-                                            offset = (
-                                                error_x / center_x
-                                            ) * max_tracking_deflection
-                                            servo_cmd = int(90 + offset)
-                                            motor_depan_kiri = dock_front_pwm
-                                            desc = f"Docking -> Track Bola ({target_side}) Belok Kanan (Err: {error_x:.1f})"
-                                        else:
-                                            turn_direction = "TRACKING_CENTER"
-                                            servo_cmd = servo_default
-                                            desc = f"Docking -> Kunci Bola ({target_side}) Lurus"
-
-                                        servo_cmd = max(35, min(145, servo_cmd))
-
-                            elif obj_class in ["kotak-biru", "kotak-hijau"]:
-                                self._docking_swing_triggered = False
-                                self._docking_near_target = False
+                            if obj_class in ["kotak-biru", "kotak-hijau"]:
 
                                 with self.state_lock:
                                     box_servo_kiri_aktif = (
@@ -984,18 +882,9 @@ class AsvHandler:
                             desc = "Unknown -> Lurus"
 
                         # 4. EKSEKUSI PENGIRIMAN SERIAL
-                        if command_to_send and command_to_send.startswith(
-                            "S,DOCK_SWING"
-                        ):
-                            # Jangan di-overwrite jika kita memicu DOCK_SWING
-                            logging.info(
-                                f"[AsvHandler] Mengirim trigger DOCK_SWING ke ESP32: {command_to_send.strip()}"
-                            )
-                        elif is_last_wp and (
-                            getattr(self, "_docking_swing_triggered", False)
-                            or current_docking_state in [1, 2]
-                        ):
-                            # Sedang mengeksekusi docking di ESP32 atau sudah selesai -> tahan semua command A
+                        # [DOCKING LAMA DINONAKTIFKAN] - Tidak ada lagi S,DOCK_SWING
+                        if self._dock_phase in ("TURNING", "CHARGING", "COMPLETE"):
+                            # Docking 2-tahap sedang aktif -> tahan semua command AI vision
                             command_to_send = None
                         elif nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
@@ -1008,7 +897,7 @@ class AsvHandler:
                                 "[AsvHandler] WP_COMPLETE dilaporkan -> mengirim W"
                             )
                         else:
-                            # Kirim 5 parameter: A, Servo (Selalu 90), Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
+                            # Kirim 5 parameter: A, Servo, Motor Belakang, Motor Kiri Depan, Motor Kanan Depan
                             command_to_send = f"A,{servo_cmd},{int(pwm_cmd)},{motor_depan_kiri},{motor_depan_kanan}\n"
                             logging.debug(
                                 f"[LOGIC DEBUG] AI ACTIVE | Motor Bawah: {int(pwm_cmd)} | Action: {desc}"
@@ -1026,26 +915,11 @@ class AsvHandler:
                         with self.state_lock:
                             self.current_state.last_pixel_error = 0
 
-                        # Cek apakah bola docking baru saja hilang setelah menyentuh tepi samping lambung
-                        if (
-                            is_last_wp
-                            and getattr(self, "_docking_near_target", False)
-                            and not getattr(self, "_docking_swing_triggered", False)
-                            and (
-                                time.time()
-                                - getattr(self, "_docking_last_seen_time", 0.0)
-                                < 1.2
-                            )
-                        ):
-                            self._docking_swing_triggered = True
-                            command_to_send = "S,DOCK_SWING\n"
-                            logging.warning(
-                                f"[AsvHandler] DOCKING SWING TRIGGERED: Bola keluar pandangan samping setelah kontak dekat (Last X={getattr(self, '_docking_last_target_x', 0.0):.1f})"
-                            )
-                        elif is_last_wp and (
-                            getattr(self, "_docking_swing_triggered", False)
-                            or current_docking_state in [1, 2]
-                        ):
+                        # [DOCKING LAMA DINONAKTIFKAN]
+                        # Logika fallback bola hilang sudah tidak diperlukan.
+                        # Docking baru berbasis heading, bukan vision.
+                        if self._dock_phase in ("TURNING", "CHARGING", "COMPLETE"):
+                            # Docking 2-tahap sedang aktif -> tahan semua command
                             command_to_send = None
                         elif self.serial_handler.is_connected:
                             command_to_send = "W\n"
@@ -1056,19 +930,146 @@ class AsvHandler:
                                 "[AsvHandler] WAYPOINT CONTROL -> Menunggu koneksi serial..."
                             )
 
+                # =====================================================================
+                # DOCKING 2-TAHAP: STATE MACHINE (JETSON-CONTROLLED)
+                # Trigger: ESP32 melaporkan esp_status == "DK_TRACKING_AI"
+                # =====================================================================
+                if control_mode == "AUTO" and self.serial_handler.is_connected:
+                    with self.state_lock:
+                        current_heading = self.current_state.heading
+                        dock_enabled = self.current_state.docking_enabled
+                        dock_arena = self.current_state.active_arena
+                        dock_esp_sts = self.current_state.esp_status
+
+                    # --- TAHAP 0: TRIGGER (IDLE → TURNING) ---
+                    if (
+                        self._dock_phase == "IDLE"
+                        and dock_enabled
+                        and dock_esp_sts == "DK_TRACKING_AI"
+                    ):
+                        self._dock_captured_heading = current_heading
+                        with self.state_lock:
+                            turn_angle = self.current_state.dock_turn_angle
+
+                        if "B" in dock_arena:
+                            # Arena B: Belok ke KANAN (+90°)
+                            self._dock_target_heading = (current_heading + turn_angle) % 360
+                        else:
+                            # Arena A: Belok ke KIRI (-90°)
+                            self._dock_target_heading = (current_heading - turn_angle) % 360
+
+                        self._dock_phase = "TURNING"
+                        logging.warning(
+                            f"[DOCKING] TAHAP 1 DIMULAI: Heading saat ini={current_heading:.1f}°, "
+                            f"Target={self._dock_target_heading:.1f}° "
+                            f"(Arena {'B' if 'B' in dock_arena else 'A'}, Belok {'KANAN' if 'B' in dock_arena else 'KIRI'} {turn_angle}°)"
+                        )
+
+                    # --- TAHAP 1: TURNING (Belok patah menggunakan motor belakang saja) ---
+                    if self._dock_phase == "TURNING":
+                        with self.state_lock:
+                            turn_motor = self.current_state.dock_turn_motor_pwm
+
+                        # Tentukan arah servo untuk belok
+                        if "B" in dock_arena:
+                            # Arena B: Belok kanan → servo ke 0° (kemudi kanan penuh)
+                            turn_servo = 0
+                        else:
+                            # Arena A: Belok kiri → servo ke 180° (kemudi kiri penuh)
+                            turn_servo = 180
+
+                        # Hitung selisih heading (circular difference)
+                        heading_diff = (self._dock_target_heading - current_heading + 180) % 360 - 180
+                        heading_error = abs(heading_diff)
+
+                        if heading_error <= 7.0:
+                            # Target heading tercapai! Lanjut ke CHARGING
+                            self._dock_phase = "CHARGING"
+                            self._dock_charge_start_time = time.time()
+                            logging.warning(
+                                f"[DOCKING] TAHAP 1 SELESAI: Heading={current_heading:.1f}°, "
+                                f"Target={self._dock_target_heading:.1f}° (Error={heading_error:.1f}°). "
+                                f"Memulai TAHAP 2 (CHARGING)..."
+                            )
+                        else:
+                            # Kirim perintah belok: motor belakang saja, motor depan mati
+                            command_to_send = f"A,{turn_servo},{turn_motor},1000,1000,1000\n"
+                            logging.debug(
+                                f"[DOCKING] TURNING: Heading={current_heading:.1f}° → Target={self._dock_target_heading:.1f}° "
+                                f"(Error={heading_error:.1f}°) | Servo={turn_servo}, Motor={turn_motor}"
+                            )
+
+                    # --- TAHAP 2: CHARGING (Dorong ke dermaga dengan motor asimetris) ---
+                    if self._dock_phase == "CHARGING":
+                        with self.state_lock:
+                            charge_rear = self.current_state.dock_charge_motor_rear_pwm
+                            charge_cw = self.current_state.dock_charge_motor_front_cw_pwm
+                            charge_ccw = self.current_state.dock_charge_motor_front_ccw_pwm
+                            charge_duration = self.current_state.dock_charge_duration_s
+
+                        elapsed = time.time() - self._dock_charge_start_time
+
+                        if elapsed >= charge_duration:
+                            # Durasi habis! DOCKING SELESAI
+                            self._dock_phase = "COMPLETE"
+                            command_to_send = "A,90,1000,1000,1000,1000\n"
+                            logging.warning(
+                                f"[DOCKING] TAHAP 2 SELESAI: Charging {charge_duration:.1f}s selesai. DOCKING COMPLETE!"
+                            )
+                        else:
+                            # Tentukan servo dan arah motor depan sesuai arena
+                            if "B" in dock_arena:
+                                # Arena B: Servo ke 0° (kanan)
+                                # Belakang maju (dir=1000), depan kanan maju (dir=1000), depan kiri mundur (dir=2000)
+                                charge_servo = 0
+                                front_kiri = charge_ccw   # Mundur (CCW)
+                                front_kanan = charge_cw   # Maju (CW)
+                                dir_rear = 1000           # Maju
+                                dir_front_kiri = 2000     # Mundur
+                                dir_front_kanan = 1000    # Maju
+                            else:
+                                # Arena A: Servo ke 180° (kiri)
+                                # Belakang maju (dir=1000), depan kiri maju (dir=1000), depan kanan mundur (dir=2000)
+                                charge_servo = 180
+                                front_kiri = charge_cw    # Maju (CW)
+                                front_kanan = charge_ccw  # Mundur (CCW)
+                                dir_rear = 1000           # Maju
+                                dir_front_kiri = 1000     # Maju
+                                dir_front_kanan = 2000    # Mundur
+
+                            command_to_send = (
+                                f"A,{charge_servo},{charge_rear},{front_kiri},{front_kanan},"
+                                f"{dir_rear},{dir_front_kiri},{dir_front_kanan}\n"
+                            )
+                            remaining = charge_duration - elapsed
+                            logging.debug(
+                                f"[DOCKING] CHARGING: Servo={charge_servo}, Rear={charge_rear}, "
+                                f"FL={front_kiri}, FR={front_kanan} | {remaining:.1f}s remaining"
+                            )
+
+                    # --- TAHAP 3: COMPLETE (Semua motor mati) ---
+                    if self._dock_phase == "COMPLETE":
+                        command_to_send = "A,90,1000,1000,1000,1000\n"
+
+                # =====================================================================
+                # AKHIR DOCKING 2-TAHAP
+                # =====================================================================
+
                 if control_mode == "AUTO":
                     if esp_status == "WP_COMPLETE" or status in (
                         "WP_COMPLETE",
                         "MISI SELESAI",
                     ):
-                        if command_to_send is None or (
-                            isinstance(command_to_send, str)
-                            and not command_to_send.strip().startswith("W")
-                        ):
-                            command_to_send = "W\n"
-                            logging.info(
-                                "[AsvHandler] Mission complete detected -> forcing W"
-                            )
+                        # Jangan override jika docking sedang aktif
+                        if self._dock_phase == "IDLE":
+                            if command_to_send is None or (
+                                isinstance(command_to_send, str)
+                                and not command_to_send.strip().startswith("W")
+                            ):
+                                command_to_send = "W\n"
+                                logging.info(
+                                    "[AsvHandler] Mission complete detected -> forcing W"
+                                )
 
                 if command_to_send is None and resume_waypoint_on_clear:
                     if self.serial_handler.is_connected and control_mode == "AUTO":
@@ -1232,8 +1233,7 @@ class AsvHandler:
             logging.warning("[AsvHandler] Payload Box Avoidance Config tidak valid")
 
     def _handle_debug_counter(self, payload):
-        self._docking_swing_triggered = False
-        self._docking_near_target = False
+        self._dock_phase = "IDLE"
         action = payload.get("action")
         cmd = ""
 
@@ -1256,6 +1256,10 @@ class AsvHandler:
                 self.current_state.current_waypoint_index = 0
                 self.current_state.photo_mission_qty_taken_1 = 0
                 self.current_state.photo_mission_qty_taken_2 = 0
+                self._dock_phase = "IDLE"
+                self._dock_target_heading = 0.0
+                self._dock_captured_heading = 0.0
+                self._dock_charge_start_time = 0.0
 
             self.current_state.current_waypoint_index = min(
                 self.current_state.current_waypoint_index, max_points
@@ -1407,8 +1411,7 @@ class AsvHandler:
             logging.error(f"[AsvHandler] Error saat arming replace wp: {e}")
 
     def _handle_set_waypoints(self, payload):
-        self._docking_swing_triggered = False
-        self._docking_near_target = False
+        self._dock_phase = "IDLE"
         waypoints_data = payload.get("waypoints")
         raw_arena = payload.get("arena") or payload.get("arena_id")
 
@@ -1459,8 +1462,11 @@ class AsvHandler:
 
                         # Sinkronkan arah arena docking ke ESP32
                         direction = 1 if "B" in self.current_state.active_arena else 0
+                        with self.state_lock:
+                            turn_motor = self.current_state.dock_turn_motor_pwm
+                            charge_dur_ms = int(self.current_state.dock_charge_duration_s * 1000)
                         self.serial_handler.send_command(
-                            f"S,DOCK,{self.current_state.dock_motor_utama},{self.current_state.dock_charge_duration_ms},{direction},{self.current_state.dock_servo_left},{self.current_state.dock_servo_right}\n"
+                            f"S,DOCK,{turn_motor},{charge_dur_ms},{direction},0,180\n"
                         )
                         logging.info(
                             f"[AsvHandler] Waypoints kustom & Dock Config (Arena {'B' if direction==1 else 'A'}) disinkronkan ke ESP32."
@@ -1576,40 +1582,49 @@ class AsvHandler:
             logging.error(f"Error handling SET_DOCK_ENABLED: {e}")
 
     def _handle_set_dock_config(self, payload):
-        """Menerima konfigurasi docking dari GUI dan mengirim ke ESP32."""
+        """Menerima konfigurasi docking 2-tahap dari GUI (Jetson-controlled, tidak dikirim ke ESP32)."""
         try:
-            motor_utama = int(payload.get("motor_utama_pwm", 1200))
-            motor_depan = int(payload.get("motor_depan_pwm", 1400))
-            charge_ms = int(payload.get("charge_duration_ms", 3000))
-            servo_left = int(payload.get("servo_left", 0))
-            servo_right = int(payload.get("servo_right", 180))
+            # Tahap 1: Turning
+            turn_motor = int(payload.get("turn_motor_pwm", 1400))
+            turn_angle = int(payload.get("turn_angle", 90))
 
-            # Validasi range (0 s/d 180 derajat untuk kedua sisi)
-            motor_utama = max(1000, min(2000, motor_utama))
-            motor_depan = max(1000, min(2000, motor_depan))
-            servo_left = max(0, min(180, servo_left))
-            servo_right = max(0, min(180, servo_right))
+            # Tahap 2: Charging
+            charge_rear = int(payload.get("charge_motor_rear_pwm", 1400))
+            charge_cw = int(payload.get("charge_motor_front_cw_pwm", 1800))
+            charge_ccw = int(payload.get("charge_motor_front_ccw_pwm", 1800))
+            charge_duration = float(payload.get("charge_duration_s", 3.0))
+
+            # Validasi range
+            turn_motor = max(1000, min(2000, turn_motor))
+            turn_angle = max(10, min(180, turn_angle))
+            charge_rear = max(1000, min(2000, charge_rear))
+            charge_cw = max(1000, min(2000, charge_cw))
+            charge_ccw = max(1000, min(2000, charge_ccw))
+            charge_duration = max(0.5, min(30.0, charge_duration))
 
             with self.state_lock:
-                self.current_state.dock_motor_utama = motor_utama
-                self.current_state.dock_motor_depan = motor_depan
-                self.current_state.dock_charge_duration_ms = charge_ms
-                self.current_state.dock_servo_left = servo_left
-                self.current_state.dock_servo_right = servo_right
-                arena = self.current_state.active_arena
+                self.current_state.dock_turn_motor_pwm = turn_motor
+                self.current_state.dock_turn_angle = turn_angle
+                self.current_state.dock_charge_motor_rear_pwm = charge_rear
+                self.current_state.dock_charge_motor_front_cw_pwm = charge_cw
+                self.current_state.dock_charge_motor_front_ccw_pwm = charge_ccw
+                self.current_state.dock_charge_duration_s = charge_duration
 
-            direction = 1 if "B" in arena else 0  # 0=KIRI(A), 1=KANAN(B)
-
+            # Tetap kirim S,DOCK_EN/DIS ke ESP32 agar firmware tahu docking aktif
+            direction = 1 if "B" in self.current_state.active_arena else 0
             if self.serial_handler.is_connected:
+                # Kirim konfigurasi minimal ke ESP32 (agar firmware mengetahui docking enabled)
                 self.serial_handler.send_command(
-                    f"S,DOCK,{motor_utama},{charge_ms},{direction},{servo_left},{servo_right}\n"
-                )
-                logging.info(
-                    f"[AsvHandler] Dock Config dikirim ke ESP32: {motor_utama},{charge_ms},{direction},{servo_left},{servo_right}"
+                    f"S,DOCK,{turn_motor},{int(charge_duration * 1000)},{direction},0,180\n"
                 )
 
+            logging.info(
+                f"[AsvHandler] Dock Config 2-Tahap: Turn(Motor={turn_motor}, Angle={turn_angle}°), "
+                f"Charge(Rear={charge_rear}, CW={charge_cw}, CCW={charge_ccw}, Duration={charge_duration}s)"
+            )
             self.logger.log_event(
-                f"[GUI Command] Set Dock Config -> Motor:{motor_utama}, Front:{motor_depan}, Charge:{charge_ms}ms, Dir:{direction}, Left:{servo_left}, Right:{servo_right}"
+                f"[GUI Command] Set Dock Config 2-Tahap -> Turn: Motor={turn_motor} Angle={turn_angle}°, "
+                f"Charge: Rear={charge_rear} CW={charge_cw} CCW={charge_ccw} Duration={charge_duration}s"
             )
         except Exception as e:
             logging.error(f"Error handling SET_DOCK_CONFIG: {e}")

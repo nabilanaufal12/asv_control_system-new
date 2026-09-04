@@ -95,12 +95,13 @@
     ]
   },
   "docking_defaults": {
-    "motor_utama_pwm": 1800,
-    "motor_depan_pwm": 1600,
-    "charge_duration_ms": 1000,
-    "heading_tolerance_deg": 5,
-    "servo_left": 180,
-    "servo_right": 0
+    "turn_motor_pwm": 1400,
+    "turn_angle": 90,
+    "charge_motor_rear_pwm": 1400,
+    "charge_motor_front_cw_pwm": 1800,
+    "charge_motor_front_ccw_pwm": 1800,
+    "charge_duration_s": 3.0,
+    "docking_enabled": true
   },
   "api_urls": {},
   "gui_settings": {
@@ -138,11 +139,12 @@
       "portrait_rev_speed": 1800,
       "portrait_stop": 2,
       "portrait_reverse": 3,
-      "dock_motor": 1800,
-      "dock_front": 1600,
-      "dock_left": 180,
-      "dock_right": 0,
-      "dock_charge": 1,
+      "dock_turn_motor": 1400,
+      "dock_turn_angle": 90,
+      "dock_charge_rear": 1400,
+      "dock_charge_cw": 1800,
+      "dock_charge_ccw": 1800,
+      "dock_charge_duration": 3.0,
       "dock_enabled": true
     }
   }

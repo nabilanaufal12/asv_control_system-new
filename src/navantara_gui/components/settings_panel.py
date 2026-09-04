@@ -293,7 +293,7 @@ class SettingsPanel(QWidget):
         main_layout.addWidget(misi2_group)
 
         # =====================================================================
-        # 3. MISI 3: DOCKING AKHIR (WP Terakhir)
+        # 3. MISI 3: DOCKING AKHIR (WP Terakhir) - 2 Tahap
         # =====================================================================
         misi3_group = QGroupBox("Misi 3: Docking Akhir (Last WP)")
         dock_grid = setup_grid_layout()
@@ -301,56 +301,70 @@ class SettingsPanel(QWidget):
         self.chk_dock_enable = QCheckBox("Aktifkan Misi Docking")
         self.chk_dock_enable.setChecked(True)
 
-        self.spin_dock_motor = QSpinBox()
-        self.spin_dock_motor.setRange(1000, 2000)
-        self.spin_dock_motor.setValue(
-            self.config.get("docking_defaults", {}).get("motor_utama_pwm", 1200)
-        )
-
-        self.spin_dock_front = QSpinBox()
-        self.spin_dock_front.setRange(1000, 2000)
-        self.spin_dock_front.setValue(
-            self.config.get("docking_defaults", {}).get("motor_depan_pwm", 1400)
-        )
-
-        self.spin_dock_left = QSpinBox()
-        self.spin_dock_left.setRange(0, 180)
-        self.spin_dock_left.setValue(
-            self.config.get("docking_defaults", {}).get("servo_left", 180)
-        )
-        self.spin_dock_left.setPrefix("Left: ")
-        self.spin_dock_left.setSuffix("°")
-
-        self.spin_dock_right = QSpinBox()
-        self.spin_dock_right.setRange(0, 180)
-        self.spin_dock_right.setValue(
-            self.config.get("docking_defaults", {}).get("servo_right", 0)
-        )
-        self.spin_dock_right.setPrefix("Right: ")
-        self.spin_dock_right.setSuffix("°")
-
-        self.spin_dock_charge = QSpinBox()
-        self.spin_dock_charge.setRange(1, 15)
-        self.spin_dock_charge.setValue(
-            self.config.get("docking_defaults", {}).get("charge_duration_ms", 3000)
-            // 1000
-        )
-        self.spin_dock_charge.setSuffix(" s")
-
+        # --- Tahap 1: TURNING ---
         dock_grid.addWidget(self.chk_dock_enable, 0, 0, 1, 4)
+        lbl_tahap1 = QLabel("── Tahap 1: Turning ──")
+        lbl_tahap1.setStyleSheet("font-weight: bold; color: #4fc3f7; margin-top: 4px;")
+        dock_grid.addWidget(lbl_tahap1, 1, 0, 1, 4)
 
-        dock_grid.addWidget(QLabel("Speed:"), 1, 0)
-        dock_grid.addWidget(self.spin_dock_motor, 1, 1)
-        dock_grid.addWidget(QLabel("Front:"), 1, 2)
-        dock_grid.addWidget(self.spin_dock_front, 1, 3)
+        self.spin_dock_turn_motor = QSpinBox()
+        self.spin_dock_turn_motor.setRange(1000, 2000)
+        self.spin_dock_turn_motor.setValue(
+            self.config.get("docking_defaults", {}).get("turn_motor_pwm", 1400)
+        )
 
-        dock_grid.addWidget(QLabel("Swing L:"), 2, 0)
-        dock_grid.addWidget(self.spin_dock_left, 2, 1)
-        dock_grid.addWidget(QLabel("Swing R:"), 2, 2)
-        dock_grid.addWidget(self.spin_dock_right, 2, 3)
+        self.spin_dock_turn_angle = QSpinBox()
+        self.spin_dock_turn_angle.setRange(10, 180)
+        self.spin_dock_turn_angle.setValue(
+            self.config.get("docking_defaults", {}).get("turn_angle", 90)
+        )
+        self.spin_dock_turn_angle.setSuffix("°")
 
-        dock_grid.addWidget(QLabel("Charge Time:"), 3, 0)
-        dock_grid.addWidget(self.spin_dock_charge, 3, 1)
+        dock_grid.addWidget(QLabel("Motor Blkg:"), 2, 0)
+        dock_grid.addWidget(self.spin_dock_turn_motor, 2, 1)
+        dock_grid.addWidget(QLabel("Sudut Belok:"), 2, 2)
+        dock_grid.addWidget(self.spin_dock_turn_angle, 2, 3)
+
+        # --- Tahap 2: CHARGING ---
+        lbl_tahap2 = QLabel("── Tahap 2: Charging ──")
+        lbl_tahap2.setStyleSheet("font-weight: bold; color: #ffb74d; margin-top: 4px;")
+        dock_grid.addWidget(lbl_tahap2, 3, 0, 1, 4)
+
+        self.spin_dock_charge_rear = QSpinBox()
+        self.spin_dock_charge_rear.setRange(1000, 2000)
+        self.spin_dock_charge_rear.setValue(
+            self.config.get("docking_defaults", {}).get("charge_motor_rear_pwm", 1400)
+        )
+
+        self.spin_dock_charge_cw = QSpinBox()
+        self.spin_dock_charge_cw.setRange(1000, 2000)
+        self.spin_dock_charge_cw.setValue(
+            self.config.get("docking_defaults", {}).get("charge_motor_front_cw_pwm", 1800)
+        )
+
+        self.spin_dock_charge_ccw = QSpinBox()
+        self.spin_dock_charge_ccw.setRange(1000, 2000)
+        self.spin_dock_charge_ccw.setValue(
+            self.config.get("docking_defaults", {}).get("charge_motor_front_ccw_pwm", 1800)
+        )
+
+        self.spin_dock_charge_duration = QDoubleSpinBox()
+        self.spin_dock_charge_duration.setRange(0.5, 30.0)
+        self.spin_dock_charge_duration.setSingleStep(0.5)
+        self.spin_dock_charge_duration.setValue(
+            self.config.get("docking_defaults", {}).get("charge_duration_s", 3.0)
+        )
+        self.spin_dock_charge_duration.setSuffix(" s")
+
+        dock_grid.addWidget(QLabel("Motor Blkg:"), 4, 0)
+        dock_grid.addWidget(self.spin_dock_charge_rear, 4, 1)
+        dock_grid.addWidget(QLabel("Durasi:"), 4, 2)
+        dock_grid.addWidget(self.spin_dock_charge_duration, 4, 3)
+
+        dock_grid.addWidget(QLabel("M.Dpn CW:"), 5, 0)
+        dock_grid.addWidget(self.spin_dock_charge_cw, 5, 1)
+        dock_grid.addWidget(QLabel("M.Dpn CCW:"), 5, 2)
+        dock_grid.addWidget(self.spin_dock_charge_ccw, 5, 3)
 
         misi3_group.setLayout(dock_grid)
         main_layout.addWidget(misi3_group)
@@ -400,12 +414,13 @@ class SettingsPanel(QWidget):
         self.spin_portrait_stop.valueChanged.connect(self._on_set_photo_mission)
         self.spin_portrait_reverse.valueChanged.connect(self._on_set_photo_mission)
 
-        # Event Handler Misi 3 (Docking)
-        self.spin_dock_motor.valueChanged.connect(self._on_set_dock_config)
-        self.spin_dock_front.valueChanged.connect(self._on_set_dock_config)
-        self.spin_dock_left.valueChanged.connect(self._on_set_dock_config)
-        self.spin_dock_right.valueChanged.connect(self._on_set_dock_config)
-        self.spin_dock_charge.valueChanged.connect(self._on_set_dock_config)
+        # Event Handler Misi 3 (Docking 2-Tahap)
+        self.spin_dock_turn_motor.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_turn_angle.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_charge_rear.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_charge_cw.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_charge_ccw.valueChanged.connect(self._on_set_dock_config)
+        self.spin_dock_charge_duration.valueChanged.connect(self._on_set_dock_config)
         self.chk_dock_enable.stateChanged.connect(self._on_dock_enable_changed)
 
         self.save_default_button.clicked.connect(self._save_defaults_to_config)
@@ -500,18 +515,36 @@ class SettingsPanel(QWidget):
         if "portrait_reverse" in defs:
             self.spin_portrait_reverse.setValue(defs["portrait_reverse"])
 
-        if "dock_motor" in defs:
-            self.spin_dock_motor.setValue(defs["dock_motor"])
-        if "dock_front" in defs:
-            self.spin_dock_front.setValue(defs["dock_front"])
-        if "dock_left" in defs:
-            self.spin_dock_left.setValue(defs["dock_left"])
-        if "dock_right" in defs:
-            self.spin_dock_right.setValue(defs["dock_right"])
-        if "dock_charge" in defs:
-            self.spin_dock_charge.setValue(defs["dock_charge"])
-        if "dock_enabled" in defs:
-            self.chk_dock_enable.setChecked(defs["dock_enabled"])
+        # Load Docking 2-Tahap Defaults
+        dock_cfg = self.config.get("docking_defaults", {})
+        if "dock_turn_motor" in defs or "turn_motor_pwm" in dock_cfg:
+            self.spin_dock_turn_motor.setValue(
+                defs.get("dock_turn_motor", dock_cfg.get("turn_motor_pwm", 1400))
+            )
+        if "dock_turn_angle" in defs or "turn_angle" in dock_cfg:
+            self.spin_dock_turn_angle.setValue(
+                defs.get("dock_turn_angle", dock_cfg.get("turn_angle", 90))
+            )
+        if "dock_charge_rear" in defs or "charge_motor_rear_pwm" in dock_cfg:
+            self.spin_dock_charge_rear.setValue(
+                defs.get("dock_charge_rear", dock_cfg.get("charge_motor_rear_pwm", 1400))
+            )
+        if "dock_charge_cw" in defs or "charge_motor_front_cw_pwm" in dock_cfg:
+            self.spin_dock_charge_cw.setValue(
+                defs.get("dock_charge_cw", dock_cfg.get("charge_motor_front_cw_pwm", 1800))
+            )
+        if "dock_charge_ccw" in defs or "charge_motor_front_ccw_pwm" in dock_cfg:
+            self.spin_dock_charge_ccw.setValue(
+                defs.get("dock_charge_ccw", dock_cfg.get("charge_motor_front_ccw_pwm", 1800))
+            )
+        if "dock_charge_duration" in defs or "charge_duration_s" in dock_cfg:
+            self.spin_dock_charge_duration.setValue(
+                float(defs.get("dock_charge_duration", dock_cfg.get("charge_duration_s", 3.0)))
+            )
+        if "dock_enabled" in defs or "docking_enabled" in dock_cfg:
+            self.chk_dock_enable.setChecked(
+                defs.get("dock_enabled", dock_cfg.get("docking_enabled", True))
+            )
 
     def _save_defaults_to_config(self):
         if "vision" not in self.config:
@@ -557,27 +590,24 @@ class SettingsPanel(QWidget):
             "portrait_rev_speed": self.spin_portrait_rev_speed.value(),
             "portrait_stop": self.spin_portrait_stop.value(),
             "portrait_reverse": self.spin_portrait_reverse.value(),
-            "dock_motor": self.spin_dock_motor.value(),
-            "dock_front": self.spin_dock_front.value(),
-            "dock_left": self.spin_dock_left.value(),
-            "dock_right": self.spin_dock_right.value(),
-            "dock_charge": self.spin_dock_charge.value(),
+            "dock_turn_motor": self.spin_dock_turn_motor.value(),
+            "dock_turn_angle": self.spin_dock_turn_angle.value(),
+            "dock_charge_rear": self.spin_dock_charge_rear.value(),
+            "dock_charge_cw": self.spin_dock_charge_cw.value(),
+            "dock_charge_ccw": self.spin_dock_charge_ccw.value(),
+            "dock_charge_duration": self.spin_dock_charge_duration.value(),
             "dock_enabled": self.chk_dock_enable.isChecked(),
         }
 
         if "docking_defaults" not in self.config:
             self.config["docking_defaults"] = {}
-        self.config["docking_defaults"][
-            "motor_utama_pwm"
-        ] = self.spin_dock_motor.value()
-        self.config["docking_defaults"][
-            "motor_depan_pwm"
-        ] = self.spin_dock_front.value()
-        self.config["docking_defaults"]["servo_left"] = self.spin_dock_left.value()
-        self.config["docking_defaults"]["servo_right"] = self.spin_dock_right.value()
-        self.config["docking_defaults"]["charge_duration_ms"] = (
-            self.spin_dock_charge.value() * 1000
-        )
+        self.config["docking_defaults"]["turn_motor_pwm"] = self.spin_dock_turn_motor.value()
+        self.config["docking_defaults"]["turn_angle"] = self.spin_dock_turn_angle.value()
+        self.config["docking_defaults"]["charge_motor_rear_pwm"] = self.spin_dock_charge_rear.value()
+        self.config["docking_defaults"]["charge_motor_front_cw_pwm"] = self.spin_dock_charge_cw.value()
+        self.config["docking_defaults"]["charge_motor_front_ccw_pwm"] = self.spin_dock_charge_ccw.value()
+        self.config["docking_defaults"]["charge_duration_s"] = self.spin_dock_charge_duration.value()
+        self.config["docking_defaults"]["docking_enabled"] = self.chk_dock_enable.isChecked()
 
         try:
             gui_dir = os.path.dirname(os.path.abspath(__file__))
@@ -709,18 +739,13 @@ class SettingsPanel(QWidget):
 
     def _on_set_dock_config(self):
         try:
-            m_utama = self.spin_dock_motor.value()
-            m_depan = self.spin_dock_front.value()
-            s_left = self.spin_dock_left.value()
-            s_right = self.spin_dock_right.value()
-            charge_sec = self.spin_dock_charge.value()
-
             payload = {
-                "motor_utama_pwm": m_utama,
-                "motor_depan_pwm": m_depan,
-                "servo_left": s_left,
-                "servo_right": s_right,
-                "charge_duration_ms": int(charge_sec * 1000),
+                "turn_motor_pwm": self.spin_dock_turn_motor.value(),
+                "turn_angle": self.spin_dock_turn_angle.value(),
+                "charge_motor_rear_pwm": self.spin_dock_charge_rear.value(),
+                "charge_motor_front_cw_pwm": self.spin_dock_charge_cw.value(),
+                "charge_motor_front_ccw_pwm": self.spin_dock_charge_ccw.value(),
+                "charge_duration_s": self.spin_dock_charge_duration.value(),
             }
             self.send_dock_config.emit(payload)
         except Exception as e:

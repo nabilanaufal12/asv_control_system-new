@@ -142,6 +142,8 @@ int ai_motor_val = 1500; // Untuk motor bawah
 int ai_motor_depan_kiri_val = 1000;  // Nilai dari serial Jetson untuk motor depan kiri
 int ai_motor_depan_kanan_val = 1000; // Nilai dari serial Jetson untuk motor depan kanan
 int ai_dir_val = 1000;               // Arah motor AI: 1000 = Maju, 2000 = Mundur
+int ai_dir_depan_kiri_val = 1000;    // Arah motor AI depan kiri: 1000 = Maju, 2000 = Mundur
+int ai_dir_depan_kanan_val = 1000;   // Arah motor AI depan kanan: 1000 = Maju, 2000 = Mundur
 
 // --- Buffer JSON & Serial ---
 StaticJsonDocument<400> jsonDoc;
@@ -323,12 +325,14 @@ void checkSerialInput() {
         serialCommand = serialInputBuffer.charAt(0); 
         
         if (serialCommand == 'A') {
-          // FORMAT: A,<servo>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>[,<dir>]
+          // FORMAT: A,<servo>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>[,<dir_bawah>[,<dir_depan_kiri>,<dir_depan_kanan>]]
           int comma1 = serialInputBuffer.indexOf(',');
           int comma2 = serialInputBuffer.indexOf(',', comma1 + 1);
           int comma3 = serialInputBuffer.indexOf(',', comma2 + 1);
-          int comma4 = serialInputBuffer.indexOf(',', comma3 + 1);
-          int comma5 = serialInputBuffer.indexOf(',', comma4 + 1);
+          int comma4 = serialInputBuffer.indexOf(',', comma2 > 0 && comma3 > 0 ? comma3 + 1 : -1);
+          int comma5 = (comma4 > 0) ? serialInputBuffer.indexOf(',', comma4 + 1) : -1;
+          int comma6 = (comma5 > 0) ? serialInputBuffer.indexOf(',', comma5 + 1) : -1;
+          int comma7 = (comma6 > 0) ? serialInputBuffer.indexOf(',', comma6 + 1) : -1;
 
           // Cek apakah ada minimal 4 koma sebelum nilai diekstrak
           if (comma1 > 0 && comma2 > 0 && comma3 > 0 && comma4 > 0) {
@@ -336,15 +340,31 @@ void checkSerialInput() {
             String motorBwhStr       = serialInputBuffer.substring(comma2 + 1, comma3);
             String motorDepanKiriStr = serialInputBuffer.substring(comma3 + 1, comma4);
 
-            if (comma5 > 0) {
+            if (comma7 > 0) {
+              // 7 koma: A,servo,motor_bwh,mot_d_l,mot_d_r,dir_bwh,dir_d_l,dir_d_r (arah motor depan independen)
+              String motorDepanKananStr = serialInputBuffer.substring(comma4 + 1, comma5);
+              String dirBwhStr          = serialInputBuffer.substring(comma5 + 1, comma6);
+              String dirDepanKiriStr    = serialInputBuffer.substring(comma6 + 1, comma7);
+              String dirDepanKananStr   = serialInputBuffer.substring(comma7 + 1);
+              ai_motor_depan_kanan_val  = motorDepanKananStr.toInt();
+              ai_dir_val                = dirBwhStr.toInt();
+              ai_dir_depan_kiri_val     = dirDepanKiriStr.toInt();
+              ai_dir_depan_kanan_val    = dirDepanKananStr.toInt();
+            } else if (comma5 > 0) {
+              // 5 koma: A,servo,motor_bwh,mot_d_l,mot_d_r,dir (semua motor pakai dir yang sama)
               String motorDepanKananStr = serialInputBuffer.substring(comma4 + 1, comma5);
               String dirStr             = serialInputBuffer.substring(comma5 + 1);
               ai_motor_depan_kanan_val  = motorDepanKananStr.toInt();
               ai_dir_val                = dirStr.toInt();
+              ai_dir_depan_kiri_val     = dirStr.toInt();
+              ai_dir_depan_kanan_val    = dirStr.toInt();
             } else {
+              // 4 koma: A,servo,motor_bwh,mot_d_l,mot_d_r (default semua maju 1000)
               String motorDepanKananStr = serialInputBuffer.substring(comma4 + 1);
               ai_motor_depan_kanan_val  = motorDepanKananStr.toInt();
               ai_dir_val                = 1000; // Default maju
+              ai_dir_depan_kiri_val     = 1000;
+              ai_dir_depan_kanan_val    = 1000;
             }
 
             ai_servo_val             = servoStr.toInt();
@@ -465,12 +485,13 @@ void checkSerialInput() {
               dockingEnabled = (subCmd == "DOCK_EN");
               if (!dockingEnabled) dockingState = DK_IDLE; // Reset jika dimatikan
               Serial.println("[DOCK] Docking " + String(dockingEnabled ? "ENABLED" : "DISABLED"));
-            } else if (subCmd == "DOCK_SWING") {
-              if (dockingState == DK_IDLE && dockingEnabled) {
-                dockingState = DK_SWING;
-                dockingTimer = millis();
-                Serial.println("[DOCK] Command DOCK_SWING diterima! Mengeksekusi manuver...");
-              }
+            // === [DOCKING SWING LAMA - DINONAKTIFKAN] ===
+            // } else if (subCmd == "DOCK_SWING") {
+            //   if (dockingState == DK_IDLE && dockingEnabled) {
+            //     dockingState = DK_SWING;
+            //     dockingTimer = millis();
+            //     Serial.println("[DOCK] Command DOCK_SWING diterima! Mengeksekusi manuver...");
+            //   }
             } else if (subCmd.startsWith("DOCK,")) {
               // Format: S,DOCK,motorUtama,chargeMs,direction,servoLeft,servoRight
               int c1 = subCmd.indexOf(',');
@@ -845,7 +866,9 @@ void loop() {
   int finalMotor = 1500;           
   int finalMotorDepanKiri = 1000;  // Pastikan default 1000 (mati)
   int finalMotorDepanKanan = 1000; // Pastikan default 1000 (mati)
-  int finalDir = 1000;             // Default Maju (1000us)             
+  int finalDir = 1000;             // Default Maju (1000us)
+  int finalDirDepanKiri = 1000;    // Default Maju (1000us)
+  int finalDirDepanKanan = 1000;   // Default Maju (1000us)             
   
   int wp_target_idx = 0;
   double wp_dist_m = 0.0;
@@ -874,6 +897,8 @@ void loop() {
 
     int ch8 = readChannel(7);
     finalDir = ch8;
+    finalDirDepanKiri = ch8;
+    finalDirDepanKanan = ch8;
 
     if (ch6 > 1900) { 
       // Posisi 3 (Bawah) - Siap-siap merekam
@@ -968,39 +993,23 @@ void loop() {
                          || (counter > surfStart && counter <= surfEnd);
     bool isAtPortraitEnd = (counter == uwEnd) || (counter == surfEnd);
 
-    // === DOCKING SWING (Fase Manuver Ayunan ke Dermaga - Prioritas Tertinggi) ===
-    if (dockingState == DK_SWING) {
-      status = "DK_SWING";
-      finalMotor = dockMotorUtama; // Gas dorong maju
-      finalDir = 1000;             // Arah maju
-      
-      if (dockTurnDirection == 0) {
-        // Arena A: Mengincar bola kiri. Buritan ke Kanan. Servo dipatahkan ke KIRI (dockServoLeft)
-        finalServo = dockServoLeft; 
-      } else {
-        // Arena B: Mengincar bola kanan. Buritan ke Kiri. Servo dipatahkan ke KANAN (dockServoRight)
-        finalServo = dockServoRight;
-      }
-      
-      finalMotorDepanKiri = 1000;
-      finalMotorDepanKanan = 1000;
-
-      if (millis() - dockingTimer >= dockChargeMs) {
-        dockingState = DK_COMPLETE;
-        Serial.println("[DOCK] DOCKING SWING COMPLETE! Matikan mesin.");
-      }
-    }
-    // === DOCKING COMPLETE (Fase Mesin Mati Total di Dermaga) ===
-    else if (dockingState == DK_COMPLETE) {
-      finalServo = 90;
-      finalMotor = 1000;
-      finalDir = 1000;
-      finalMotorDepanKiri = 1000;
-      finalMotorDepanKanan = 1000;
-      status = "DK_COMPLETE";
-    }
+    // === [DOCKING LAMA - DINONAKTIFKAN] ===
+    // Logika docking sekarang sepenuhnya dikendalikan oleh Jetson melalui command 'A'.
+    // ESP32 hanya melaporkan status "DK_TRACKING_AI" sebagai trigger untuk Jetson.
+    //
+    // if (dockingState == DK_SWING) {
+    //   status = "DK_SWING";
+    //   finalMotor = dockMotorUtama;
+    //   finalDir = 1000;
+    //   ... (logika swing lama) ...
+    // }
+    // else if (dockingState == DK_COMPLETE) {
+    //   ... (logika complete lama) ...
+    // }
+    // === [AKHIR DOCKING LAMA] ===
+    
     // === PORTRAIT STOP (Motor utama mati, motor depan boleh jika AI aktif) ===
-    else if (portraitState == PT_STOP) {
+    if (portraitState == PT_STOP) {
       status = "PT_STOP";
       finalMotor = 1000;
       finalDir = 1000;
@@ -1038,6 +1047,8 @@ void loop() {
       finalServo = ai_servo_val;
       finalMotor = ai_motor_val;
       finalDir = ai_dir_val; // Mengikuti perintah serial (1000 = maju, 2000 = mundur)
+      finalDirDepanKiri = ai_dir_depan_kiri_val;
+      finalDirDepanKanan = ai_dir_depan_kanan_val;
       finalMotorDepanKiri = ai_motor_depan_kiri_val;
       finalMotorDepanKanan = ai_motor_depan_kanan_val;
       status = "AI_ACTIVE";
@@ -1172,8 +1183,8 @@ void loop() {
   servoKiri.write(finalServo); 
   servoKanan.write(finalServo); 
 
-  dirDepanKiri.writeMicroseconds(finalDir);
-  dirDepanKanan.writeMicroseconds(finalDir);
+  dirDepanKiri.writeMicroseconds(finalDirDepanKiri);
+  dirDepanKanan.writeMicroseconds(finalDirDepanKanan);
   dirBawahKiri.writeMicroseconds(finalDir);
   dirBawahKanan.writeMicroseconds(finalDir);
 
