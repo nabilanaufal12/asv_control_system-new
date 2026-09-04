@@ -254,7 +254,7 @@ class SensorDisplay(QGroupBox):
         lat = data.get("latitude", data.get("lat", 0.0))
         lon = data.get("longitude", data.get("lon", 0.0))
         spd = data.get("speed", data.get("sog", 0.0))
-        fix_val = data.get("esp_status", data.get("fix", "NO FIX"))
+        fix_val = data.get("gps_fix", data.get("fix", "NO FIX"))
         hz_val = data.get("gps_hz", data.get("hz", 0.0))
 
         self.val_heading.setText(f"{float(hdg):.1f}°")
@@ -268,10 +268,15 @@ class SensorDisplay(QGroupBox):
         else:
             self.val_fix.setText(f"{fix_val}")
 
-        if "FIX" in str(fix_val).upper() and "NO" not in str(fix_val).upper():
+        fix_str = str(fix_val).upper()
+        if "RTK FIX" in fix_str:
             self.val_fix.setStyleSheet("font-weight: bold; color: #2ecc71;")
+        elif "RTK FLOAT" in fix_str:
+            self.val_fix.setStyleSheet("font-weight: bold; color: #3498db;")
+        elif "GPS" in fix_str or "DGPS" in fix_str:
+            self.val_fix.setStyleSheet("font-weight: bold; color: #f39c12;")
         else:
-            self.val_fix.setStyleSheet("font-weight: bold; color: #e67e22;")
+            self.val_fix.setStyleSheet("font-weight: bold; color: #e74c3c;")
 
 
 class Dashboard(QWidget):

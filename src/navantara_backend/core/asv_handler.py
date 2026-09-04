@@ -48,6 +48,8 @@ TELEMETRY_KEY_MAP = {
     "debug_waypoint_counter": "dbg_cnt",
     "vision_target": "vis",
     "esp_status": "esp_sts",
+    "gps_fix": "fix",
+    "gps_hz": "hz",
     "portrait_state": "p_st",
     "docking_state": "dk_st",
 }
@@ -82,6 +84,8 @@ class AsvState:
     active_arena: str = "A"
 
     esp_status: str = None
+    gps_fix: str = "NO FIX"
+    gps_hz: float = 0.0
     vision_target: dict = field(default_factory=lambda: {"active": False})
     gate_target: dict = field(default_factory=lambda: {"active": False})
     avoidance_direction: str = None
@@ -350,9 +354,14 @@ class AsvHandler:
                             with self.state_lock:
                                 self.current_state.latitude = float(parts[1])
                                 self.current_state.longitude = float(parts[2])
-                                self.current_state.esp_status = parts[3]
+                                self.current_state.gps_fix = parts[3]
                                 self.current_state.nav_gps_sats = int(parts[4])
                                 self.current_state.speed = float(parts[6]) / 3.6
+                                if len(parts) >= 9:
+                                    try:
+                                        self.current_state.gps_hz = float(parts[8])
+                                    except ValueError:
+                                        pass
                         except Exception:
                             pass
                     continue
@@ -399,6 +408,14 @@ class AsvHandler:
                 self.current_state.longitude = data.get(
                     "lon", self.current_state.longitude
                 )
+
+                if "fix" in data:
+                    self.current_state.gps_fix = str(data.get("fix", "NO FIX"))
+                if "hz" in data:
+                    try:
+                        self.current_state.gps_hz = float(data.get("hz", 0.0))
+                    except (ValueError, TypeError):
+                        pass
 
                 status_val = data.get("sts", None)
                 if status_val:

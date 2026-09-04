@@ -1,6 +1,6 @@
 {
   "general": {
-    "default_arena": "Arena_A"
+    "default_arena": "Arena_B"
   },
   "backend_connection": {
     "ip_address": "127.0.0.1",
@@ -95,10 +95,12 @@
     ]
   },
   "docking_defaults": {
-    "motor_utama_pwm": 1200,
-    "motor_depan_pwm": 1400,
-    "charge_duration_ms": 3000,
-    "heading_tolerance_deg": 5
+    "motor_utama_pwm": 1800,
+    "motor_depan_pwm": 1600,
+    "charge_duration_ms": 1000,
+    "heading_tolerance_deg": 5,
+    "servo_left": 180,
+    "servo_right": 0
   },
   "api_urls": {},
   "gui_settings": {
@@ -112,34 +114,36 @@
       "longitude": "e.g., 107.6191"
     },
     "panel_defaults": {
+      "ai_model": "Auto",
       "ai_speed": 1500,
-      "front_motor": 1800,
+      "front_motor": 2000,
       "servo_left": 70,
       "servo_right": 110,
-      "obs_dist": 150,
+      "obs_dist": 200,
       "box_obs_dist": 100,
       "box_track_dist": 165,
       "box_avoid_dist": 100,
       "box_servo_left": 70,
       "box_servo_right": 110,
-      "box_speed": 1500,
-      "box_front_motor": 1800,
-      "box_pwm": 1800,
+      "box_speed": 1700,
+      "box_front_motor": 1700,
+      "box_pwm": 1700,
       "photo_surf1": 13,
       "photo_surf2": 14,
       "photo_under1": 11,
       "photo_under2": 12,
       "photo_count": 10,
       "photo_interval": 0.8,
-      "portrait_speed": 1600,
-      "portrait_rev_speed": 1400,
-      "portrait_stop": 3,
-      "portrait_reverse": 2,
-      "dock_motor": 1200,
-      "dock_front": 1400,
+      "portrait_speed": 1800,
+      "portrait_rev_speed": 1800,
+      "portrait_stop": 2,
+      "portrait_reverse": 3,
+      "dock_motor": 1800,
+      "dock_front": 1600,
       "dock_left": 180,
       "dock_right": 0,
-      "dock_charge": 3
+      "dock_charge": 1,
+      "dock_enabled": true
     }
   }
 }

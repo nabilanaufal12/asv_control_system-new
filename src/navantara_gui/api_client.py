@@ -33,6 +33,8 @@ REVERSE_KEY_MAP = {
     "dbg_cnt": "debug_waypoint_counter",
     "vis": "vision_target",
     "esp_sts": "esp_status",
+    "fix": "gps_fix",
+    "hz": "gps_hz",
     "dk_st": "docking_state",
 }
 
