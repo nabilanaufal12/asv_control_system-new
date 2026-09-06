@@ -115,7 +115,8 @@ class AsvState:
     vision_servo_left_cmd: int = 70
     vision_servo_right_cmd: int = 110
 
-    # Box Avoidance Parameters
+    # Box Mission 2 Parameters
+    box_trigger_distance_cm: float = 100.0
     box_track_distance: float = 165.0
     box_avoid_distance: float = 100.0
     box_avoidance_distance: float = 100.0
@@ -173,6 +174,11 @@ class AsvHandler:
 
         # Buffer untuk menerima sinkronisasi waypoint dari ESP32
         self._sync_waypoints_buffer = []
+        # --- Misi 2 Fotografi Kotak State Machine (Jetson-Controlled) ---
+        self._box_mission_phase = "IDLE"          # "IDLE" | "STOP" | "REVERSE"
+        self._box_phase_start_time = 0.0         # Timestamp awal fase aktif
+        self._box_latched_wp = -1                # WP index saat trigger agar tidak trigger berulang
+
         # --- Docking 2-Stage State Machine (Jetson-Controlled) ---
         self._dock_phase = "IDLE"          # "IDLE" | "TURNING" | "CHARGING" | "COMPLETE"
         self._dock_target_heading = 0.0    # Heading target setelah turning
@@ -251,7 +257,15 @@ class AsvHandler:
                 processed_status = "RECOVERING: STRAIGHTENING COURSE"
             elif control_mode == "AUTO":
                 total_wps = len(waypoints)
-                if esp_status == "WAYPOINT":
+                if self._box_mission_phase == "STOP":
+                    elapsed = time.time() - self._box_phase_start_time
+                    remaining = max(0.0, (self.current_state.portrait_stop_ms / 1000.0) - elapsed)
+                    processed_status = f"MISI 2: STOP & FOTO ({remaining:.1f}s)"
+                elif self._box_mission_phase == "REVERSE":
+                    elapsed = time.time() - self._box_phase_start_time
+                    remaining = max(0.0, (self.current_state.portrait_reverse_ms / 1000.0) - elapsed)
+                    processed_status = f"MISI 2: MUNDUR ({remaining:.1f}s)"
+                elif esp_status == "WAYPOINT":
                     processed_status = (
                         f"WAYPOINT NAVIGATION ({nav_target_wp_index}/{total_wps})"
                     )
@@ -655,224 +669,98 @@ class AsvHandler:
                                 servo_cmd = servo_default
 
                         elif obj_class in ["kotak-biru", "kotak-hijau", "kotak-merah"]:
-                            # [DOCKING LAMA - DINONAKTIFKAN]
-                            # Logika docking berbasis vision (tracking bola biru) sudah diganti
-                            # dengan logika docking 2-tahap berbasis heading compass.
-                            # Lihat blok docking baru di bawah (setelah eksekusi serial).
-                            #
-                            # if obj_class == "kotak-biru" and is_last_wp:
-                            #     ... (logika tracking bola biru lama) ...
-                            #     ... (trigger S,DOCK_SWING) ...
+                            # =========================================================================
+                            # MISI 2: FOTOGRAFI KOTAK (DEKATI -> STOP & FOTO -> UPDATE WP -> MUNDUR)
+                            # Logika penghindaran kotak (avoidance swerve & front thrusters) DIHAPUS TOTAL.
+                            # Saat jarak <= box_trigger_dist (default 100cm):
+                            #   - Pemicu STOP & FOTO aktif
+                            #   - Waypoint langsung di-update (C,INC)
+                            # =========================================================================
+                            with self.state_lock:
+                                portrait_speed_aktif = (
+                                    self.current_state.portrait_speed
+                                )
+                                box_trigger_dist = getattr(
+                                    self.current_state, "box_trigger_distance_cm", 100.0
+                                )
+                                current_wp_idx = (
+                                    self.current_state.current_waypoint_index
+                                )
+                                dist_cm = (
+                                    self.current_state.vision_target.get(
+                                        "distance_cm"
+                                    )
+                                    if self.current_state.vision_target
+                                    else None
+                                )
 
-                            if obj_class in ["kotak-biru", "kotak-hijau"]:
+                            # 1. Pemicu Misi 2 jika mendeteksi kotak pada jarak <= box_trigger_dist (100 cm)
+                            if (
+                                self._box_mission_phase == "IDLE"
+                                and dist_cm is not None
+                                and dist_cm <= box_trigger_dist
+                                and self._box_latched_wp != current_wp_idx
+                            ):
+                                self._box_mission_phase = "STOP"
+                                self._box_phase_start_time = time.time()
+                                self._box_latched_wp = current_wp_idx
 
+                                # Langsung kirim update waypoint ke ESP32 dan perbarui internal state
+                                if self.serial_handler.is_connected:
+                                    self.serial_handler.send_command("C,INC\n")
                                 with self.state_lock:
-                                    box_servo_kiri_aktif = (
-                                        self.current_state.box_servo_left_cmd
-                                    )
-                                    box_servo_kanan_aktif = (
-                                        self.current_state.box_servo_right_cmd
-                                    )
-                                    box_front_aktif = (
-                                        self.current_state.box_front_motor_cmd
-                                    )
-                                    box_speed_aktif = self.current_state.box_speed_cmd
-                                    box_avoid_dist = getattr(
-                                        self.current_state, "box_avoid_distance", 100.0
-                                    )
-                                    portrait_speed_aktif = (
-                                        self.current_state.portrait_speed
-                                    )
+                                    self.current_state.current_waypoint_index += 1
 
-                                    current_wp_idx = (
-                                        self.current_state.current_waypoint_index
-                                    )
-                                    uw_wp_end = (
-                                        self.current_state.photo_mission_under_wp2
-                                    )
-                                    surf_wp_end = (
-                                        self.current_state.photo_mission_surf_wp2
-                                    )
-                                    qty_req = (
-                                        self.current_state.photo_mission_qty_requested
-                                    )
-                                    photos_uw = (
-                                        self.current_state.photo_mission_qty_taken_1
-                                    )
-                                    photos_surf = (
-                                        self.current_state.photo_mission_qty_taken_2
-                                    )
-                                    dist_cm = (
-                                        self.current_state.vision_target.get(
-                                            "distance_cm"
-                                        )
-                                        if self.current_state.vision_target
-                                        else None
-                                    )
-
-                                # --- Evaluasi Status Misi & Kondisi Multi-Kriteria ---
-                                # 1. Status Pasca Foto per objek
-                                is_post_capture_uw = (
-                                    current_wp_idx >= uw_wp_end and photos_uw >= qty_req
-                                ) or (current_wp_idx > uw_wp_end)
-                                is_post_capture_surf = (
-                                    current_wp_idx >= surf_wp_end
-                                    and photos_surf >= qty_req
-                                ) or (current_wp_idx > surf_wp_end)
-                                is_post_capture = (
-                                    is_post_capture_uw
-                                    if obj_class == "kotak-biru"
-                                    else is_post_capture_surf
+                                logging.warning(
+                                    f"[MISI 2] Kotak '{obj_class}' terdeteksi pada jarak {dist_cm:.1f} cm "
+                                    f"(<= {box_trigger_dist:.1f} cm). Motor STOP & FOTO! Update WP -> #{self.current_state.current_waypoint_index}"
                                 )
+                                desc = f"{obj_class} -> TRIGGER STOP & FOTO (Dist: {dist_cm:.1f}cm)"
 
-                                # 2. Status Jarak Bahaya (<= 100 cm)
-                                is_avoidance_dist = (
-                                    dist_cm is not None and dist_cm <= box_avoid_dist
-                                )
-
-                                # 3. Status Jalur Transisi Antara Dua Kotak (WP 12 s.d. WP 13)
-                                is_transition_zone = (
-                                    current_wp_idx >= uw_wp_end
-                                    and current_wp_idx < surf_wp_end
-                                    and obj_class == "kotak-biru"
-                                )
-
-                                # 4. Status Kapal Sedang Mundur / Pasca Reverse di Titik Foto
-                                portrait_sts = getattr(
-                                    self.current_state, "serial_status", ""
-                                )
-                                is_maneuver_reverse = (
-                                    "REVERSE" in portrait_sts
-                                    or "PT_REVERSE" in portrait_sts
-                                )
-
-                                # =========================================================================
-                                # KONDISI AVOIDANCE (Logika OR Lengkap):
-                                # 1) Jarak di bawah 100 cm (Collision Safety Hazard), ATAU
-                                # 2) Sudah selesai foto di titik WP 12 / 14, ATAU
-                                # 3) Sedang dalam fase mundur (PT_REVERSE), ATAU
-                                # 4) Sedang di jalur transisi antara kotak biru dan kotak hijau
-                                # =========================================================================
-                                if (
-                                    is_avoidance_dist
-                                    or is_post_capture
-                                    or is_maneuver_reverse
-                                    or is_transition_zone
-                                ):
-                                    pwm_cmd = box_speed_aktif
-                                    if obj_class == "kotak-biru":
-                                        turn_direction = (
-                                            "LEFT"
-                                            if current_arena == "Arena_B"
-                                            else "RIGHT"
-                                        )
-                                    elif obj_class == "kotak-hijau":
-                                        turn_direction = (
-                                            "RIGHT"
-                                            if current_arena == "Arena_B"
-                                            else "LEFT"
-                                        )
-
-                                    if turn_direction == "LEFT":
-                                        servo_cmd = box_servo_kiri_aktif
-                                        motor_depan_kanan = box_front_aktif
-                                        motor_depan_kiri = 1000
-                                    elif turn_direction == "RIGHT":
-                                        servo_cmd = box_servo_kanan_aktif
-                                        motor_depan_kiri = box_front_aktif
-                                        motor_depan_kanan = 1000
-                                    else:
-                                        servo_cmd = servo_default
-
-                                    if is_avoidance_dist:
-                                        reason_str = f"Safety ({dist_cm:.0f}cm <= {box_avoid_dist:.0f}cm)"
-                                    elif is_maneuver_reverse:
-                                        reason_str = "Mundur Pasca Foto"
-                                    elif is_transition_zone:
-                                        reason_str = "Transisi WP12-13"
-                                    elif current_wp_idx > surf_wp_end:
-                                        reason_str = "Exit Safety WP14-15"
-                                    else:
-                                        reason_str = "Pasca Foto Selesai"
-
-                                    desc = f"{obj_class} -> AVOIDANCE {turn_direction} [{reason_str}]"
-
-                                # 2. JIKA SEDANG MENDEKATI TARGET FOTO DALAM RENTANG TRACK DISTANCE (100CM < DIST <= 165CM) -> VISION CENTER TRACKING
-                                else:
-                                    center_x = vision_target_frame_width / 2.0
-                                    error_x = vision_target_center_x - center_x
-                                    tolerance = 30.0  # Deadband tengah frame
-                                    max_tracking_deflection = (
-                                        25.0  # Derajat koreksi kemudi halus
-                                    )
-
-                                    pwm_cmd = portrait_speed_aktif
-                                    motor_depan_kiri = 1000
-                                    motor_depan_kanan = 1000
-
-                                    dist_str = (
-                                        f"Dist: {dist_cm:.0f}cm"
-                                        if dist_cm is not None
-                                        else "Dist: N/A"
-                                    )
-                                    if abs(error_x) <= tolerance:
-                                        turn_direction = "TRACK_CENTER"
-                                        servo_cmd = servo_default
-                                        desc = f"{obj_class} -> Tracking Tengah [{dist_str}]"
-                                    elif error_x < -tolerance:
-                                        turn_direction = "TRACK_LEFT"
-                                        ratio = (
-                                            min(1.0, abs(error_x) / center_x)
-                                            if center_x > 0
-                                            else 0
-                                        )
-                                        servo_cmd = int(
-                                            90 - (ratio * max_tracking_deflection)
-                                        )
-                                        desc = f"{obj_class} -> Tracking Kiri (Err: {error_x:.1f}) [{dist_str}]"
-                                    else:
-                                        turn_direction = "TRACK_RIGHT"
-                                        ratio = (
-                                            min(1.0, abs(error_x) / center_x)
-                                            if center_x > 0
-                                            else 0
-                                        )
-                                        servo_cmd = int(
-                                            90 + (ratio * max_tracking_deflection)
-                                        )
-                                        desc = f"{obj_class} -> Tracking Kanan (Err: {error_x:.1f}) [{dist_str}]"
-
-                                    servo_cmd = max(45, min(135, servo_cmd))
-
-                            elif obj_class == "kotak-merah":
-                                # --- LOGIKA TRACKING (KOTAK MERAH) ---
-                                center_x = vision_target_frame_width / 2
+                            # 2. Jika belum mencapai jarak pemicu (sedang mendekat): dekati dengan stabil & lurus
+                            else:
+                                center_x = vision_target_frame_width / 2.0
                                 error_x = vision_target_center_x - center_x
-                                tolerance = 40
-                                max_tracking_deflection = 30
+                                tolerance = 30.0  # Deadband tengah frame
+                                max_tracking_deflection = 25.0  # Koreksi kemudi halus tanpa manuver menghindar
 
-                                if error_x < -tolerance:
-                                    turn_direction = "TRACKING_LEFT"
-                                    offset = (
-                                        error_x / center_x
-                                    ) * max_tracking_deflection
-                                    servo_cmd = int(90 + offset)
-                                    motor_depan_kanan = pwm_depan_aktif
-                                    desc = f"{obj_class} -> Track Kiri (Err: {error_x:.1f})"
-                                elif error_x > tolerance:
-                                    turn_direction = "TRACKING_RIGHT"
-                                    offset = (
-                                        error_x / center_x
-                                    ) * max_tracking_deflection
-                                    servo_cmd = int(90 + offset)
-                                    motor_depan_kiri = pwm_depan_aktif
-                                    desc = f"{obj_class} -> Track Kanan (Err: {error_x:.1f})"
-                                else:
-                                    turn_direction = "TRACKING_CENTER"
+                                pwm_cmd = portrait_speed_aktif
+                                motor_depan_kiri = 1000  # Tidak ada dorongan motor depan untuk menghindar
+                                motor_depan_kanan = 1000
+
+                                dist_str = (
+                                    f"Dist: {dist_cm:.0f}cm"
+                                    if dist_cm is not None
+                                    else "Dist: N/A"
+                                )
+                                if abs(error_x) <= tolerance:
+                                    turn_direction = "TRACK_CENTER"
                                     servo_cmd = servo_default
-                                    desc = f"{obj_class} -> Track Tengah"
+                                    desc = f"{obj_class} -> Dekati Kotak Lurus [{dist_str}]"
+                                elif error_x < -tolerance:
+                                    turn_direction = "TRACK_LEFT"
+                                    ratio = (
+                                        min(1.0, abs(error_x) / center_x)
+                                        if center_x > 0
+                                        else 0
+                                    )
+                                    servo_cmd = int(
+                                        90 - (ratio * max_tracking_deflection)
+                                    )
+                                    desc = f"{obj_class} -> Koreksi Halus Kiri (Err: {error_x:.1f}) [{dist_str}]"
+                                else:
+                                    turn_direction = "TRACK_RIGHT"
+                                    ratio = (
+                                        min(1.0, abs(error_x) / center_x)
+                                        if center_x > 0
+                                        else 0
+                                    )
+                                    servo_cmd = int(
+                                        90 + (ratio * max_tracking_deflection)
+                                    )
+                                    desc = f"{obj_class} -> Koreksi Halus Kanan (Err: {error_x:.1f}) [{dist_str}]"
 
-                                servo_cmd = max(40, min(140, servo_cmd))
+                                servo_cmd = max(45, min(135, servo_cmd))
 
                             # Clamp servo value safely
                             servo_cmd = max(40, min(140, servo_cmd))
@@ -885,6 +773,9 @@ class AsvHandler:
                         # [DOCKING LAMA DINONAKTIFKAN] - Tidak ada lagi S,DOCK_SWING
                         if self._dock_phase in ("TURNING", "CHARGING", "COMPLETE"):
                             # Docking 2-tahap sedang aktif -> tahan semua command AI vision
+                            command_to_send = None
+                        elif self._box_mission_phase in ("STOP", "REVERSE"):
+                            # Misi 2 (Stop / Mundur) sedang aktif -> tahan command vision tracking normal
                             command_to_send = None
                         elif nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
@@ -921,6 +812,9 @@ class AsvHandler:
                         if self._dock_phase in ("TURNING", "CHARGING", "COMPLETE"):
                             # Docking 2-tahap sedang aktif -> tahan semua command
                             command_to_send = None
+                        elif self._box_mission_phase in ("STOP", "REVERSE"):
+                            # Misi 2 sedang aktif -> tahan command waypoint default
+                            command_to_send = None
                         elif self.serial_handler.is_connected:
                             command_to_send = "W\n"
                             logging.info("[AsvHandler] WAYPOINT CONTROL -> Mengirim: W")
@@ -928,6 +822,46 @@ class AsvHandler:
                             command_to_send = None
                             logging.info(
                                 "[AsvHandler] WAYPOINT CONTROL -> Menunggu koneksi serial..."
+                            )
+
+                # =====================================================================
+                # MISI 2: FOTOGRAFI KOTAK STATE MACHINE (JETSON-CONTROLLED)
+                # STOP (Foto) -> REVERSE (Mundur) -> RESUME (W)
+                # =====================================================================
+                if control_mode == "AUTO" and self.serial_handler.is_connected:
+                    if self._box_mission_phase == "STOP":
+                        with self.state_lock:
+                            stop_ms = self.current_state.portrait_stop_ms
+                        elapsed_ms = (time.time() - self._box_phase_start_time) * 1000.0
+                        if elapsed_ms < stop_ms:
+                            # Motor mati total, kemudi lurus, semua motor depan mati
+                            command_to_send = "A,90,1000,1000,1000,1000\n"
+                        else:
+                            # Durasi stop & foto selesai -> Mulai fase MUNDUR
+                            self._box_mission_phase = "REVERSE"
+                            self._box_phase_start_time = time.time()
+                            with self.state_lock:
+                                rev_pwm = self.current_state.portrait_reverse_speed
+                            command_to_send = f"A,90,{rev_pwm},1000,1000,2000,1000,1000\n"
+                            logging.warning(
+                                f"[MISI 2] Fase STOP & FOTO selesai. Memulai fase MUNDUR (PWM: {rev_pwm})..."
+                            )
+
+                    elif self._box_mission_phase == "REVERSE":
+                        with self.state_lock:
+                            rev_ms = self.current_state.portrait_reverse_ms
+                            rev_pwm = self.current_state.portrait_reverse_speed
+                        elapsed_ms = (time.time() - self._box_phase_start_time) * 1000.0
+                        if elapsed_ms < rev_ms:
+                            # Motor belakang mundur (dir=2000), kemudi lurus, motor depan mati
+                            command_to_send = f"A,90,{rev_pwm},1000,1000,2000,1000,1000\n"
+                        else:
+                            # Selesai fase mundur -> Lanjut ke navigasi waypoint normal
+                            self._box_mission_phase = "IDLE"
+                            self._box_phase_start_time = 0.0
+                            command_to_send = "W\n"
+                            logging.warning(
+                                "[MISI 2] Fase MUNDUR selesai. Melanjutkan navigasi ke waypoint berikutnya (W)."
                             )
 
                 # =====================================================================
@@ -1060,8 +994,8 @@ class AsvHandler:
                         "WP_COMPLETE",
                         "MISI SELESAI",
                     ):
-                        # Jangan override jika docking sedang aktif
-                        if self._dock_phase == "IDLE":
+                        # Jangan override jika docking atau misi 2 sedang aktif
+                        if self._dock_phase == "IDLE" and self._box_mission_phase == "IDLE":
                             if command_to_send is None or (
                                 isinstance(command_to_send, str)
                                 and not command_to_send.strip().startswith("W")
@@ -1071,7 +1005,11 @@ class AsvHandler:
                                     "[AsvHandler] Mission complete detected -> forcing W"
                                 )
 
-                if command_to_send is None and resume_waypoint_on_clear:
+                if (
+                    command_to_send is None
+                    and resume_waypoint_on_clear
+                    and self._box_mission_phase == "IDLE"
+                ):
                     if self.serial_handler.is_connected and control_mode == "AUTO":
                         command_to_send = "W\n"
                         logging.info("[AsvHandler] Vision cleared -> sending resume W")
@@ -1199,6 +1137,9 @@ class AsvHandler:
 
     def _handle_update_box_avoidance_config(self, payload):
         try:
+            trigger_dist = float(
+                payload.get("trigger_dist", payload.get("avoid_dist", payload.get("safety_dist", 100.0)))
+            )
             track_dist = float(
                 payload.get("track_dist", payload.get("distance", 165.0))
             )
@@ -1217,6 +1158,7 @@ class AsvHandler:
             front_val = max(1000, min(2000, front_val))
 
             with self.state_lock:
+                self.current_state.box_trigger_distance_cm = trigger_dist
                 self.current_state.box_track_distance = track_dist
                 self.current_state.box_avoid_distance = avoid_dist
                 self.current_state.box_avoidance_distance = avoid_dist
@@ -1227,13 +1169,16 @@ class AsvHandler:
                 self.current_state.box_motor_pwm_cmd = front_val
 
             logging.info(
-                f"[AsvHandler] Box Config Updated -> TrackDist: {track_dist}cm, AvoidDist: {avoid_dist}cm, Left: {left_val}, Right: {right_val}, Speed: {speed_val}, Front: {front_val}"
+                f"[AsvHandler] Box Config Updated -> TriggerDist: {trigger_dist}cm, Left: {left_val}, Right: {right_val}, Speed: {speed_val}"
             )
         except ValueError:
             logging.warning("[AsvHandler] Payload Box Avoidance Config tidak valid")
 
     def _handle_debug_counter(self, payload):
         self._dock_phase = "IDLE"
+        self._box_mission_phase = "IDLE"
+        self._box_phase_start_time = 0.0
+        self._box_latched_wp = -1
         action = payload.get("action")
         cmd = ""
 
@@ -1260,6 +1205,9 @@ class AsvHandler:
                 self._dock_target_heading = 0.0
                 self._dock_captured_heading = 0.0
                 self._dock_charge_start_time = 0.0
+                self._box_mission_phase = "IDLE"
+                self._box_phase_start_time = 0.0
+                self._box_latched_wp = -1
 
             self.current_state.current_waypoint_index = min(
                 self.current_state.current_waypoint_index, max_points
@@ -1445,6 +1393,9 @@ class AsvHandler:
                         waypoints_data = waypoints_data[:20]
                     self.current_state.waypoints = waypoints_data
                     self.current_state.current_waypoint_index = 0
+                    self._box_mission_phase = "IDLE"
+                    self._box_phase_start_time = 0.0
+                    self._box_latched_wp = -1
                     self.logger.log_event(
                         f"Waypoints dimuat (Arena: {self.current_state.active_arena}). Jml: {len(waypoints_data)}"
                     )

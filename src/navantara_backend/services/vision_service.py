@@ -1157,21 +1157,32 @@ class VisionService:
                 self.asv_handler.current_state.photo_mission_qty_taken_2
             )  # Underwater
 
-            # Evaluasi In Segment: Aktif saat mendekati WP target dan saat berhenti (PT_STOP).
-            # Otomatis berhenti memotret saat kapal mulai mundur (PT_REVERSE, p_st == 3).
+            # Evaluasi In Segment: Aktif saat mendekati WP target dan saat berhenti (PT_STOP atau Misi 2 STOP).
+            # Otomatis berhenti memotret saat kapal mulai mundur (PT_REVERSE atau Misi 2 REVERSE).
             pt_state = self.asv_handler.current_state.portrait_state
-            is_reversing = pt_state == 3
+            box_phase = getattr(self.asv_handler, "_box_mission_phase", "IDLE")
+            is_reversing = (pt_state == 3) or (box_phase == "REVERSE")
+            is_box_stopped = (box_phase == "STOP")
+            target_class = (
+                self.asv_handler.current_state.vision_target.get("obstacle_class", "")
+                if self.asv_handler.current_state.vision_target
+                else ""
+            )
 
             in_segment_surf = (
-                (surf_wp1 != -1 and surf_wp2 != -1)
-                and (surf_wp1 < current_wp <= surf_wp2)
-                and not is_reversing
+                not is_reversing
+                and (
+                    ((surf_wp1 != -1 and surf_wp2 != -1) and (surf_wp1 < current_wp <= surf_wp2))
+                    or (is_box_stopped and target_class in ("kotak-hijau", "kotak-merah"))
+                )
             )
 
             in_segment_under = (
-                (under_wp1 != -1 and under_wp2 != -1)
-                and (under_wp1 < current_wp <= under_wp2)
-                and not is_reversing
+                not is_reversing
+                and (
+                    ((under_wp1 != -1 and under_wp2 != -1) and (under_wp1 < current_wp <= under_wp2))
+                    or (is_box_stopped and target_class == "kotak-biru")
+                )
             )
 
             current_state_photo = self.asv_handler.current_state

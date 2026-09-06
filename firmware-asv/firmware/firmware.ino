@@ -378,8 +378,12 @@ void checkSerialInput() {
             if (cmdAction == "INC") {
               counter++;
               if (counter > dataIndex) counter = dataIndex;
+              is_new_wp = true;
+              Serial.print("[WP] Manual INC via Serial. Target WP #");
+              Serial.println(counter);
             } else if (cmdAction == "DEC") {
               if (counter > 0) counter--;
+              is_new_wp = true;
             } else if (cmdAction == "RESET") {
               counter = 0;
               portraitState = PT_NORMAL;
@@ -1053,8 +1057,8 @@ void loop() {
       finalMotorDepanKanan = ai_motor_depan_kanan_val;
       status = "AI_ACTIVE";
       
-      // Di portrait zone: kunci motor utama agar tidak sentak saat switching W<->A
-      if (isInPortraitZone) {
+      // Di portrait zone: kunci motor utama agar tidak sentak saat switching W<->A (hanya jika maju normal)
+      if (isInPortraitZone && ai_motor_val > 1000 && ai_dir_val == 1000) {
         finalMotor = portraitSpeed;
         portraitState = PT_SLOW;
         status = "PT_SLOW_AI";

@@ -167,18 +167,17 @@ class SettingsPanel(QWidget):
         self.spin_wp_hijau_start = self.surf_wp1_input
         self.spin_wp_hijau_end = self.surf_wp2_input
 
-        # Jarak Deteksi Kotak
-        self.spin_box_track_dist = QSpinBox()
-        self.spin_box_track_dist.setRange(0, 500)
-        self.spin_box_track_dist.setValue(165)
-        self.spin_box_track_dist.setSuffix(" cm")
+        # Jarak Deteksi Kotak (Pemicu Misi 2)
+        self.spin_box_trigger_dist = QSpinBox()
+        self.spin_box_trigger_dist.setRange(30, 300)
+        self.spin_box_trigger_dist.setValue(100)
+        self.spin_box_trigger_dist.setSuffix(" cm")
 
-        self.spin_box_avoid_dist = QSpinBox()
-        self.spin_box_avoid_dist.setRange(0, 500)
-        self.spin_box_avoid_dist.setValue(100)
-        self.spin_box_avoid_dist.setSuffix(" cm")
+        # Aliases backward compatibility
+        self.spin_box_avoid_dist = self.spin_box_trigger_dist
+        self.spin_box_track_dist = self.spin_box_trigger_dist
 
-        # Manuver Pemotretan di Titik 12 / 14
+        # Manuver Pemotretan di Titik Foto
         self.spin_portrait_speed = QSpinBox()
         self.spin_portrait_speed.setRange(1000, 2000)
         self.spin_portrait_speed.setValue(1600)
@@ -207,7 +206,7 @@ class SettingsPanel(QWidget):
         self.photo_interval_input.setValue(0.8)
         self.photo_interval_input.setSuffix(" s")
 
-        # Manuver Menghindar Kotak (Pasca Foto)
+        # Fallback kompatibilitas untuk parameter legacy
         self.spin_box_speed = QSpinBox()
         self.spin_box_speed.setRange(1000, 2000)
         self.spin_box_speed.setValue(1500)
@@ -219,14 +218,10 @@ class SettingsPanel(QWidget):
         self.spin_box_left = QSpinBox()
         self.spin_box_left.setRange(0, 180)
         self.spin_box_left.setValue(70)
-        self.spin_box_left.setPrefix("Left: ")
-        self.spin_box_left.setSuffix("°")
 
         self.spin_box_right = QSpinBox()
         self.spin_box_right.setRange(0, 180)
         self.spin_box_right.setValue(110)
-        self.spin_box_right.setPrefix("Right: ")
-        self.spin_box_right.setSuffix("°")
 
         # --- Penyusunan Layout Misi 2 ---
         row = 0
@@ -244,50 +239,28 @@ class SettingsPanel(QWidget):
         misi2_grid.addWidget(self.surf_wp2_input, row, 3)
         row += 1
 
-        # Sub-header: Jarak Deteksi Kotak
-        misi2_grid.addWidget(create_sub_header("Jarak Deteksi Kotak:"), row, 0, 1, 4)
-        row += 1
-        misi2_grid.addWidget(QLabel("Track Dist:"), row, 0)
-        misi2_grid.addWidget(self.spin_box_track_dist, row, 1)
-        misi2_grid.addWidget(QLabel("Avoid Dist:"), row, 2)
-        misi2_grid.addWidget(self.spin_box_avoid_dist, row, 3)
-        row += 1
-
-        # Sub-header: Manuver Pemotretan
+        # Sub-header: Pemicu Deteksi & Pemotretan Kotak
         misi2_grid.addWidget(
-            create_sub_header("Manuver Pemotretan (Titik Foto):"), row, 0, 1, 4
+            create_sub_header("Pemicu Deteksi & Pemotretan Kotak:"), row, 0, 1, 4
         )
         row += 1
-        misi2_grid.addWidget(QLabel("Spd Maju:"), row, 0)
-        misi2_grid.addWidget(self.spin_portrait_speed, row, 1)
-        misi2_grid.addWidget(QLabel("Spd Mundur:"), row, 2)
-        misi2_grid.addWidget(self.spin_portrait_rev_speed, row, 3)
+        misi2_grid.addWidget(QLabel("Jarak Pemicu:"), row, 0)
+        misi2_grid.addWidget(self.spin_box_trigger_dist, row, 1)
+        misi2_grid.addWidget(QLabel("Spd Maju:"), row, 2)
+        misi2_grid.addWidget(self.spin_portrait_speed, row, 3)
         row += 1
         misi2_grid.addWidget(QLabel("Waktu Diam:"), row, 0)
         misi2_grid.addWidget(self.spin_portrait_stop, row, 1)
         misi2_grid.addWidget(QLabel("Waktu Mundur:"), row, 2)
         misi2_grid.addWidget(self.spin_portrait_reverse, row, 3)
         row += 1
-        misi2_grid.addWidget(QLabel("Target Foto:"), row, 0)
-        misi2_grid.addWidget(self.photo_count_input, row, 1)
-        misi2_grid.addWidget(QLabel("Interval:"), row, 2)
-        misi2_grid.addWidget(self.photo_interval_input, row, 3)
+        misi2_grid.addWidget(QLabel("Spd Mundur:"), row, 0)
+        misi2_grid.addWidget(self.spin_portrait_rev_speed, row, 1)
+        misi2_grid.addWidget(QLabel("Target Foto:"), row, 2)
+        misi2_grid.addWidget(self.photo_count_input, row, 3)
         row += 1
-
-        # Sub-header: Manuver Menghindar Kotak
-        misi2_grid.addWidget(
-            create_sub_header("Manuver Menghindar (Pasca Foto):"), row, 0, 1, 4
-        )
-        row += 1
-        misi2_grid.addWidget(QLabel("Avoid Spd:"), row, 0)
-        misi2_grid.addWidget(self.spin_box_speed, row, 1)
-        misi2_grid.addWidget(QLabel("Avoid Front:"), row, 2)
-        misi2_grid.addWidget(self.spin_box_front, row, 3)
-        row += 1
-        misi2_grid.addWidget(QLabel("Avoid L:"), row, 0)
-        misi2_grid.addWidget(self.spin_box_left, row, 1)
-        misi2_grid.addWidget(QLabel("Avoid R:"), row, 2)
-        misi2_grid.addWidget(self.spin_box_right, row, 3)
+        misi2_grid.addWidget(QLabel("Interval:"), row, 0)
+        misi2_grid.addWidget(self.photo_interval_input, row, 1)
 
         misi2_group.setLayout(misi2_grid)
         main_layout.addWidget(misi2_group)
@@ -400,12 +373,7 @@ class SettingsPanel(QWidget):
         self.surf_wp1_input.valueChanged.connect(self._on_unified_wp_changed)
         self.surf_wp2_input.valueChanged.connect(self._on_unified_wp_changed)
 
-        self.spin_box_track_dist.valueChanged.connect(self._on_box_avoidance_changed)
-        self.spin_box_avoid_dist.valueChanged.connect(self._on_box_avoidance_changed)
-        self.spin_box_left.valueChanged.connect(self._on_box_avoidance_changed)
-        self.spin_box_right.valueChanged.connect(self._on_box_avoidance_changed)
-        self.spin_box_speed.valueChanged.connect(self._on_box_avoidance_changed)
-        self.spin_box_front.valueChanged.connect(self._on_box_avoidance_changed)
+        self.spin_box_trigger_dist.valueChanged.connect(self._on_box_avoidance_changed)
 
         self.photo_count_input.valueChanged.connect(self._on_set_photo_mission)
         self.photo_interval_input.valueChanged.connect(self._on_set_photo_mission)
@@ -472,26 +440,12 @@ class SettingsPanel(QWidget):
         if "obs_dist" in defs:
             self.spin_obs_dist.setValue(defs["obs_dist"])
 
-        if "box_track_dist" in defs:
-            self.spin_box_track_dist.setValue(defs["box_track_dist"])
+        if "box_trigger_dist" in defs:
+            self.spin_box_trigger_dist.setValue(defs["box_trigger_dist"])
+        elif "box_avoid_dist" in defs:
+            self.spin_box_trigger_dist.setValue(defs["box_avoid_dist"])
         elif "box_obs_dist" in defs:
-            self.spin_box_track_dist.setValue(defs["box_obs_dist"])
-
-        if "box_avoid_dist" in defs:
-            self.spin_box_avoid_dist.setValue(defs["box_avoid_dist"])
-        elif "obs_dist" in defs:
-            self.spin_box_avoid_dist.setValue(defs.get("box_avoid_dist", 100))
-
-        if "box_servo_left" in defs:
-            self.spin_box_left.setValue(defs["box_servo_left"])
-        if "box_servo_right" in defs:
-            self.spin_box_right.setValue(defs["box_servo_right"])
-        if "box_speed" in defs:
-            self.spin_box_speed.setValue(defs["box_speed"])
-        if "box_front_motor" in defs:
-            self.spin_box_front.setValue(defs["box_front_motor"])
-        elif "box_pwm" in defs:
-            self.spin_box_front.setValue(defs["box_pwm"])
+            self.spin_box_trigger_dist.setValue(defs["box_obs_dist"])
 
         if "photo_surf1" in defs:
             self.surf_wp1_input.setValue(int(defs["photo_surf1"]))
@@ -572,9 +526,10 @@ class SettingsPanel(QWidget):
             "servo_left": self.spin_left.value(),
             "servo_right": self.spin_right.value(),
             "obs_dist": self.spin_obs_dist.value(),
-            "box_obs_dist": self.spin_box_avoid_dist.value(),
-            "box_track_dist": self.spin_box_track_dist.value(),
-            "box_avoid_dist": self.spin_box_avoid_dist.value(),
+            "box_trigger_dist": self.spin_box_trigger_dist.value(),
+            "box_obs_dist": self.spin_box_trigger_dist.value(),
+            "box_track_dist": self.spin_box_trigger_dist.value(),
+            "box_avoid_dist": self.spin_box_trigger_dist.value(),
             "box_servo_left": self.spin_box_left.value(),
             "box_servo_right": self.spin_box_right.value(),
             "box_speed": self.spin_box_speed.value(),
@@ -761,11 +716,13 @@ class SettingsPanel(QWidget):
             print(f"[SettingsPanel] Error emitting dock enable: {e}")
 
     def _on_box_avoidance_changed(self):
+        val = self.spin_box_trigger_dist.value()
         payload = {
-            "track_dist": self.spin_box_track_dist.value(),
-            "avoid_dist": self.spin_box_avoid_dist.value(),
-            "distance": self.spin_box_track_dist.value(),
-            "safety_dist": self.spin_box_avoid_dist.value(),
+            "trigger_dist": val,
+            "track_dist": val,
+            "avoid_dist": val,
+            "distance": val,
+            "safety_dist": val,
             "speed": self.spin_box_speed.value(),
             "front_motor": self.spin_box_front.value(),
             "left": self.spin_box_left.value(),
