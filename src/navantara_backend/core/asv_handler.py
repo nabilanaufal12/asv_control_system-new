@@ -587,10 +587,14 @@ class AsvHandler:
                 command_to_send = None
 
                 if rc_mode_switch < 1500:
+                    self._dock_phase = "IDLE"
+                    self._box_mission_phase = "IDLE"
                     command_to_send = None
                     logging.info("[AsvHandler] RC OVERRIDE -> Kontrol Jetson ditahan.")
 
                 elif control_mode == "MANUAL":
+                    self._dock_phase = "IDLE"
+                    self._box_mission_phase = "IDLE"
                     command_to_send = "W\n"
                     logging.info("[AsvHandler] MANUAL CONTROL -> Standby (Kirim W)")
 
@@ -672,6 +676,10 @@ class AsvHandler:
                             # =========================================================================
                             # MISI 2: FOTOGRAFI KOTAK (DEKATI -> STOP & FOTO -> UPDATE WP -> MUNDUR)
                             # Logika penghindaran kotak (avoidance swerve & front thrusters) DIHAPUS TOTAL.
+                            # HANYA aktif pada target waypoint foto yang diatur di GUI:
+                            #   - Kotak Biru: saat start_wp_under (misal 11) menuju end_wp_under (misal 12)
+                            #   - Kotak Hijau/Merah: saat start_wp_surf (misal 13) menuju end_wp_surf (misal 14)
+                            # Di luar rentang WP target ini, deteksi kotak DIABAIKAN (tetap navigasi WP).
                             # Saat jarak <= box_trigger_dist (default 100cm):
                             #   - Pemicu STOP & FOTO aktif
                             #   - Waypoint langsung di-update (C,INC)
@@ -686,6 +694,10 @@ class AsvHandler:
                                 current_wp_idx = (
                                     self.current_state.current_waypoint_index
                                 )
+                                under_wp1 = self.current_state.photo_mission_under_wp1
+                                under_wp2 = self.current_state.photo_mission_under_wp2
+                                surf_wp1 = self.current_state.photo_mission_surf_wp1
+                                surf_wp2 = self.current_state.photo_mission_surf_wp2
                                 dist_cm = (
                                     self.current_state.vision_target.get(
                                         "distance_cm"
@@ -694,8 +706,40 @@ class AsvHandler:
                                     else None
                                 )
 
-                            # 1. Pemicu Misi 2 jika mendeteksi kotak pada jarak <= box_trigger_dist (100 cm)
-                            if (
+                            # Fungsi pembantu: periksa apakah kapal sedang berada dalam segmen WP target foto
+                            def _is_in_photo_target_wp(cur_wp, w1, w2):
+                                if w1 <= 0 or w2 <= 0:
+                                    return False
+                                w_start = min(w1, w2)
+                                w_end = max(w1, w2)
+                                if w_start == w_end:
+                                    return cur_wp == w_end
+                                return w_start < cur_wp <= w_end
+
+                            # Evaluasi kesesuaian target objek dengan segmen waypoint aktif
+                            is_target_uw = (
+                                obj_class == "kotak-biru"
+                                and _is_in_photo_target_wp(current_wp_idx, under_wp1, under_wp2)
+                            )
+                            is_target_surf = (
+                                obj_class in ("kotak-hijau", "kotak-merah")
+                                and _is_in_photo_target_wp(current_wp_idx, surf_wp1, surf_wp2)
+                            )
+
+                            is_valid_target_box = is_target_uw or is_target_surf
+
+                            if not is_valid_target_box:
+                                # Kotak terdeteksi tetapi BUKAN target foto pada segmen WP saat ini
+                                # JANGAN update WP, JANGAN stop motor, biarkan kapal navigasi WP normal
+                                turn_direction = "STRAIGHT"
+                                servo_cmd = servo_default
+                                pwm_cmd = portrait_speed_aktif
+                                motor_depan_kiri = 1000
+                                motor_depan_kanan = 1000
+                                desc = f"{obj_class} diabaikan (WP #{current_wp_idx} di luar target foto)"
+
+                            # 1. Pemicu Misi 2 jika mendeteksi kotak target pada jarak <= box_trigger_dist (100 cm)
+                            elif (
                                 self._box_mission_phase == "IDLE"
                                 and dist_cm is not None
                                 and dist_cm <= box_trigger_dist
@@ -705,19 +749,13 @@ class AsvHandler:
                                 self._box_phase_start_time = time.time()
                                 self._box_latched_wp = current_wp_idx
 
-                                # Langsung kirim update waypoint ke ESP32 dan perbarui internal state
-                                if self.serial_handler.is_connected:
-                                    self.serial_handler.send_command("C,INC\n")
-                                with self.state_lock:
-                                    self.current_state.current_waypoint_index += 1
-
                                 logging.warning(
-                                    f"[MISI 2] Kotak '{obj_class}' terdeteksi pada jarak {dist_cm:.1f} cm "
-                                    f"(<= {box_trigger_dist:.1f} cm). Motor STOP & FOTO! Update WP -> #{self.current_state.current_waypoint_index}"
+                                    f"[MISI 2] Target '{obj_class}' terdeteksi pada jarak {dist_cm:.1f} cm "
+                                    f"(<= {box_trigger_dist:.1f} cm) di WP #{current_wp_idx}. Motor STOP & FOTO!"
                                 )
                                 desc = f"{obj_class} -> TRIGGER STOP & FOTO (Dist: {dist_cm:.1f}cm)"
 
-                            # 2. Jika belum mencapai jarak pemicu (sedang mendekat): dekati dengan stabil & lurus
+                            # 2. Jika belum mencapai jarak pemicu (sedang mendekat ke kotak target): dekati dengan stabil & lurus
                             else:
                                 center_x = vision_target_frame_width / 2.0
                                 error_x = vision_target_center_x - center_x
@@ -736,7 +774,7 @@ class AsvHandler:
                                 if abs(error_x) <= tolerance:
                                     turn_direction = "TRACK_CENTER"
                                     servo_cmd = servo_default
-                                    desc = f"{obj_class} -> Dekati Kotak Lurus [{dist_str}]"
+                                    desc = f"{obj_class} -> Dekati Kotak Target Lurus [{dist_str}]"
                                 elif error_x < -tolerance:
                                     turn_direction = "TRACK_LEFT"
                                     ratio = (
@@ -777,6 +815,12 @@ class AsvHandler:
                         elif self._box_mission_phase in ("STOP", "REVERSE"):
                             # Misi 2 (Stop / Mundur) sedang aktif -> tahan command vision tracking normal
                             command_to_send = None
+                        elif (
+                            obj_class in ["kotak-biru", "kotak-hijau", "kotak-merah"]
+                            and not is_valid_target_box
+                        ):
+                            # Objek kotak di luar waypoint target foto -> biarkan navigasi waypoint normal
+                            command_to_send = "W\n"
                         elif nav_dist_to_wp < 1.5:
                             command_to_send = "W\n"
                             logging.info(
@@ -842,7 +886,8 @@ class AsvHandler:
                             self._box_phase_start_time = time.time()
                             with self.state_lock:
                                 rev_pwm = self.current_state.portrait_reverse_speed
-                            command_to_send = f"A,90,{rev_pwm},1000,1000,2000,1000,1000\n"
+                            # Set semua pin arah (bawah & depan) ke 2000 agar motor kiri & kanan mundur sinkron
+                            command_to_send = f"A,90,{rev_pwm},1000,1000,2000,2000,2000\n"
                             logging.warning(
                                 f"[MISI 2] Fase STOP & FOTO selesai. Memulai fase MUNDUR (PWM: {rev_pwm})..."
                             )
@@ -853,15 +898,21 @@ class AsvHandler:
                             rev_pwm = self.current_state.portrait_reverse_speed
                         elapsed_ms = (time.time() - self._box_phase_start_time) * 1000.0
                         if elapsed_ms < rev_ms:
-                            # Motor belakang mundur (dir=2000), kemudi lurus, motor depan mati
-                            command_to_send = f"A,90,{rev_pwm},1000,1000,2000,1000,1000\n"
+                            # Motor belakang mundur (semua pin dir=2000), kemudi lurus, motor depan mati
+                            command_to_send = f"A,90,{rev_pwm},1000,1000,2000,2000,2000\n"
                         else:
-                            # Selesai fase mundur -> Lanjut ke navigasi waypoint normal
+                            # Selesai fase mundur -> Update waypoint ke ESP32 dan lanjut ke navigasi WP berikutnya
                             self._box_mission_phase = "IDLE"
                             self._box_phase_start_time = 0.0
+
+                            if self.serial_handler.is_connected:
+                                self.serial_handler.send_command("C,INC\n")
+                            with self.state_lock:
+                                self.current_state.current_waypoint_index += 1
+
                             command_to_send = "W\n"
                             logging.warning(
-                                "[MISI 2] Fase MUNDUR selesai. Melanjutkan navigasi ke waypoint berikutnya (W)."
+                                f"[MISI 2] Fase MUNDUR selesai. Update WP -> #{self.current_state.current_waypoint_index}. Melanjutkan navigasi ke waypoint berikutnya (W)."
                             )
 
                 # =====================================================================
@@ -875,11 +926,21 @@ class AsvHandler:
                         dock_arena = self.current_state.active_arena
                         dock_esp_sts = self.current_state.esp_status
 
+                    total_wps = (
+                        len(self.current_state.waypoints)
+                        if self.current_state.waypoints
+                        else 0
+                    )
+                    current_wp = self.current_state.current_waypoint_index
+
                     # --- TAHAP 0: TRIGGER (IDLE → TURNING) ---
+                    # Hanya aktif jika misi waypoint valid (> 0 WP) dan kapal sudah di WP terakhir
                     if (
                         self._dock_phase == "IDLE"
                         and dock_enabled
                         and dock_esp_sts == "DK_TRACKING_AI"
+                        and total_wps > 0
+                        and current_wp >= total_wps - 1
                     ):
                         self._dock_captured_heading = current_heading
                         with self.state_lock:
@@ -1318,17 +1379,58 @@ class AsvHandler:
             print("[AsvHandler] vision_service tidak tersedia untuk ganti model.")
 
     def _handle_update_vision_wp_ranges(self, payload):
-        """Memperbarui rentang deteksi WP dari GUI"""
+        """Memperbarui rentang deteksi WP dari GUI dan menyinkronkan ke ESP32"""
         vision_cfg = self.config.get("vision", {})
+
+        # 1. Rintangan Bola (Misi 1)
         if "wp_range_bola" in payload:
             vision_cfg["wp_range_bola"] = payload["wp_range_bola"]
+        elif "obstacle_buoy_range" in payload:
+            vision_cfg["wp_range_bola"] = payload["obstacle_buoy_range"]
+
+        # 2. Kotak Biru / Underwater (Misi 2)
         if "wp_range_kotak_biru" in payload:
-            vision_cfg["wp_range_kotak_biru"] = payload["wp_range_kotak_biru"]
+            uw_range = payload["wp_range_kotak_biru"]
+            vision_cfg["wp_range_kotak_biru"] = uw_range
+            with self.state_lock:
+                self.current_state.photo_mission_under_wp1 = int(uw_range[0])
+                self.current_state.photo_mission_under_wp2 = int(uw_range[1])
+        elif "portrait_underwater_range" in payload:
+            uw_range = payload["portrait_underwater_range"]
+            vision_cfg["wp_range_kotak_biru"] = uw_range
+            with self.state_lock:
+                self.current_state.photo_mission_under_wp1 = int(uw_range[0])
+                self.current_state.photo_mission_under_wp2 = int(uw_range[1])
+
+        # 3. Kotak Hijau / Surface (Misi 2)
         if "wp_range_kotak_hijau" in payload:
-            vision_cfg["wp_range_kotak_hijau"] = payload["wp_range_kotak_hijau"]
+            surf_range = payload["wp_range_kotak_hijau"]
+            vision_cfg["wp_range_kotak_hijau"] = surf_range
+            with self.state_lock:
+                self.current_state.photo_mission_surf_wp1 = int(surf_range[0])
+                self.current_state.photo_mission_surf_wp2 = int(surf_range[1])
+        elif "portrait_surface_range" in payload:
+            surf_range = payload["portrait_surface_range"]
+            vision_cfg["wp_range_kotak_hijau"] = surf_range
+            with self.state_lock:
+                self.current_state.photo_mission_surf_wp1 = int(surf_range[0])
+                self.current_state.photo_mission_surf_wp2 = int(surf_range[1])
 
         self.config["vision"] = vision_cfg
-        logging.info(f"[AsvHandler] Vision WP Ranges diperbarui: {payload}")
+
+        # Sinkronkan rentang portrait ke ESP32 via serial
+        with self.state_lock:
+            u1 = self.current_state.photo_mission_under_wp1
+            u2 = self.current_state.photo_mission_under_wp2
+            s1 = self.current_state.photo_mission_surf_wp1
+            s2 = self.current_state.photo_mission_surf_wp2
+
+        if self.serial_handler.is_connected:
+            self.serial_handler.send_command(f"S,PT_RANGE,{u1},{u2},{s1},{s2}\n")
+
+        logging.info(
+            f"[AsvHandler] Vision WP Ranges diperbarui: UW={u1}-{u2}, Surf={s1}-{s2}"
+        )
 
     def _handle_swap_cameras(self, payload):
         with self.state_lock:

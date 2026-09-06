@@ -224,7 +224,10 @@ class VisionService:
         self.infer_device = vision_cfg.get("device", "cuda:0")
 
         # --- [MIGRASI: Panggil pemuat model Ultralytics] ---
+        self.current_model_name = None
         self.model = self._load_yolo_model(config)
+        if self.model:
+            self.current_model_name = getattr(self.model, "_model_name", None)
         # ---------------------------------------------------
 
         # Flag: apakah model yang dimuat adalah TensorRT engine?
@@ -381,6 +384,7 @@ class VisionService:
             model = YOLO(model_path, task="detect")
             # Tandai apakah model ini TensorRT atau PyTorch
             model._is_tensorrt = model_path.endswith(".engine")
+            model._model_name = Path(model_path).name
 
             # Tentukan device: prioritas CUDA, fallback CPU jika tidak tersedia
             import torch
@@ -427,11 +431,20 @@ class VisionService:
         """Mengganti model AI secara dinamis"""
         print(f"[VisionService] Permintaan ganti model ke: {model_filename}")
         with self.settings_lock:
+            clean_name = Path(model_filename).name if model_filename else ""
+            active_name = getattr(self, "current_model_name", None)
+            if active_name and clean_name and (clean_name == active_name or model_filename == active_name):
+                print(
+                    f"[VisionService] Model '{model_filename}' sudah aktif ({active_name}). Mengabaikan reload berulang."
+                )
+                return
+
             new_model = self._load_yolo_model(
                 self.config, selected_model_name=model_filename
             )
             if new_model:
                 self.model = new_model
+                self.current_model_name = getattr(new_model, "_model_name", clean_name)
                 self.is_tensorrt = getattr(self.model, "_is_tensorrt", False)
                 if self.is_tensorrt:
                     print(
@@ -1169,10 +1182,19 @@ class VisionService:
                 else ""
             )
 
+            def _is_in_photo_seg(cur_wp, w1, w2):
+                if w1 <= 0 or w2 <= 0:
+                    return False
+                ws = min(w1, w2)
+                we = max(w1, w2)
+                if ws == we:
+                    return cur_wp == we
+                return ws < cur_wp <= we
+
             in_segment_surf = (
                 not is_reversing
                 and (
-                    ((surf_wp1 != -1 and surf_wp2 != -1) and (surf_wp1 < current_wp <= surf_wp2))
+                    _is_in_photo_seg(current_wp, surf_wp1, surf_wp2)
                     or (is_box_stopped and target_class in ("kotak-hijau", "kotak-merah"))
                 )
             )
@@ -1180,7 +1202,7 @@ class VisionService:
             in_segment_under = (
                 not is_reversing
                 and (
-                    ((under_wp1 != -1 and under_wp2 != -1) and (under_wp1 < current_wp <= under_wp2))
+                    _is_in_photo_seg(current_wp, under_wp1, under_wp2)
                     or (is_box_stopped and target_class == "kotak-biru")
                 )
             )
@@ -1255,30 +1277,45 @@ class VisionService:
             if conf < self.poi_confidence_threshold:
                 continue
 
-            # --- [PERBAIKAN] Logika Filter Target Berbasis Waypoint (WP) ---
+            # --- Logika Filter Target Berbasis Waypoint (WP) Sesuai Setting GUI ---
+            with self.asv_handler.state_lock:
+                under_wp1 = getattr(current_state, "photo_mission_under_wp1", 11)
+                under_wp2 = getattr(current_state, "photo_mission_under_wp2", 12)
+                surf_wp1 = getattr(current_state, "photo_mission_surf_wp1", 13)
+                surf_wp2 = getattr(current_state, "photo_mission_surf_wp2", 14)
+
             vision_cfg = self.config.get("vision", {})
             range_bola = vision_cfg.get("wp_range_bola", [0, 10])
-            range_kotak_biru = vision_cfg.get("wp_range_kotak_biru", [11, 12])
-            range_kotak_hijau = vision_cfg.get("wp_range_kotak_hijau", [13, 14])
 
             total_wps = len(current_state.waypoints) if current_state.waypoints else 0
             is_last_wp = (total_wps > 0) and (current_wp >= total_wps - 1)
 
-            # 1. MISI 1: RINTANGAN BOLA (WP 0 - 10)
+            def _is_in_photo_target_wp(cur_wp, w1, w2):
+                if w1 <= 0 or w2 <= 0:
+                    return False
+                w_start = min(w1, w2)
+                w_end = max(w1, w2)
+                if w_start == w_end:
+                    return cur_wp == w_end
+                return w_start < cur_wp <= w_end
+
+            # 1. MISI 1: RINTANGAN BOLA (WP range bola)
             if range_bola[0] <= current_wp <= range_bola[1]:
                 if cls in ["bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
 
-            # 2. MISI 2: KOTAK FOTO & SAFETY TRANSISI / EXIT (WP 11 s.d. WP 15)
-            # Mencakup WP 11-12 (Kotak Biru), 12-13 (Transisi), 13-14 (Kotak Hijau), dan 14-15 (Exit Safety)
-            elif (
-                range_kotak_biru[0] <= current_wp <= range_kotak_hijau[1] + 1
-            ) and not is_last_wp:
-                if cls in ["kotak-biru", "kotak-hijau"]:
+            # 2. MISI 2: FOTOGRAFI KOTAK (Hanya aktif sesuai target WP foto di GUI)
+            # - Kotak Biru: Hanya aktif saat start: under_wp1 menuju end: under_wp2 (misal 11 -> 12)
+            # - Kotak Hijau/Merah: Hanya aktif saat start: surf_wp1 menuju end: surf_wp2 (misal 13 -> 14)
+            # Di luar segmen WP target ini, deteksi kotak DIABAIKAN TOTAL.
+            elif not is_last_wp:
+                if cls == "kotak-biru" and _is_in_photo_target_wp(current_wp, under_wp1, under_wp2):
+                    valid_buoys.append(det)
+                elif cls in ["kotak-hijau", "kotak-merah"] and _is_in_photo_target_wp(current_wp, surf_wp1, surf_wp2):
                     valid_buoys.append(det)
 
-            # 3. MISI 3: DOCKING (WP > 15 atau WP TERAKHIR)
-            elif is_last_wp or (current_wp > range_kotak_hijau[1] + 1):
+            # 3. MISI 3: DOCKING (WP TERAKHIR)
+            elif is_last_wp:
                 if cls in ["kotak-biru", "bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
             # Jika WP di luar range, valid_buoys tetap kosong, AI idle.

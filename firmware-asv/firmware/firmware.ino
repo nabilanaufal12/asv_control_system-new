@@ -379,6 +379,11 @@ void checkSerialInput() {
               counter++;
               if (counter > dataIndex) counter = dataIndex;
               is_new_wp = true;
+              bool stillInZone = (counter > uwStart && counter <= uwEnd) 
+                              || (counter > surfStart && counter <= surfEnd);
+              if (!stillInZone) {
+                portraitState = PT_NORMAL;
+              }
               Serial.print("[WP] Manual INC via Serial. Target WP #");
               Serial.println(counter);
             } else if (cmdAction == "DEC") {
@@ -1034,6 +1039,8 @@ void loop() {
       status = "PT_REVERSE";
       finalMotor = portraitReverseSpeed;
       finalDir = 2000;  // MUNDUR KHUSUS DI TITIK 12 & 14 (2000us)
+      finalDirDepanKiri = 2000;
+      finalDirDepanKanan = 2000;
       finalServo = 90;
       finalMotorDepanKiri = 1000;
       finalMotorDepanKanan = 1000;
@@ -1042,6 +1049,8 @@ void loop() {
         is_new_wp = true;
         portraitState = PT_NORMAL;
         finalDir = 1000;  // Kembali maju normal (1000us)
+        finalDirDepanKiri = 1000;
+        finalDirDepanKanan = 1000;
         Serial.print("Portrait selesai. Lanjut ke WP #");
         Serial.println(counter);
       }
@@ -1151,8 +1160,8 @@ void loop() {
               
               // Jika keluar dari portrait zone, reset state ke normal
               if (portraitState == PT_SLOW) {
-                bool stillInZone = (counter >= uwStart && counter <= uwEnd) 
-                                || (counter >= surfStart && counter <= surfEnd);
+                bool stillInZone = (counter > uwStart && counter <= uwEnd) 
+                                || (counter > surfStart && counter <= surfEnd);
                 if (!stillInZone) {
                   portraitState = PT_NORMAL;
                 }

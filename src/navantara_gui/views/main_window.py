@@ -584,4 +584,15 @@ class MainWindow(QMainWindow):
             # Langsung kirim perintah update arena ke backend
             self.waypoints_panel.send_waypoints.emit({"arena": arena_id_full})
 
-    # Keyboard events for manual drive removed
+    def closeEvent(self, event):
+        """Menangani penutupan jendela secara bersih agar QThread tidak force-killed."""
+        if hasattr(self, "api_client") and self.api_client:
+            if hasattr(self.api_client, "_stop_video_threads_safe"):
+                self.api_client._stop_video_threads_safe()
+            if hasattr(self.api_client, "sio") and self.api_client.sio.connected:
+                try:
+                    self.api_client.sio.disconnect()
+                except Exception:
+                    pass
+        event.accept()
+
