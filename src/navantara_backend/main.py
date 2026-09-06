@@ -370,7 +370,15 @@ def create_app():
 
     # Inisialisasi SocketIO
     # [PENTING] Set cors_allowed_origins='*' untuk kompatibilitas WebEngine/file://
-    socketio.init_app(app, async_mode="eventlet", cors_allowed_origins="*")
+    # Tingkatkan ping_timeout agar koneksi WebSocket tahan terhadap beban CPU/inferensi
+    socketio.init_app(
+        app,
+        async_mode="eventlet",
+        cors_allowed_origins="*",
+        ping_timeout=60,
+        ping_interval=25,
+        max_http_buffer_size=10 * 1024 * 1024,
+    )
 
     # Jalankan loop layanan sebagai greenlet
     print("? Menjadwalkan layanan latar belakang sebagai greenlet...")

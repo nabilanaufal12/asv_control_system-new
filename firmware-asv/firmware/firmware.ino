@@ -404,7 +404,7 @@ void checkSerialInput() {
               counter = 0;
             } else if (subCmd == "SAVE") {
               saveDataToMemory();
-              displayAllData();
+              Serial.println("[WP] Saved to flash.");
             } else if (subCmd == "GET_WP") {
               Serial.println("SYNC_WP_START");
               for (int i = 0; i < dataIndex; i++) {
@@ -414,6 +414,7 @@ void checkSerialInput() {
                 Serial.print(latitudes[i], 6);
                 Serial.print(",");
                 Serial.println(longitudes[i], 6);
+                delay(1);
               }
               Serial.println("SYNC_WP_END");
             } else if (subCmd.startsWith("ADD,")) {

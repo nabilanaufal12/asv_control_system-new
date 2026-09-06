@@ -1267,6 +1267,27 @@ class VisionService:
 
         current_wp = current_state.nav_target_wp_index
 
+        # Baca konfigurasi WP foto sekali per frame di luar loop deteksi
+        with self.asv_handler.state_lock:
+            under_wp1 = getattr(current_state, "photo_mission_under_wp1", 11)
+            under_wp2 = getattr(current_state, "photo_mission_under_wp2", 12)
+            surf_wp1 = getattr(current_state, "photo_mission_surf_wp1", 13)
+            surf_wp2 = getattr(current_state, "photo_mission_surf_wp2", 14)
+
+        vision_cfg = self.config.get("vision", {})
+        range_bola = vision_cfg.get("wp_range_bola", [0, 10])
+        total_wps = len(current_state.waypoints) if current_state.waypoints else 0
+        is_last_wp = (total_wps > 0) and (current_wp >= total_wps - 1)
+
+        def _is_in_photo_target_wp(cur_wp, w1, w2):
+            if w1 <= 0 or w2 <= 0:
+                return False
+            w_start = min(w1, w2)
+            w_end = max(w1, w2)
+            if w_start == w_end:
+                return cur_wp == w_end
+            return w_start < cur_wp <= w_end
+
         valid_buoys = []
 
         for det in detections:
@@ -1276,28 +1297,6 @@ class VisionService:
             # Abaikan jika tingkat kepercayaan AI di bawah threshold
             if conf < self.poi_confidence_threshold:
                 continue
-
-            # --- Logika Filter Target Berbasis Waypoint (WP) Sesuai Setting GUI ---
-            with self.asv_handler.state_lock:
-                under_wp1 = getattr(current_state, "photo_mission_under_wp1", 11)
-                under_wp2 = getattr(current_state, "photo_mission_under_wp2", 12)
-                surf_wp1 = getattr(current_state, "photo_mission_surf_wp1", 13)
-                surf_wp2 = getattr(current_state, "photo_mission_surf_wp2", 14)
-
-            vision_cfg = self.config.get("vision", {})
-            range_bola = vision_cfg.get("wp_range_bola", [0, 10])
-
-            total_wps = len(current_state.waypoints) if current_state.waypoints else 0
-            is_last_wp = (total_wps > 0) and (current_wp >= total_wps - 1)
-
-            def _is_in_photo_target_wp(cur_wp, w1, w2):
-                if w1 <= 0 or w2 <= 0:
-                    return False
-                w_start = min(w1, w2)
-                w_end = max(w1, w2)
-                if w_start == w_end:
-                    return cur_wp == w_end
-                return w_start < cur_wp <= w_end
 
             # 1. MISI 1: RINTANGAN BOLA (WP range bola)
             if range_bola[0] <= current_wp <= range_bola[1]:

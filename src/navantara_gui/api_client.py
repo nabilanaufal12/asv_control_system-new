@@ -46,13 +46,15 @@ class MjpegStreamThread(QThread):
         super().__init__(parent)
         self.url = url
         self.running = False
+        self._current_response = None
 
     def run(self):
         self.running = True
         while self.running:
             try:
                 req = urllib.request.Request(self.url)
-                with urllib.request.urlopen(req, timeout=5) as res:
+                with urllib.request.urlopen(req, timeout=3) as res:
+                    self._current_response = res
                     bytes_data = b""
                     while self.running:
                         chunk = res.read(1024)
@@ -67,25 +69,29 @@ class MjpegStreamThread(QThread):
                             self.frame_ready.emit(jpg)
             except Exception:
                 if self.running:
-                    print(
-                        f"[MjpegStreamThread] Mencoba menyambung ulang ke {self.url}..."
-                    )
                     import time
-
-                    time.sleep(1.5)  # Tunggu sebelum reconnect agar tidak spam CPU
+                    time.sleep(1.0)
             finally:
-                pass  # Terus loop selama self.running == True
+                self._current_response = None
 
     def request_stop(self):
-        """Non-blocking: hanya set flag, tidak menunggu thread selesai.
-        Aman dipanggil dari dalam event handler Socket.IO."""
+        """Non-blocking: set flag dan tutup socket segera agar unblock read()."""
         self.running = False
+        try:
+            if self._current_response:
+                self._current_response.close()
+        except Exception:
+            pass
 
     def stop(self):
-        """Blocking: set flag DAN tunggu thread selesai.
-        Hanya dipanggil saat shutdown aplikasi (bukan saat disconnect)."""
+        """Blocking: set flag, tutup socket, dan tunggu thread selesai."""
         self.running = False
-        self.wait(3000)  # Timeout 3 detik agar tidak hang selamanya
+        try:
+            if self._current_response:
+                self._current_response.close()
+        except Exception:
+            pass
+        self.wait(1500)
 
 
 class ApiClient(QObject):
@@ -118,9 +124,15 @@ class ApiClient(QObject):
         # Inisialisasi thread video
         self.cam1_thread = None
         self.cam2_thread = None
+        self._pending_stop_threads = []
 
-        # Inisialisasi klien Socket.IO
-        self.sio = socketio.Client()
+        # Inisialisasi klien Socket.IO dengan auto-reconnection aktif
+        self.sio = socketio.Client(
+            reconnection=True,
+            reconnection_attempts=0,
+            reconnection_delay=1,
+            reconnection_delay_max=5,
+        )
         self.setup_event_handlers()
 
         # Sambungkan sinyal internal ke eksekutor di Main Thread
@@ -134,7 +146,7 @@ class ApiClient(QObject):
         """
         print(f"ApiClient mencoba terhubung ke server WebSocket di {self.base_url}")
         try:
-            self.sio.connect(self.base_url, transports=["websocket"])
+            self.sio.connect(self.base_url, transports=["websocket"], retry=True)
         except socketio.exceptions.ConnectionError as e:
             print(f"Koneksi ke server WebSocket gagal: {e}")
             self.connection_status_changed.emit(False, "Backend tidak terjangkau")
@@ -190,25 +202,26 @@ class ApiClient(QObject):
         # Dipanggil di Main Thread berkat Signal
         self._stop_video_threads_safe()
 
-        self.cam1_thread = MjpegStreamThread(f"{self.base_url}/video_feed_1")
-        self.cam1_thread.frame_ready.connect(self.frame_cam1_updated.emit)
-        self.cam1_thread.start()
+        if self.cam1_thread is None or not self.cam1_thread.isRunning():
+            self.cam1_thread = MjpegStreamThread(f"{self.base_url}/video_feed_1", parent=self)
+            self.cam1_thread.frame_ready.connect(self.frame_cam1_updated.emit)
+            self.cam1_thread.start()
 
-        self.cam2_thread = MjpegStreamThread(f"{self.base_url}/video_feed_2")
-        self.cam2_thread.frame_ready.connect(self.frame_cam2_updated.emit)
-        self.cam2_thread.start()
+        if self.cam2_thread is None or not self.cam2_thread.isRunning():
+            self.cam2_thread = MjpegStreamThread(f"{self.base_url}/video_feed_2", parent=self)
+            self.cam2_thread.frame_ready.connect(self.frame_cam2_updated.emit)
+            self.cam2_thread.start()
 
     @Slot()
     def _stop_video_threads_safe(self):
         # Dipanggil di Main Thread berkat Signal
-        if self.cam1_thread:
-            self.cam1_thread.request_stop()
-            self.cam1_thread.wait(500)
-            self.cam1_thread = None
-        if self.cam2_thread:
-            self.cam2_thread.request_stop()
-            self.cam2_thread.wait(500)
-            self.cam2_thread = None
+        for thread_attr in ["cam1_thread", "cam2_thread"]:
+            thread = getattr(self, thread_attr, None)
+            if thread:
+                thread.request_stop()
+                thread.wait(1000)
+                if not thread.isRunning():
+                    setattr(self, thread_attr, None)
 
     def initial_stream_request(self):
         """Fungsi yang dijalankan di latar belakang untuk meminta stream awal."""

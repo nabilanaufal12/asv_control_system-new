@@ -174,6 +174,8 @@ class AsvHandler:
 
         # Buffer untuk menerima sinkronisasi waypoint dari ESP32
         self._sync_waypoints_buffer = []
+        self._is_syncing_wp = False
+        self._pending_wp_sync_request = False
         # --- Misi 2 Fotografi Kotak State Machine (Jetson-Controlled) ---
         self._box_mission_phase = "IDLE"          # "IDLE" | "STOP" | "REVERSE"
         self._box_phase_start_time = 0.0         # Timestamp awal fase aktif
@@ -1131,6 +1133,13 @@ class AsvHandler:
 
     def _handle_request_wp_sync(self, payload):
         """Meminta data waypoint secara paksa dari ESP32."""
+        if getattr(self, "_is_syncing_wp", False):
+            logging.info(
+                "[AsvHandler] Pengiriman waypoint sedang berlangsung. Request Sync diantrekan..."
+            )
+            self._pending_wp_sync_request = True
+            return
+
         if self.serial_handler.is_connected:
             self.serial_handler.send_command("P,GET_WP\n")
             logging.info(
@@ -1478,60 +1487,86 @@ class AsvHandler:
             else:
                 arena_id = "Arena_A"
 
+        # 1. Update State internal secepat kilat (hanya set variabel, tanpa I/O atau sleep)
+        valid_wps_to_send = None
         with self.state_lock:
             if arena_id is not None:
                 self.current_state.active_arena = arena_id
-                if "general" not in self.config:
-                    self.config["general"] = {}
-                self.config["general"]["default_arena"] = arena_id
-                self._save_config()
 
             if waypoints_data is not None:
                 if isinstance(waypoints_data, list):
                     if len(waypoints_data) > 20:
                         logging.warning(
-                            f"[AsvHandler] Waypoints melebih batas (20). Dipotong dari {len(waypoints_data)} menjadi 20."
+                            f"[AsvHandler] Waypoints melebihi batas (20). Dipotong dari {len(waypoints_data)} menjadi 20."
                         )
                         waypoints_data = waypoints_data[:20]
-                    self.current_state.waypoints = waypoints_data
+                    self.current_state.waypoints = list(waypoints_data)
                     self.current_state.current_waypoint_index = 0
                     self._box_mission_phase = "IDLE"
                     self._box_phase_start_time = 0.0
                     self._box_latched_wp = -1
+                    valid_wps_to_send = list(waypoints_data)
                     self.logger.log_event(
                         f"Waypoints dimuat (Arena: {self.current_state.active_arena}). Jml: {len(waypoints_data)}"
                     )
-
-                    if self.serial_handler.is_connected:
-                        self.serial_handler.send_command("P,CLEAR\n")
-                        time.sleep(0.1)  # Beri waktu ESP32 menghapus memori
-                        for wp in waypoints_data:
-                            self.serial_handler.send_command(
-                                f"P,ADD,{wp['lat']:.6f},{wp['lon']:.6f}\n"
-                            )
-                            time.sleep(0.05)  # Cegah buffer overflow ESP32
-                        self.serial_handler.send_command("P,SAVE\n")
-                        time.sleep(0.05)
-
-                        # Sinkronkan arah arena docking ke ESP32
-                        direction = 1 if "B" in self.current_state.active_arena else 0
-                        with self.state_lock:
-                            turn_motor = self.current_state.dock_turn_motor_pwm
-                            charge_dur_ms = int(self.current_state.dock_charge_duration_s * 1000)
-                        self.serial_handler.send_command(
-                            f"S,DOCK,{turn_motor},{charge_dur_ms},{direction},0,180\n"
-                        )
-                        logging.info(
-                            f"[AsvHandler] Waypoints kustom & Dock Config (Arena {'B' if direction==1 else 'A'}) disinkronkan ke ESP32."
-                        )
                 else:
                     logging.warning(
                         "[AsvHandler] Gagal set waypoints: Data tidak valid (bukan list)."
                     )
 
-            logging.info(
-                f"[Setup] Arena: {self.current_state.active_arena} | Jml Waypoints: {len(self.current_state.waypoints)}"
+        # 2. Simpan config ke file di LUAR state_lock
+        if arena_id is not None:
+            if "general" not in self.config:
+                self.config["general"] = {}
+            self.config["general"]["default_arena"] = arena_id
+            self._save_config()
+
+        # 3. Kirim ke ESP32 secara ASYNCHRONOUS (Background Task) di LUAR state_lock!
+        #    Menggunakan self.socketio.sleep() agar loop kamera & streaming video tetap 100% lancar
+        def _sync_to_esp32_task(wps, arena):
+            self._is_syncing_wp = True
+            try:
+                if hasattr(self, "serial_handler") and self.serial_handler.is_connected:
+                    self.serial_handler.send_command("P,CLEAR\n")
+                    self.socketio.sleep(0.08)  # Beri waktu ESP32 menghapus flash
+                    for wp in wps:
+                        self.serial_handler.send_command(
+                            f"P,ADD,{wp['lat']:.6f},{wp['lon']:.6f}\n"
+                        )
+                        self.socketio.sleep(0.03)  # Jeda aman per titik, tetap yield ke eventlet
+                    self.serial_handler.send_command("P,SAVE\n")
+                    self.socketio.sleep(0.05)
+
+                    direction = 1 if "B" in arena else 0
+                    with self.state_lock:
+                        turn_motor = self.current_state.dock_turn_motor_pwm
+                        charge_dur_ms = int(
+                            self.current_state.dock_charge_duration_s * 1000
+                        )
+                    self.serial_handler.send_command(
+                        f"S,DOCK,{turn_motor},{charge_dur_ms},{direction},0,180\n"
+                    )
+                    logging.info(
+                        f"[AsvHandler] Waypoints ({len(wps)}) & Dock Config (Arena {'B' if direction==1 else 'A'}) disinkronkan ke ESP32 secara async."
+                    )
+            finally:
+                self._is_syncing_wp = False
+                if getattr(self, "_pending_wp_sync_request", False):
+                    self._pending_wp_sync_request = False
+                    self.socketio.sleep(0.05)
+                    self.serial_handler.send_command("P,GET_WP\n")
+                    logging.info(
+                        "[AsvHandler] Menjalankan antrean Request Sync (P,GET_WP) setelah pengiriman waypoint selesai."
+                    )
+
+        if valid_wps_to_send and self.serial_handler.is_connected:
+            self.socketio.start_background_task(
+                _sync_to_esp32_task, valid_wps_to_send, arena_id
             )
+
+        logging.info(
+            f"[Setup] Arena: {arena_id} | Jml Waypoints: {len(valid_wps_to_send) if valid_wps_to_send else 0}"
+        )
 
     def _handle_replace_waypoint(self, payload):
         idx = payload.get("index", -1)

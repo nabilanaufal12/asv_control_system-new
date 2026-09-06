@@ -318,6 +318,9 @@ class MainWindow(QMainWindow):
         self.waypoints_panel.replace_with_live_gps_requested.connect(
             self.on_replace_live_gps
         )
+        self.waypoints_panel.replace_manual_requested.connect(
+            self.on_replace_manual
+        )
         self.waypoints_panel.arm_replace_rc_requested.connect(self.on_arm_replace_rc)
 
         self.waypoints_panel.load_mission_requested.connect(
@@ -458,6 +461,14 @@ class MainWindow(QMainWindow):
             print(
                 "[GUI] Error: Posisi kapal belum valid untuk replace (GPS tidak lock)."
             )
+
+    @Slot(int, float, float)
+    def on_replace_manual(self, index, lat, lon):
+        waypoint = {"lat": lat, "lon": lon}
+        self.api_client.send_command(
+            "REPLACE_WAYPOINT", {"index": index, "waypoint": waypoint}
+        )
+        print(f"[GUI] Titik {index} diganti satuan via Manual Input ({lat:.6f}, {lon:.6f}).")
 
     @Slot(int)
     def on_arm_replace_rc(self, index):
