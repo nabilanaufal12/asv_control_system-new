@@ -75,7 +75,8 @@
       "bola-merah",
       "bola-hijau",
       "kotak-hijau",
-      "kotak-biru"
+      "kotak-biru",
+      "bola-biru"
     ],
     "poi_confidence_threshold": 0.65,
     "poi_validation_frames": 5,

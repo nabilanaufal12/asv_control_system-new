@@ -635,6 +635,11 @@ class AsvHandler:
                         # Ambil nilai arena yang aktif dari state
                         with self.state_lock:
                             current_arena = self.current_state.active_arena
+                            dist_cm = (
+                                self.current_state.vision_target.get("distance_cm")
+                                if self.current_state.vision_target
+                                else None
+                            )
 
                         # 1. TENTUKAN ARAH MENGHINDAR ATAU TRACKING
                         # Ambil nilai servo dan motor depan dari GUI secara realtime
@@ -673,6 +678,42 @@ class AsvHandler:
                                 motor_depan_kiri = pwm_depan_aktif
                             else:
                                 servo_cmd = servo_default
+
+                        elif obj_class == "bola-biru":
+                            # =========================================================================
+                            # MISI 3: DOCKING (BOLA BIRU SEBAGAI TARGET DERMAGA)
+                            # Dekati bola biru dermaga dengan tracking halus ke tengah frame
+                            # =========================================================================
+                            center_x = vision_target_frame_width / 2.0
+                            error_x = vision_target_center_x - center_x
+                            tolerance = 25.0
+                            max_tracking_deflection = 30.0
+
+                            pwm_cmd = current_ai_pwm
+                            motor_depan_kiri = 1000
+                            motor_depan_kanan = 1000
+
+                            dist_str = (
+                                f"Dist: {dist_cm:.0f}cm"
+                                if dist_cm is not None
+                                else "Dist: N/A"
+                            )
+                            if abs(error_x) <= tolerance:
+                                turn_direction = "TRACK_CENTER"
+                                servo_cmd = servo_default
+                                desc = f"bola-biru -> Tracking Bola Biru Dermaga Lurus [{dist_str}]"
+                            elif error_x < -tolerance:
+                                turn_direction = "TRACK_LEFT"
+                                ratio = min(1.0, abs(error_x) / center_x) if center_x > 0 else 0
+                                servo_cmd = int(90 - (ratio * max_tracking_deflection))
+                                desc = f"bola-biru -> Koreksi Dermaga Kiri (Err: {error_x:.1f}) [{dist_str}]"
+                            else:
+                                turn_direction = "TRACK_RIGHT"
+                                ratio = min(1.0, abs(error_x) / center_x) if center_x > 0 else 0
+                                servo_cmd = int(90 + (ratio * max_tracking_deflection))
+                                desc = f"bola-biru -> Koreksi Dermaga Kanan (Err: {error_x:.1f}) [{dist_str}]"
+
+                            servo_cmd = max(45, min(135, servo_cmd))
 
                         elif obj_class in ["kotak-biru", "kotak-hijau", "kotak-merah"]:
                             # =========================================================================

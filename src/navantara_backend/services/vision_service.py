@@ -1039,6 +1039,18 @@ class VisionService:
             )
             result = results[0]
 
+            # Cek konteks misi (Misi 2 Kotak vs Misi Docking) untuk penamaan dinamis objek biru
+            is_docking_context = False
+            if hasattr(self.asv_handler, "current_state"):
+                with self.asv_handler.state_lock:
+                    cur_wp = getattr(self.asv_handler.current_state, "nav_target_wp_index", 0)
+                    total_wps = len(self.asv_handler.current_state.waypoints) if self.asv_handler.current_state.waypoints else 0
+                    esp_sts = getattr(self.asv_handler.current_state, "esp_status", "")
+                    dock_phase = getattr(self.asv_handler, "_dock_phase", "IDLE")
+
+                if (total_wps > 0 and cur_wp >= total_wps - 1) or (dock_phase in ("TURNING", "CHARGING", "COMPLETE")) or (esp_sts == "DK_TRACKING_AI"):
+                    is_docking_context = True
+
             # 2. DATA EXTRACTION (Cepat)
             # Hanya ekstrak koordinat dan class, JANGAN GAMBAR DULU.
             boxes = result.boxes
@@ -1069,7 +1081,13 @@ class VisionService:
 
                     # Tarik nama kelas SETELAH proses koreksi selesai
                     raw_cls_name = result.names[cls_id]
-                    final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
+                    # Penamaan Dinamis Objek Biru:
+                    # - Khusus Misi Docking (WP Terakhir): bounding box menjadi 'bola-biru'
+                    # - Khusus Misi 2 (Fotografi Kotak) & Default: bounding box menjadi 'kotak-biru'
+                    if raw_cls_name in ["Blue_Ball", "Blue_Box", "kotak-biru", "bola-biru"]:
+                        final_cls_name = "bola-biru" if is_docking_context else "kotak-biru"
+                    else:
+                        final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
 
                     center_x = int((x1 + x2) / 2)
                     center_y = int((y1 + y2) / 2)
@@ -1315,7 +1333,7 @@ class VisionService:
 
             # 3. MISI 3: DOCKING (WP TERAKHIR)
             elif is_last_wp:
-                if cls in ["kotak-biru", "bola-merah", "bola-hijau"]:
+                if cls in ["bola-biru", "kotak-biru", "bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
             # Jika WP di luar range, valid_buoys tetap kosong, AI idle.
 
@@ -1327,7 +1345,7 @@ class VisionService:
             # Logika Khusus Docking di WP Terakhir: Kunci Bola Kiri (Arena A) atau Bola Kanan (Arena B)
             if is_last_wp:
                 blue_targets = [
-                    b for b in valid_buoys if b.get("class") == "kotak-biru"
+                    b for b in valid_buoys if b.get("class") in ("bola-biru", "kotak-biru")
                 ]
                 if blue_targets:
                     if "B" in active_arena:
