@@ -1,6 +1,6 @@
 {
   "general": {
-    "default_arena": "Arena_B"
+    "default_arena": "Arena_A"
   },
   "backend_connection": {
     "ip_address": "127.0.0.1",
@@ -98,7 +98,7 @@
   "docking_defaults": {
     "turn_motor_pwm": 1500,
     "turn_angle": 90,
-    "charge_motor_rear_pwm": 1600,
+    "charge_motor_rear_pwm": 1500,
     "charge_motor_front_cw_pwm": 1800,
     "charge_motor_front_ccw_pwm": 1800,
     "charge_duration_s": 3.0,
@@ -143,7 +143,7 @@
       "portrait_reverse": 2,
       "dock_turn_motor": 1500,
       "dock_turn_angle": 90,
-      "dock_charge_rear": 1600,
+      "dock_charge_rear": 1500,
       "dock_charge_cw": 1800,
       "dock_charge_ccw": 1800,
       "dock_charge_duration": 3.0,

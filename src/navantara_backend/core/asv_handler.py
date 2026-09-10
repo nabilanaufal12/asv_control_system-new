@@ -210,7 +210,7 @@ class AsvHandler:
     def initiate_auto_connection(self):
         serial_cfg = self.config.get("serial_connection", {})
         force_port = serial_cfg.get("force_serial_port")
-        baud_rate = serial_cfg.get("default_baud_rate", 115200)
+        baud_rate = serial_cfg.get("default_baud_rate", 230400)
 
         if force_port:
             self.serial_handler.use_dummy_serial = False
@@ -536,7 +536,7 @@ class AsvHandler:
                         "[AsvHandler] Mode AUTO aktif, mencoba koneksi ulang ke ESP32..."
                     )
                     baud_rate = self.config.get("serial_connection", {}).get(
-                        "default_baud_rate", 115200
+                        "default_baud_rate", 230400
                     )
                     self.serial_handler.find_and_connect_esp32(baud_rate)
 
