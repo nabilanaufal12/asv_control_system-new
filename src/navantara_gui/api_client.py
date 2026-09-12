@@ -70,6 +70,7 @@ class MjpegStreamThread(QThread):
             except Exception:
                 if self.running:
                     import time
+
                     time.sleep(1.0)
             finally:
                 self._current_response = None
@@ -203,12 +204,16 @@ class ApiClient(QObject):
         self._stop_video_threads_safe()
 
         if self.cam1_thread is None or not self.cam1_thread.isRunning():
-            self.cam1_thread = MjpegStreamThread(f"{self.base_url}/video_feed_1", parent=self)
+            self.cam1_thread = MjpegStreamThread(
+                f"{self.base_url}/video_feed_1", parent=self
+            )
             self.cam1_thread.frame_ready.connect(self.frame_cam1_updated.emit)
             self.cam1_thread.start()
 
         if self.cam2_thread is None or not self.cam2_thread.isRunning():
-            self.cam2_thread = MjpegStreamThread(f"{self.base_url}/video_feed_2", parent=self)
+            self.cam2_thread = MjpegStreamThread(
+                f"{self.base_url}/video_feed_2", parent=self
+            )
             self.cam2_thread.frame_ready.connect(self.frame_cam2_updated.emit)
             self.cam2_thread.start()
 

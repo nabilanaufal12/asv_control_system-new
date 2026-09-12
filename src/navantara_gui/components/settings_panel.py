@@ -312,13 +312,17 @@ class SettingsPanel(QWidget):
         self.spin_dock_charge_cw = QSpinBox()
         self.spin_dock_charge_cw.setRange(1000, 2000)
         self.spin_dock_charge_cw.setValue(
-            self.config.get("docking_defaults", {}).get("charge_motor_front_cw_pwm", 1800)
+            self.config.get("docking_defaults", {}).get(
+                "charge_motor_front_cw_pwm", 1800
+            )
         )
 
         self.spin_dock_charge_ccw = QSpinBox()
         self.spin_dock_charge_ccw.setRange(1000, 2000)
         self.spin_dock_charge_ccw.setValue(
-            self.config.get("docking_defaults", {}).get("charge_motor_front_ccw_pwm", 1800)
+            self.config.get("docking_defaults", {}).get(
+                "charge_motor_front_ccw_pwm", 1800
+            )
         )
 
         self.spin_dock_charge_duration = QDoubleSpinBox()
@@ -481,19 +485,29 @@ class SettingsPanel(QWidget):
             )
         if "dock_charge_rear" in defs or "charge_motor_rear_pwm" in dock_cfg:
             self.spin_dock_charge_rear.setValue(
-                defs.get("dock_charge_rear", dock_cfg.get("charge_motor_rear_pwm", 1400))
+                defs.get(
+                    "dock_charge_rear", dock_cfg.get("charge_motor_rear_pwm", 1400)
+                )
             )
         if "dock_charge_cw" in defs or "charge_motor_front_cw_pwm" in dock_cfg:
             self.spin_dock_charge_cw.setValue(
-                defs.get("dock_charge_cw", dock_cfg.get("charge_motor_front_cw_pwm", 1800))
+                defs.get(
+                    "dock_charge_cw", dock_cfg.get("charge_motor_front_cw_pwm", 1800)
+                )
             )
         if "dock_charge_ccw" in defs or "charge_motor_front_ccw_pwm" in dock_cfg:
             self.spin_dock_charge_ccw.setValue(
-                defs.get("dock_charge_ccw", dock_cfg.get("charge_motor_front_ccw_pwm", 1800))
+                defs.get(
+                    "dock_charge_ccw", dock_cfg.get("charge_motor_front_ccw_pwm", 1800)
+                )
             )
         if "dock_charge_duration" in defs or "charge_duration_s" in dock_cfg:
             self.spin_dock_charge_duration.setValue(
-                float(defs.get("dock_charge_duration", dock_cfg.get("charge_duration_s", 3.0)))
+                float(
+                    defs.get(
+                        "dock_charge_duration", dock_cfg.get("charge_duration_s", 3.0)
+                    )
+                )
             )
         if "dock_enabled" in defs or "docking_enabled" in dock_cfg:
             self.chk_dock_enable.setChecked(
@@ -556,13 +570,27 @@ class SettingsPanel(QWidget):
 
         if "docking_defaults" not in self.config:
             self.config["docking_defaults"] = {}
-        self.config["docking_defaults"]["turn_motor_pwm"] = self.spin_dock_turn_motor.value()
-        self.config["docking_defaults"]["turn_angle"] = self.spin_dock_turn_angle.value()
-        self.config["docking_defaults"]["charge_motor_rear_pwm"] = self.spin_dock_charge_rear.value()
-        self.config["docking_defaults"]["charge_motor_front_cw_pwm"] = self.spin_dock_charge_cw.value()
-        self.config["docking_defaults"]["charge_motor_front_ccw_pwm"] = self.spin_dock_charge_ccw.value()
-        self.config["docking_defaults"]["charge_duration_s"] = self.spin_dock_charge_duration.value()
-        self.config["docking_defaults"]["docking_enabled"] = self.chk_dock_enable.isChecked()
+        self.config["docking_defaults"][
+            "turn_motor_pwm"
+        ] = self.spin_dock_turn_motor.value()
+        self.config["docking_defaults"][
+            "turn_angle"
+        ] = self.spin_dock_turn_angle.value()
+        self.config["docking_defaults"][
+            "charge_motor_rear_pwm"
+        ] = self.spin_dock_charge_rear.value()
+        self.config["docking_defaults"][
+            "charge_motor_front_cw_pwm"
+        ] = self.spin_dock_charge_cw.value()
+        self.config["docking_defaults"][
+            "charge_motor_front_ccw_pwm"
+        ] = self.spin_dock_charge_ccw.value()
+        self.config["docking_defaults"][
+            "charge_duration_s"
+        ] = self.spin_dock_charge_duration.value()
+        self.config["docking_defaults"][
+            "docking_enabled"
+        ] = self.chk_dock_enable.isChecked()
 
         try:
             gui_dir = os.path.dirname(os.path.abspath(__file__))

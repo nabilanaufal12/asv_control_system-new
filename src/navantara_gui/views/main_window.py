@@ -318,9 +318,7 @@ class MainWindow(QMainWindow):
         self.waypoints_panel.replace_with_live_gps_requested.connect(
             self.on_replace_live_gps
         )
-        self.waypoints_panel.replace_manual_requested.connect(
-            self.on_replace_manual
-        )
+        self.waypoints_panel.replace_manual_requested.connect(self.on_replace_manual)
         self.waypoints_panel.arm_replace_rc_requested.connect(self.on_arm_replace_rc)
 
         self.waypoints_panel.load_mission_requested.connect(
@@ -468,7 +466,9 @@ class MainWindow(QMainWindow):
         self.api_client.send_command(
             "REPLACE_WAYPOINT", {"index": index, "waypoint": waypoint}
         )
-        print(f"[GUI] Titik {index} diganti satuan via Manual Input ({lat:.6f}, {lon:.6f}).")
+        print(
+            f"[GUI] Titik {index} diganti satuan via Manual Input ({lat:.6f}, {lon:.6f})."
+        )
 
     @Slot(int)
     def on_arm_replace_rc(self, index):
@@ -479,9 +479,7 @@ class MainWindow(QMainWindow):
         # Update Backend status label
         if is_connected:
             self.backend_status_lbl.setText("GCS Backend: CONNECTED")
-            self.backend_status_lbl.setStyleSheet(
-                "font-weight: bold; color: #2ecc71;"
-            )
+            self.backend_status_lbl.setStyleSheet("font-weight: bold; color: #2ecc71;")
             # Sinkronisasi otomatis pengaturan GUI Windows ke Jetson Backend
             self.settings_panel.broadcast_all_settings()
         else:
@@ -508,7 +506,10 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_vision_model_update_requested(self, model_name):
         """Handler penggantian model AI dengan dialog konfirmasi jika kapal sedang AUTO."""
-        if not getattr(self, "_is_initializing", False) and self.current_control_mode == "AUTO":
+        if (
+            not getattr(self, "_is_initializing", False)
+            and self.current_control_mode == "AUTO"
+        ):
             current_active = getattr(self.settings_panel, "active_ai_model", None)
             if current_active and current_active != model_name:
                 reply = QMessageBox.question(
@@ -537,7 +538,11 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def load_predefined_mission(self, mission_id, is_startup=False):
         """Handler load lintasan A/B dengan dialog konfirmasi jika kapal sedang AUTO."""
-        if not is_startup and not getattr(self, "_is_initializing", False) and self.current_control_mode == "AUTO":
+        if (
+            not is_startup
+            and not getattr(self, "_is_initializing", False)
+            and self.current_control_mode == "AUTO"
+        ):
             reply = QMessageBox.question(
                 self,
                 "Konfirmasi Load Lintasan (Mode AUTO Aktif)",
@@ -565,7 +570,9 @@ class MainWindow(QMainWindow):
         if mission_data:
             arena = mission_data.get("arena")
             arena_id_full = f"Arena_{arena}"
-            print(f"[GUI] Mengirim konfigurasi {arena_id_full} sebagai default ke sistem...")
+            print(
+                f"[GUI] Mengirim konfigurasi {arena_id_full} sebagai default ke sistem..."
+            )
 
             # Set current arena di UI
             self.waypoints_panel.update_active_arena_ui(arena)
@@ -578,6 +585,7 @@ class MainWindow(QMainWindow):
             try:
                 import os
                 import json
+
                 gui_dir = os.path.dirname(os.path.abspath(__file__))
                 config_path = os.path.join(
                     os.path.dirname(os.path.dirname(os.path.dirname(gui_dir))),
@@ -606,4 +614,3 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
         event.accept()
-

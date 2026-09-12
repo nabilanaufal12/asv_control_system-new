@@ -25,7 +25,9 @@ class WaypointsPanel(QGroupBox):
     add_current_pos_requested = Signal()
     replace_with_live_gps_requested = Signal(int)
     arm_replace_rc_requested = Signal(int)
-    replace_manual_requested = Signal(int, float, float)  # (index, lat, lon) untuk replace satuan (P,REPLACE)
+    replace_manual_requested = Signal(
+        int, float, float
+    )  # (index, lat, lon) untuk replace satuan (P,REPLACE)
     load_mission_requested = Signal(str)
     request_wp_sync = Signal()  # Sinyal baru untuk meminta sync dari ESP32
     waypoints_updated = Signal(list)
@@ -344,7 +346,9 @@ class WaypointsPanel(QGroupBox):
             self.waypoints_list.takeItem(self.waypoints_list.row(item))
         self._reindex_waypoints()
         self._emit_updated_waypoints()
-        print("[GUI] Titik waypoint dihapus dari tabel UI. Tekan 'Send All Waypoints' untuk memperbarui ESP32.")
+        print(
+            "[GUI] Titik waypoint dihapus dari tabel UI. Tekan 'Send All Waypoints' untuk memperbarui ESP32."
+        )
 
     def _get_all_waypoints_from_list(self):
         all_waypoints = []

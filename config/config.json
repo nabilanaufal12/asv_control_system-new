@@ -3,7 +3,7 @@
     "default_arena": "Arena_A"
   },
   "backend_connection": {
-    "ip_address": "127.0.0.1",
+    "ip_address": "192.168.2.174",
     "port": 5000
   },
   "serial_connection": {
@@ -116,16 +116,16 @@
       "longitude": "e.g., 107.6191"
     },
     "panel_defaults": {
-      "ai_model": "best.engine",
+      "ai_model": "Auto",
       "ai_speed": 1500,
       "front_motor": 1800,
       "servo_left": 70,
       "servo_right": 110,
       "obs_dist": 165,
-      "box_trigger_dist": 100,
-      "box_obs_dist": 100,
-      "box_track_dist": 100,
-      "box_avoid_dist": 100,
+      "box_trigger_dist": 150,
+      "box_obs_dist": 150,
+      "box_track_dist": 150,
+      "box_avoid_dist": 150,
       "box_servo_left": 70,
       "box_servo_right": 110,
       "box_speed": 1500,

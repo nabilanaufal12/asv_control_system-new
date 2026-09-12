@@ -130,15 +130,15 @@ class AsvState:
     docking_enabled: bool = True  # [ON/OFF] Toggle aktif/nonaktif docking mission
     docking_state: int = 0
     # Tahap 1: Turning
-    dock_turn_motor_pwm: int = 1400       # PWM motor belakang saat turning
-    dock_turn_servo: int = 0              # Sudut servo saat turning (otomatis sesuai arena)
-    dock_turn_angle: int = 90             # Sudut belok dari heading WP terakhir (derajat)
+    dock_turn_motor_pwm: int = 1400  # PWM motor belakang saat turning
+    dock_turn_servo: int = 0  # Sudut servo saat turning (otomatis sesuai arena)
+    dock_turn_angle: int = 90  # Sudut belok dari heading WP terakhir (derajat)
     # Tahap 2: Charging (Dorong ke Dermaga)
-    dock_charge_motor_rear_pwm: int = 1400   # PWM motor belakang saat charging
-    dock_charge_motor_front_cw_pwm: int = 1800   # PWM motor depan CW (maju)
+    dock_charge_motor_rear_pwm: int = 1400  # PWM motor belakang saat charging
+    dock_charge_motor_front_cw_pwm: int = 1800  # PWM motor depan CW (maju)
     dock_charge_motor_front_ccw_pwm: int = 1800  # PWM motor depan CCW (mundur)
-    dock_charge_servo: int = 90           # Sudut servo saat charging (otomatis sesuai arena)
-    dock_charge_duration_s: float = 3.0   # Durasi charging dalam detik
+    dock_charge_servo: int = 90  # Sudut servo saat charging (otomatis sesuai arena)
+    dock_charge_duration_s: float = 3.0  # Durasi charging dalam detik
 
 
 class AsvHandler:
@@ -166,7 +166,9 @@ class AsvHandler:
             vision_servo_right_cmd=vision_servo_right,
             active_arena=saved_arena,
         )
-        logging.info(f"[AsvHandler] Default Arena aktif dimuat dari config.json: {saved_arena}")
+        logging.info(
+            f"[AsvHandler] Default Arena aktif dimuat dari config.json: {saved_arena}"
+        )
 
         # Dictionary ini menyimpan value terakhir berdasarkan NAMA ASLI (long key)
         # agar logika deteksi perubahan (delta) tetap konsisten.
@@ -177,15 +179,15 @@ class AsvHandler:
         self._is_syncing_wp = False
         self._pending_wp_sync_request = False
         # --- Misi 2 Fotografi Kotak State Machine (Jetson-Controlled) ---
-        self._box_mission_phase = "IDLE"          # "IDLE" | "STOP" | "REVERSE"
-        self._box_phase_start_time = 0.0         # Timestamp awal fase aktif
-        self._box_latched_wp = -1                # WP index saat trigger agar tidak trigger berulang
+        self._box_mission_phase = "IDLE"  # "IDLE" | "STOP" | "REVERSE"
+        self._box_phase_start_time = 0.0  # Timestamp awal fase aktif
+        self._box_latched_wp = -1  # WP index saat trigger agar tidak trigger berulang
 
         # --- Docking 2-Stage State Machine (Jetson-Controlled) ---
-        self._dock_phase = "IDLE"          # "IDLE" | "TURNING" | "CHARGING" | "COMPLETE"
-        self._dock_target_heading = 0.0    # Heading target setelah turning
+        self._dock_phase = "IDLE"  # "IDLE" | "TURNING" | "CHARGING" | "COMPLETE"
+        self._dock_target_heading = 0.0  # Heading target setelah turning
         self._dock_captured_heading = 0.0  # Heading saat pertama kali masuk docking
-        self._dock_charge_start_time = 0.0 # Waktu mulai tahap charging
+        self._dock_charge_start_time = 0.0  # Waktu mulai tahap charging
 
         pid_config = self.config.get("navigation", {}).get("heading_pid", {})
         self.pid_controller = PIDController(
@@ -261,11 +263,15 @@ class AsvHandler:
                 total_wps = len(waypoints)
                 if self._box_mission_phase == "STOP":
                     elapsed = time.time() - self._box_phase_start_time
-                    remaining = max(0.0, (self.current_state.portrait_stop_ms / 1000.0) - elapsed)
+                    remaining = max(
+                        0.0, (self.current_state.portrait_stop_ms / 1000.0) - elapsed
+                    )
                     processed_status = f"MISI 2: STOP & FOTO ({remaining:.1f}s)"
                 elif self._box_mission_phase == "REVERSE":
                     elapsed = time.time() - self._box_phase_start_time
-                    remaining = max(0.0, (self.current_state.portrait_reverse_ms / 1000.0) - elapsed)
+                    remaining = max(
+                        0.0, (self.current_state.portrait_reverse_ms / 1000.0) - elapsed
+                    )
                     processed_status = f"MISI 2: MUNDUR ({remaining:.1f}s)"
                 elif esp_status == "WAYPOINT":
                     processed_status = (
@@ -277,7 +283,9 @@ class AsvHandler:
                     processed_status = f"DOCKING: TURNING ({self._dock_captured_heading:.0f}° → {self._dock_target_heading:.0f}°)"
                 elif self._dock_phase == "CHARGING":
                     elapsed = time.time() - self._dock_charge_start_time
-                    remaining = max(0, self.current_state.dock_charge_duration_s - elapsed)
+                    remaining = max(
+                        0, self.current_state.dock_charge_duration_s - elapsed
+                    )
                     processed_status = f"DOCKING: CHARGING ({remaining:.1f}s left)"
                 elif self._dock_phase == "COMPLETE":
                     processed_status = "DOCKING SELESAI"
@@ -601,17 +609,6 @@ class AsvHandler:
                     logging.info("[AsvHandler] MANUAL CONTROL -> Standby (Kirim W)")
 
                 elif control_mode == "AUTO":
-                    total_wps = (
-                        len(self.current_state.waypoints)
-                        if self.current_state.waypoints
-                        else 0
-                    )
-                    is_last_wp = (total_wps > 0) and (
-                        self.current_state.nav_target_wp_index >= total_wps - 1
-                    )
-                    with self.state_lock:
-                        current_docking_state = self.current_state.docking_state
-
                     mission_completed = bool(
                         waypoints and current_waypoint_index >= len(waypoints)
                     )
@@ -704,12 +701,20 @@ class AsvHandler:
                                 desc = f"bola-biru -> Tracking Bola Biru Dermaga Lurus [{dist_str}]"
                             elif error_x < -tolerance:
                                 turn_direction = "TRACK_LEFT"
-                                ratio = min(1.0, abs(error_x) / center_x) if center_x > 0 else 0
+                                ratio = (
+                                    min(1.0, abs(error_x) / center_x)
+                                    if center_x > 0
+                                    else 0
+                                )
                                 servo_cmd = int(90 - (ratio * max_tracking_deflection))
                                 desc = f"bola-biru -> Koreksi Dermaga Kiri (Err: {error_x:.1f}) [{dist_str}]"
                             else:
                                 turn_direction = "TRACK_RIGHT"
-                                ratio = min(1.0, abs(error_x) / center_x) if center_x > 0 else 0
+                                ratio = (
+                                    min(1.0, abs(error_x) / center_x)
+                                    if center_x > 0
+                                    else 0
+                                )
                                 servo_cmd = int(90 + (ratio * max_tracking_deflection))
                                 desc = f"bola-biru -> Koreksi Dermaga Kanan (Err: {error_x:.1f}) [{dist_str}]"
 
@@ -728,9 +733,7 @@ class AsvHandler:
                             #   - Waypoint langsung di-update (C,INC)
                             # =========================================================================
                             with self.state_lock:
-                                portrait_speed_aktif = (
-                                    self.current_state.portrait_speed
-                                )
+                                portrait_speed_aktif = self.current_state.portrait_speed
                                 box_trigger_dist = getattr(
                                     self.current_state, "box_trigger_distance_cm", 100.0
                                 )
@@ -742,9 +745,7 @@ class AsvHandler:
                                 surf_wp1 = self.current_state.photo_mission_surf_wp1
                                 surf_wp2 = self.current_state.photo_mission_surf_wp2
                                 dist_cm = (
-                                    self.current_state.vision_target.get(
-                                        "distance_cm"
-                                    )
+                                    self.current_state.vision_target.get("distance_cm")
                                     if self.current_state.vision_target
                                     else None
                                 )
@@ -762,11 +763,15 @@ class AsvHandler:
                             # Evaluasi kesesuaian target objek dengan segmen waypoint aktif
                             is_target_uw = (
                                 obj_class == "kotak-biru"
-                                and _is_in_photo_target_wp(current_wp_idx, under_wp1, under_wp2)
+                                and _is_in_photo_target_wp(
+                                    current_wp_idx, under_wp1, under_wp2
+                                )
                             )
-                            is_target_surf = (
-                                obj_class in ("kotak-hijau", "kotak-merah")
-                                and _is_in_photo_target_wp(current_wp_idx, surf_wp1, surf_wp2)
+                            is_target_surf = obj_class in (
+                                "kotak-hijau",
+                                "kotak-merah",
+                            ) and _is_in_photo_target_wp(
+                                current_wp_idx, surf_wp1, surf_wp2
                             )
 
                             is_valid_target_box = is_target_uw or is_target_surf
@@ -930,7 +935,9 @@ class AsvHandler:
                             with self.state_lock:
                                 rev_pwm = self.current_state.portrait_reverse_speed
                             # Set semua pin arah (bawah & depan) ke 2000 agar motor kiri & kanan mundur sinkron
-                            command_to_send = f"A,90,{rev_pwm},1000,1000,2000,2000,2000\n"
+                            command_to_send = (
+                                f"A,90,{rev_pwm},1000,1000,2000,2000,2000\n"
+                            )
                             logging.warning(
                                 f"[MISI 2] Fase STOP & FOTO selesai. Memulai fase MUNDUR (PWM: {rev_pwm})..."
                             )
@@ -942,7 +949,9 @@ class AsvHandler:
                         elapsed_ms = (time.time() - self._box_phase_start_time) * 1000.0
                         if elapsed_ms < rev_ms:
                             # Motor belakang mundur (semua pin dir=2000), kemudi lurus, motor depan mati
-                            command_to_send = f"A,90,{rev_pwm},1000,1000,2000,2000,2000\n"
+                            command_to_send = (
+                                f"A,90,{rev_pwm},1000,1000,2000,2000,2000\n"
+                            )
                         else:
                             # Selesai fase mundur -> Update waypoint ke ESP32 dan lanjut ke navigasi WP berikutnya
                             self._box_mission_phase = "IDLE"
@@ -991,10 +1000,14 @@ class AsvHandler:
 
                         if "B" in dock_arena:
                             # Arena B: Belok ke KANAN (+90°)
-                            self._dock_target_heading = (current_heading + turn_angle) % 360
+                            self._dock_target_heading = (
+                                current_heading + turn_angle
+                            ) % 360
                         else:
                             # Arena A: Belok ke KIRI (-90°)
-                            self._dock_target_heading = (current_heading - turn_angle) % 360
+                            self._dock_target_heading = (
+                                current_heading - turn_angle
+                            ) % 360
 
                         self._dock_phase = "TURNING"
                         logging.warning(
@@ -1017,7 +1030,9 @@ class AsvHandler:
                             turn_servo = 180
 
                         # Hitung selisih heading (circular difference)
-                        heading_diff = (self._dock_target_heading - current_heading + 180) % 360 - 180
+                        heading_diff = (
+                            self._dock_target_heading - current_heading + 180
+                        ) % 360 - 180
                         heading_error = abs(heading_diff)
 
                         if heading_error <= 7.0:
@@ -1031,7 +1046,9 @@ class AsvHandler:
                             )
                         else:
                             # Kirim perintah belok: motor belakang saja, motor depan mati
-                            command_to_send = f"A,{turn_servo},{turn_motor},1000,1000,1000\n"
+                            command_to_send = (
+                                f"A,{turn_servo},{turn_motor},1000,1000,1000\n"
+                            )
                             logging.debug(
                                 f"[DOCKING] TURNING: Heading={current_heading:.1f}° → Target={self._dock_target_heading:.1f}° "
                                 f"(Error={heading_error:.1f}°) | Servo={turn_servo}, Motor={turn_motor}"
@@ -1041,8 +1058,12 @@ class AsvHandler:
                     if self._dock_phase == "CHARGING":
                         with self.state_lock:
                             charge_rear = self.current_state.dock_charge_motor_rear_pwm
-                            charge_cw = self.current_state.dock_charge_motor_front_cw_pwm
-                            charge_ccw = self.current_state.dock_charge_motor_front_ccw_pwm
+                            charge_cw = (
+                                self.current_state.dock_charge_motor_front_cw_pwm
+                            )
+                            charge_ccw = (
+                                self.current_state.dock_charge_motor_front_ccw_pwm
+                            )
                             charge_duration = self.current_state.dock_charge_duration_s
 
                         elapsed = time.time() - self._dock_charge_start_time
@@ -1060,20 +1081,20 @@ class AsvHandler:
                                 # Arena B: Servo ke 0° (kanan)
                                 # Belakang maju (dir=1000), depan kanan maju (dir=1000), depan kiri mundur (dir=2000)
                                 charge_servo = 0
-                                front_kiri = charge_ccw   # Mundur (CCW)
-                                front_kanan = charge_cw   # Maju (CW)
-                                dir_rear = 1000           # Maju
-                                dir_front_kiri = 2000     # Mundur
-                                dir_front_kanan = 1000    # Maju
+                                front_kiri = charge_ccw  # Mundur (CCW)
+                                front_kanan = charge_cw  # Maju (CW)
+                                dir_rear = 1000  # Maju
+                                dir_front_kiri = 2000  # Mundur
+                                dir_front_kanan = 1000  # Maju
                             else:
                                 # Arena A: Servo ke 180° (kiri)
                                 # Belakang maju (dir=1000), depan kiri maju (dir=1000), depan kanan mundur (dir=2000)
                                 charge_servo = 180
-                                front_kiri = charge_cw    # Maju (CW)
+                                front_kiri = charge_cw  # Maju (CW)
                                 front_kanan = charge_ccw  # Mundur (CCW)
-                                dir_rear = 1000           # Maju
-                                dir_front_kiri = 1000     # Maju
-                                dir_front_kanan = 2000    # Mundur
+                                dir_rear = 1000  # Maju
+                                dir_front_kiri = 1000  # Maju
+                                dir_front_kanan = 2000  # Mundur
 
                             command_to_send = (
                                 f"A,{charge_servo},{charge_rear},{front_kiri},{front_kanan},"
@@ -1099,7 +1120,10 @@ class AsvHandler:
                         "MISI SELESAI",
                     ):
                         # Jangan override jika docking atau misi 2 sedang aktif
-                        if self._dock_phase == "IDLE" and self._box_mission_phase == "IDLE":
+                        if (
+                            self._dock_phase == "IDLE"
+                            and self._box_mission_phase == "IDLE"
+                        ):
                             if command_to_send is None or (
                                 isinstance(command_to_send, str)
                                 and not command_to_send.strip().startswith("W")
@@ -1249,7 +1273,10 @@ class AsvHandler:
     def _handle_update_box_avoidance_config(self, payload):
         try:
             trigger_dist = float(
-                payload.get("trigger_dist", payload.get("avoid_dist", payload.get("safety_dist", 100.0)))
+                payload.get(
+                    "trigger_dist",
+                    payload.get("avoid_dist", payload.get("safety_dist", 100.0)),
+                )
             )
             track_dist = float(
                 payload.get("track_dist", payload.get("distance", 165.0))
@@ -1574,7 +1601,9 @@ class AsvHandler:
                         self.serial_handler.send_command(
                             f"P,ADD,{wp['lat']:.6f},{wp['lon']:.6f}\n"
                         )
-                        self.socketio.sleep(0.03)  # Jeda aman per titik, tetap yield ke eventlet
+                        self.socketio.sleep(
+                            0.03
+                        )  # Jeda aman per titik, tetap yield ke eventlet
                     self.serial_handler.send_command("P,SAVE\n")
                     self.socketio.sleep(0.05)
 

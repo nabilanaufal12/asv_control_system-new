@@ -433,7 +433,11 @@ class VisionService:
         with self.settings_lock:
             clean_name = Path(model_filename).name if model_filename else ""
             active_name = getattr(self, "current_model_name", None)
-            if active_name and clean_name and (clean_name == active_name or model_filename == active_name):
+            if (
+                active_name
+                and clean_name
+                and (clean_name == active_name or model_filename == active_name)
+            ):
                 print(
                     f"[VisionService] Model '{model_filename}' sudah aktif ({active_name}). Mengabaikan reload berulang."
                 )
@@ -1043,12 +1047,22 @@ class VisionService:
             is_docking_context = False
             if hasattr(self.asv_handler, "current_state"):
                 with self.asv_handler.state_lock:
-                    cur_wp = getattr(self.asv_handler.current_state, "nav_target_wp_index", 0)
-                    total_wps = len(self.asv_handler.current_state.waypoints) if self.asv_handler.current_state.waypoints else 0
+                    cur_wp = getattr(
+                        self.asv_handler.current_state, "nav_target_wp_index", 0
+                    )
+                    total_wps = (
+                        len(self.asv_handler.current_state.waypoints)
+                        if self.asv_handler.current_state.waypoints
+                        else 0
+                    )
                     esp_sts = getattr(self.asv_handler.current_state, "esp_status", "")
                     dock_phase = getattr(self.asv_handler, "_dock_phase", "IDLE")
 
-                if (total_wps > 0 and cur_wp >= total_wps - 1) or (dock_phase in ("TURNING", "CHARGING", "COMPLETE")) or (esp_sts == "DK_TRACKING_AI"):
+                if (
+                    (total_wps > 0 and cur_wp >= total_wps - 1)
+                    or (dock_phase in ("TURNING", "CHARGING", "COMPLETE"))
+                    or (esp_sts == "DK_TRACKING_AI")
+                ):
                     is_docking_context = True
 
             # 2. DATA EXTRACTION (Cepat)
@@ -1084,8 +1098,15 @@ class VisionService:
                     # Penamaan Dinamis Objek Biru:
                     # - Khusus Misi Docking (WP Terakhir): bounding box menjadi 'bola-biru'
                     # - Khusus Misi 2 (Fotografi Kotak) & Default: bounding box menjadi 'kotak-biru'
-                    if raw_cls_name in ["Blue_Ball", "Blue_Box", "kotak-biru", "bola-biru"]:
-                        final_cls_name = "bola-biru" if is_docking_context else "kotak-biru"
+                    if raw_cls_name in [
+                        "Blue_Ball",
+                        "Blue_Box",
+                        "kotak-biru",
+                        "bola-biru",
+                    ]:
+                        final_cls_name = (
+                            "bola-biru" if is_docking_context else "kotak-biru"
+                        )
                     else:
                         final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
 
@@ -1193,7 +1214,7 @@ class VisionService:
             pt_state = self.asv_handler.current_state.portrait_state
             box_phase = getattr(self.asv_handler, "_box_mission_phase", "IDLE")
             is_reversing = (pt_state == 3) or (box_phase == "REVERSE")
-            is_box_stopped = (box_phase == "STOP")
+            is_box_stopped = box_phase == "STOP"
             target_class = (
                 self.asv_handler.current_state.vision_target.get("obstacle_class", "")
                 if self.asv_handler.current_state.vision_target
@@ -1209,20 +1230,14 @@ class VisionService:
                     return cur_wp == we
                 return ws < cur_wp <= we
 
-            in_segment_surf = (
-                not is_reversing
-                and (
-                    _is_in_photo_seg(current_wp, surf_wp1, surf_wp2)
-                    or (is_box_stopped and target_class in ("kotak-hijau", "kotak-merah"))
-                )
+            in_segment_surf = not is_reversing and (
+                _is_in_photo_seg(current_wp, surf_wp1, surf_wp2)
+                or (is_box_stopped and target_class in ("kotak-hijau", "kotak-merah"))
             )
 
-            in_segment_under = (
-                not is_reversing
-                and (
-                    _is_in_photo_seg(current_wp, under_wp1, under_wp2)
-                    or (is_box_stopped and target_class == "kotak-biru")
-                )
+            in_segment_under = not is_reversing and (
+                _is_in_photo_seg(current_wp, under_wp1, under_wp2)
+                or (is_box_stopped and target_class == "kotak-biru")
             )
 
             current_state_photo = self.asv_handler.current_state
@@ -1326,9 +1341,13 @@ class VisionService:
             # - Kotak Hijau/Merah: Hanya aktif saat start: surf_wp1 menuju end: surf_wp2 (misal 13 -> 14)
             # Di luar segmen WP target ini, deteksi kotak DIABAIKAN TOTAL.
             elif not is_last_wp:
-                if cls == "kotak-biru" and _is_in_photo_target_wp(current_wp, under_wp1, under_wp2):
+                if cls == "kotak-biru" and _is_in_photo_target_wp(
+                    current_wp, under_wp1, under_wp2
+                ):
                     valid_buoys.append(det)
-                elif cls in ["kotak-hijau", "kotak-merah"] and _is_in_photo_target_wp(current_wp, surf_wp1, surf_wp2):
+                elif cls in ["kotak-hijau", "kotak-merah"] and _is_in_photo_target_wp(
+                    current_wp, surf_wp1, surf_wp2
+                ):
                     valid_buoys.append(det)
 
             # 3. MISI 3: DOCKING (WP TERAKHIR)
@@ -1345,7 +1364,9 @@ class VisionService:
             # Logika Khusus Docking di WP Terakhir: Kunci Bola Kiri (Arena A) atau Bola Kanan (Arena B)
             if is_last_wp:
                 blue_targets = [
-                    b for b in valid_buoys if b.get("class") in ("bola-biru", "kotak-biru")
+                    b
+                    for b in valid_buoys
+                    if b.get("class") in ("bola-biru", "kotak-biru")
                 ]
                 if blue_targets:
                     if "B" in active_arena:
