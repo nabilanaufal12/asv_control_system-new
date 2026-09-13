@@ -1,11 +1,46 @@
-#Linux
-find . -type d -name "__pycache__" -exec rm -r {} +
+================================================================================
+                    PANDUAN PERINTAH PENTING - ASV NAVANTARA
+================================================================================
 
-#Windows
-for /d /r . %d in (__pycache__) do @if exist "%d" rd /s /q "%d"
+1. MANAJEMEN SYSTEMD SERVICE (JETSON AUTO-START)
+--------------------------------------------------------------------------------
+| Tindakan                                    | Perintah Terminal                             |
+|---------------------------------------------|-----------------------------------------------|
+| Menjalankan service sekarang                | sudo systemctl start navantara.service        |
+| Memeriksa status berjalan                   | sudo systemctl status navantara.service       |
+| Melihat log real-time (live stream)         | journalctl -u navantara.service -f            |
+| Menghentikan service (misal: debug manual)  | sudo systemctl stop navantara.service         |
+| Merestart service                           | sudo systemctl restart navantara.service      |
+| Mengaktifkan auto-start saat boot           | sudo systemctl enable navantara.service       |
+| Mematikan auto-start boot                   | sudo systemctl disable navantara.service      |
 
-#Linux
+
+2. MENJALANKAN BACKEND & GUI SECARA MANUAL
+--------------------------------------------------------------------------------
+# Menjalankan backend (headless / tanpa display di Jetson):
+python3 run_backend_headless.py
+
+# Menjalankan GUI Navantara (di Laptop / Ground Station):
+python3 run_gui.py
+
+
+3. MENGHENTIKAN PROSES BACKEND (FORCE KILL)
+--------------------------------------------------------------------------------
+# Linux (Jetson / Ubuntu):
 pkill -f run_backend_headless.py
 
-#Windows
+# Windows (Command Prompt):
 taskkill /F /IM run_backend_headless.py
+
+
+4. MEMBERSIHKAN CACHE PYTHON (__pycache__)
+--------------------------------------------------------------------------------
+# Linux (Jetson / Ubuntu):
+find . -type d -name "__pycache__" -exec rm -r {} +
+
+# Windows (Command Prompt / CMD):
+for /d /r . %d in (__pycache__) do @if exist "%d" rd /s /q "%d"
+
+# Windows (PowerShell):
+Get-ChildItem -Path . -Include __pycache__ -Recurse -Directory | Remove-Item -Recurse -Force
+================================================================================

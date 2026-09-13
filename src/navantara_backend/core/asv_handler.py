@@ -609,6 +609,7 @@ class AsvHandler:
                     logging.info("[AsvHandler] MANUAL CONTROL -> Standby (Kirim W)")
 
                 elif control_mode == "AUTO":
+                    self._update_camera_mission()
                     mission_completed = bool(
                         waypoints and current_waypoint_index >= len(waypoints)
                     )
@@ -779,6 +780,8 @@ class AsvHandler:
                             if not is_valid_target_box:
                                 # Kotak terdeteksi tetapi BUKAN target foto pada segmen WP saat ini
                                 # JANGAN update WP, JANGAN stop motor, biarkan kapal navigasi WP normal
+                                with self.state_lock:
+                                    self.current_state.is_avoiding = False
                                 turn_direction = "STRAIGHT"
                                 servo_cmd = servo_default
                                 pwm_cmd = portrait_speed_aktif
@@ -1361,6 +1364,64 @@ class AsvHandler:
                 "[AsvHandler] Gagal mengirim manual wp update, serial tidak terhubung."
             )
 
+    def _update_camera_mission(self):
+        """
+        Menentukan misi kamera aktif (1: Bola, 2: Kotak, 3: Docking)
+        berdasarkan konfigurasi rentang waypoint dan posisi kapal saat ini,
+        lalu menyinkronkannya ke VisionService.
+        """
+        if not hasattr(self, "vision_service") or not self.vision_service:
+            return
+
+        with self.state_lock:
+            current_wp = self.current_state.current_waypoint_index
+            waypoints = self.current_state.waypoints
+            total_wps = len(waypoints) if waypoints else 0
+
+            under_wp1 = self.current_state.photo_mission_under_wp1
+            under_wp2 = self.current_state.photo_mission_under_wp2
+            surf_wp1 = self.current_state.photo_mission_surf_wp1
+            surf_wp2 = self.current_state.photo_mission_surf_wp2
+            esp_sts = getattr(self.current_state, "esp_status", "")
+            dock_phase = getattr(self, "_dock_phase", "IDLE")
+
+        vision_cfg = self.config.get("vision", {})
+        range_bola = vision_cfg.get("wp_range_bola", [0, 10])
+
+        # 1. Evaluasi Misi 3 (Docking):
+        # Aktif jika berada di waypoint terakhir (atau lebih) atau dalam fase docking aktif
+        is_docking = (
+            (total_wps > 0 and current_wp >= total_wps - 1)
+            or (dock_phase in ("TURNING", "CHARGING", "COMPLETE"))
+            or (esp_sts == "DK_TRACKING_AI")
+        )
+
+        # 2. Evaluasi Misi 2 (Fotografi Kotak UW & Surface):
+        def _in_range(cur, w1, w2):
+            if w1 <= 0 or w2 <= 0:
+                return False
+            return min(w1, w2) <= cur <= max(w1, w2)
+
+        is_misi2 = _in_range(current_wp, under_wp1, under_wp2) or _in_range(
+            current_wp, surf_wp1, surf_wp2
+        )
+
+        # 3. Evaluasi Misi 1 (Rintangan Bola):
+        is_misi1 = range_bola[0] <= current_wp <= range_bola[1]
+
+        # Prioritas: Docking (Misi 3) > Kotak (Misi 2) > Bola (Misi 1)
+        if is_docking:
+            target_mission = 3
+        elif is_misi2:
+            target_mission = 2
+        elif is_misi1:
+            target_mission = 1
+        else:
+            # Fallback jika di luar rentang: Misi 1 jika di awal rute
+            target_mission = 1
+
+        self.vision_service.set_mission(target_mission)
+
     def _handle_vision_target_update(self, payload):
         with self.state_lock:
             was_active = self.current_state.vision_target.get("active")
@@ -1508,6 +1569,7 @@ class AsvHandler:
         logging.info(
             f"[AsvHandler] Vision WP Ranges diperbarui: UW={u1}-{u2}, Surf={s1}-{s2}"
         )
+        self._update_camera_mission()
 
     def _handle_swap_cameras(self, payload):
         with self.state_lock:
@@ -1694,6 +1756,7 @@ class AsvHandler:
             self.logger.log_event(
                 f"[GUI Command] Set Photo Mission -> Surf: {surf_wp1}-{surf_wp2}, Under: {under_wp1}-{under_wp2}, Qty: {count}"
             )
+            self._update_camera_mission()
         except Exception as e:
             logging.error(f"Error handling SET_PHOTO_MISSION: {e}")
 

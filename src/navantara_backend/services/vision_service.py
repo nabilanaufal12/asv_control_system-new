@@ -76,6 +76,48 @@ def refine_blue_class(roi_frame, current_cls_id):
         return 0  # 0 = 'Blue_Ball'
 
 
+def refine_green_class(roi_frame, current_cls_id):
+    """
+    Membedakan Green_Ball (id 2) vs Green_Box (id 3) menggunakan analisis bentuk & HSV kontur.
+    - Kotak: vertices <= 6 dan extent (area / bounding rect) > 0.82
+    - Bola: kontur bulat (extent ~0.75-0.78, vertices > 6)
+    """
+    if roi_frame.shape[0] < 15 or roi_frame.shape[1] < 15:
+        return current_cls_id
+
+    hsv = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2HSV)
+    lower_green = np.array([35, 45, 35])
+    upper_green = np.array([85, 255, 255])
+    mask = cv2.inRange(hsv, lower_green, upper_green)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return current_cls_id
+
+    largest_contour = max(contours, key=cv2.contourArea)
+    area = cv2.contourArea(largest_contour)
+    if area < 50:
+        return current_cls_id
+
+    perimeter = cv2.arcLength(largest_contour, True)
+    epsilon = 0.04 * perimeter
+    approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+    vertices = len(approx)
+
+    rect = cv2.minAreaRect(largest_contour)
+    box_area = rect[1][0] * rect[1][1]
+    extent = area / box_area if box_area > 0 else 0
+
+    if vertices <= 6 and extent > 0.82:
+        return 3  # 3 = 'Green_Box'
+    else:
+        return 2  # 2 = 'Green_Ball'
+
+
 # ==============================================================
 # FAST GRAY-WORLD WHITE BALANCE + CLAHE (UNDERWATER ENHANCEMENT)
 # ==============================================================
@@ -206,14 +248,26 @@ class VisionService:
         # --- [CRITICAL: LABEL MAPPING] ---
         # Menjembatani perbedaan label Model Baru vs Logika asv_handler
         self.LABEL_MAP = {
-            "Blue_Ball": "kotak-biru",
+            "Blue_Ball": "bola-biru",
             "Blue_Box": "kotak-biru",
             "Green_Ball": "bola-hijau",
             "Green_Box": "kotak-hijau",
             "Red_Ball": "bola-merah",
-            "Red_Box": "kotak-merah",  # Jaga-jaga jika ada Red Box di masa depan
+            "Red_Box": "kotak-merah",
         }
         # ---------------------------------
+
+        # --- [STRICT MISSION CLASS WHITELIST] ---
+        # Misi 1: Rintangan Bola (HANYA bola merah & bola hijau)
+        # Misi 2: Fotografi Kotak (HANYA kotak biru, kotak hijau, kotak merah)
+        # Misi 3: Docking Akhir (HANYA target bola biru dermaga)
+        self.MISSION_CLASSES = {
+            1: {"bola-merah", "bola-hijau"},
+            2: {"kotak-biru", "kotak-hijau", "kotak-merah"},
+            3: {"bola-biru"},
+        }
+        self.current_mission = 1  # Default Misi 1 (Rintangan Bola)
+        # ----------------------------------------
 
         # Ambil threshold dari config
         vision_cfg = self.config.get("vision", {})
@@ -295,6 +349,25 @@ class VisionService:
         self.OBJECT_REAL_WIDTHS_CM = cam_detect_cfg.get("object_real_widths_cm", {})
 
         print("[VisionService] Layanan Visi (YOLOv11 + TensorRT Ready) diinisialisasi.")
+
+    def set_mission(self, mission_id: int):
+        """
+        Mengatur mode misi vision secara ketat:
+        - 1: Misi 1 (Rintangan Bola) -> Hanya mendeteksi/memproses bola-merah & bola-hijau. Kotak DIBUANG.
+        - 2: Misi 2 (Fotografi Kotak) -> Hanya mendeteksi/memproses kotak-biru, kotak-hijau, kotak-merah. Bola DIBUANG.
+        - 3: Misi 3 (Docking Akhir) -> Hanya mendeteksi target docking bola-biru dermaga.
+        """
+        if mission_id not in (1, 2, 3):
+            return
+        if self.current_mission != mission_id:
+            logging.info(
+                f"[VisionService] Mode Misi beralih: Misi {self.current_mission} -> Misi {mission_id}"
+            )
+            self.current_mission = mission_id
+
+    def get_mission(self) -> int:
+        """Mengembalikan ID misi aktif saat ini."""
+        return self.current_mission
 
     # --- [REFACTOR: SMART MODEL LOADER - BERSIH] ---
     def _load_yolo_model(self, config, selected_model_name=None):
@@ -1091,24 +1164,31 @@ class VisionService:
                             roi = frame[y1_roi:y2_roi, x1_roi:x2_roi]
                             # Timpa cls_id lama dengan hasil koreksi bentuk/HSV
                             cls_id = refine_blue_class(roi, cls_id)
+                    elif cls_id == 2 or cls_id == 3:
+                        # Koreksi bentuk untuk kelas hijau: Green_Ball vs Green_Box
+                        x1_roi, y1_roi = max(0, x1), max(0, y1)
+                        x2_roi, y2_roi = min(orig_w, x2), min(orig_h, y2)
+                        if (x2_roi > x1_roi) and (y2_roi > y1_roi):
+                            roi = frame[y1_roi:y2_roi, x1_roi:x2_roi]
+                            cls_id = refine_green_class(roi, cls_id)
                     # ----------------------------------------
 
                     # Tarik nama kelas SETELAH proses koreksi selesai
                     raw_cls_name = result.names[cls_id]
-                    # Penamaan Dinamis Objek Biru:
-                    # - Khusus Misi Docking (WP Terakhir): bounding box menjadi 'bola-biru'
-                    # - Khusus Misi 2 (Fotografi Kotak) & Default: bounding box menjadi 'kotak-biru'
-                    if raw_cls_name in [
-                        "Blue_Ball",
-                        "Blue_Box",
-                        "kotak-biru",
-                        "bola-biru",
-                    ]:
-                        final_cls_name = (
-                            "bola-biru" if is_docking_context else "kotak-biru"
-                        )
-                    else:
-                        final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
+                    final_cls_name = self.LABEL_MAP.get(raw_cls_name, raw_cls_name)
+
+                    # --- [DOUBLE-GUARD 1: FILTER HULU SESUAI MISI AKTIF] ---
+                    # Di Misi 1: Hanya boleh mendeteksi BOLA (bola-merah, bola-hijau).
+                    #            Semua kotak DIBUANG TOTAL.
+                    # Di Misi 2: Hanya boleh mendeteksi KOTAK (kotak-biru, kotak-hijau, kotak-merah).
+                    #            Semua bola DIBUANG TOTAL.
+                    # Di Misi 3: Hanya boleh mendeteksi target docking (bola-biru).
+                    allowed_classes = self.MISSION_CLASSES.get(
+                        self.current_mission, set()
+                    )
+                    if final_cls_name not in allowed_classes:
+                        continue
+                    # -------------------------------------------------------
 
                     center_x = int((x1 + x2) / 2)
                     center_y = int((y1 + y2) / 2)
@@ -1331,16 +1411,15 @@ class VisionService:
             if conf < self.poi_confidence_threshold:
                 continue
 
-            # 1. MISI 1: RINTANGAN BOLA (WP range bola)
-            if range_bola[0] <= current_wp <= range_bola[1]:
+            # 1. MISI 1: RINTANGAN BOLA (Hanya bola-merah dan bola-hijau)
+            if self.current_mission == 1:
                 if cls in ["bola-merah", "bola-hijau"]:
                     valid_buoys.append(det)
 
             # 2. MISI 2: FOTOGRAFI KOTAK (Hanya aktif sesuai target WP foto di GUI)
             # - Kotak Biru: Hanya aktif saat start: under_wp1 menuju end: under_wp2 (misal 11 -> 12)
             # - Kotak Hijau/Merah: Hanya aktif saat start: surf_wp1 menuju end: surf_wp2 (misal 13 -> 14)
-            # Di luar segmen WP target ini, deteksi kotak DIABAIKAN TOTAL.
-            elif not is_last_wp:
+            elif self.current_mission == 2:
                 if cls == "kotak-biru" and _is_in_photo_target_wp(
                     current_wp, under_wp1, under_wp2
                 ):
@@ -1350,9 +1429,9 @@ class VisionService:
                 ):
                     valid_buoys.append(det)
 
-            # 3. MISI 3: DOCKING (WP TERAKHIR)
-            elif is_last_wp:
-                if cls in ["bola-biru", "kotak-biru", "bola-merah", "bola-hijau"]:
+            # 3. MISI 3: DOCKING (WP TERAKHIR - Hanya Bola Biru Dermaga)
+            elif self.current_mission == 3:
+                if cls == "bola-biru":
                     valid_buoys.append(det)
             # Jika WP di luar range, valid_buoys tetap kosong, AI idle.
 

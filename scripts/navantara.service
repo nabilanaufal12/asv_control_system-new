@@ -1,0 +1,33 @@
+[Unit]
+Description=Navantara ASV KKI 2026 Headless Backend Service
+After=network.target local-fs.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=navantara
+Group=navantara
+WorkingDirectory=/home/navantara/navantara
+
+# Environment Variables agar backend instan & tanpa akses internet pihak ketiga
+Environment="PYTHONUNBUFFERED=1"
+Environment="YOLO_OFFLINE=1"
+Environment="YOLO_VERBOSE=False"
+Environment="ULTRALYTICS_AUTOINSTALL=False"
+Environment="ULTRALYTICS_TELEMETRY=False"
+Environment="PATH=/home/navantara/navantara/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Jalankan backend headless menggunakan virtual environment Python
+ExecStart=/home/navantara/navantara/.venv/bin/python3 /home/navantara/navantara/run_backend_headless.py
+
+# Auto-Restart jika terjadi error atau kegagalan tak terduga
+Restart=always
+RestartSec=3
+
+# Logging ke systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=navantara-backend
+
+[Install]
+WantedBy=multi-user.target
