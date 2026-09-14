@@ -101,7 +101,7 @@
     "charge_motor_rear_pwm": 1500,
     "charge_motor_front_cw_pwm": 1800,
     "charge_motor_front_ccw_pwm": 1800,
-    "charge_duration_s": 3.0,
+    "charge_duration_s": 3.5,
     "docking_enabled": true
   },
   "api_urls": {},
@@ -146,7 +146,7 @@
       "dock_charge_rear": 1500,
       "dock_charge_cw": 1800,
       "dock_charge_ccw": 1800,
-      "dock_charge_duration": 3.0,
+      "dock_charge_duration": 3.5,
       "dock_enabled": true
     }
   }
