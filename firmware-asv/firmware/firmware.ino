@@ -917,7 +917,7 @@ void loop() {
         wasInCaptureMode = true;
         captureTriggered = false;
       }
-    } else if (ch6 >= 1400 && ch6 <= 1600) { 
+    } else if (ch6 >= 1300 && ch6 <= 1700) { 
       // Posisi 2 (Tengah) - Merekam (Capture) 1 titik
       if (wasInCaptureMode && !captureTriggered) {
         if (wasInSaveMode) {
@@ -959,7 +959,7 @@ void loop() {
         captureTriggered = true;
       }
       wasInCaptureMode = false;
-    } else if (ch6 < 1100) { 
+    } else if (ch6 < 1020) { 
       // Posisi 1 (Atas) - Save semua & Sync ke GUI
       if (!wasInSaveMode) {
         saveDataToMemory();
@@ -1145,7 +1145,7 @@ void loop() {
           finalMotorDepanKiri = 1000;       // Paksa mati di Mode W
           finalMotorDepanKanan = 1000;      // Paksa mati di Mode W
 
-          if (dist < 1.75) {
+          if (dist < 1.30) {
             if (isAtPortraitEnd && portraitState == PT_SLOW) {
               // Sampai di titik akhir portrait -> STOP, TAHAN counter
               portraitState = PT_STOP;

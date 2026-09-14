@@ -22,6 +22,59 @@ let lastKnownArena = null;
 let lastKnownPoint = -1;
 let lastKnownGps = { lat: 0, lng: 0 };
 
+// =============================================================================
+// KONFIGURASI GEOFENCE SEGILIMA (BATAS WILAYAH OTONOM ASV - DISPLAY ONLY)
+// 5 Titik Koordinat Polygon Waduk PDAM Bengkalis
+// =============================================================================
+const GEOFENCE_PENTAGON_COORDS = [
+  [1.4921177615844758, 102.12877612392153],
+  [1.4921124840729052, 102.1290358655775],
+  [1.4928917502604233, 102.12919292189314],
+  [1.4928719625153606, 102.12872865171599],
+  [1.4924420287374907, 102.1288168270597],
+];
+
+const GEOFENCE_CONFIG = {
+  name: "Waduk PDAM Bengkalis (Zona Segilima)",
+  polygon: GEOFENCE_PENTAGON_COORDS,
+  center: [1.4924872, 102.1289101],
+  styleSafe: {
+    color: "#00E5FF", // Cyan tactical perimeter
+    fillColor: "#00E5FF",
+    fillOpacity: 0.12,
+    weight: 2.2,
+    dashArray: "6, 6",
+  },
+  styleBreach: {
+    color: "#FF1744", // Merah menyala jika posisi GPS keluar geofence
+    fillColor: "#FF1744",
+    fillOpacity: 0.28,
+    weight: 3.2,
+    dashArray: "4, 4",
+  },
+};
+
+let geofenceLayer = null;
+let geofencePolygon = null;
+let isGeofenceVisible = true;
+
+// Algoritma Ray-Casting untuk evaluasi posisi Point-in-Polygon (Display Only di Browser)
+function isPointInGeofence(lat, lng, polygon) {
+  if (!polygon || polygon.length < 3) return true;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0],
+      yi = polygon[i][1];
+    const xj = polygon[j][0],
+      yj = polygon[j][1];
+    const intersect =
+      yi > lng !== yj > lng &&
+      lat < ((xj - xi) * (lng - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 // --- [OPTIMASI: REVERSE KEY MAPPING] ---
 const REVERSE_KEY_MAP = {
   "lat": "latitude",
@@ -73,6 +126,11 @@ document.addEventListener("DOMContentLoaded", () => {
     csvLogList: document.getElementById("csv-log-list"),
     // -----------------------------
 
+    // --- [GEOFENCE UI ELEMENTS] ---
+    geofenceBadge: document.getElementById("geofence-badge"),
+    toggleGeofenceBtn: document.getElementById("toggle-geofence-btn"),
+    // -----------------------------
+
     modal: document.getElementById("image-modal"),
     modalImg: document.getElementById("modal-img"),
     downloadBtn: document.getElementById("download-btn"),
@@ -80,8 +138,8 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   try {
-    // 🚩 PENGEMBALIAN KE KOORDINAT ASLI/DEFAULT: [0.916, 104.444]
-    const initialCoords = [0.916, 104.444];
+    // Default Map View terpusat ke lokasi Waduk PDAM Bengkalis
+    const initialCoords = GEOFENCE_CONFIG.center;
     map = L.map("map-canvas").setView(initialCoords, 17);
 
     L.tileLayer("http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}", {
@@ -106,7 +164,25 @@ document.addEventListener("DOMContentLoaded", () => {
     waypointLayer = L.layerGroup().addTo(map);
     completedPathLayer = L.layerGroup().addTo(map);
 
-    console.log("Peta Leaflet (Google Satellite) berhasil dimuat.");
+    // --- [GEOFENCE DISPLAY LAYER (DISPLAY ONLY) - SEGILIMA 5 TITIK] ---
+    geofenceLayer = L.layerGroup().addTo(map);
+    geofencePolygon = L.polygon(GEOFENCE_CONFIG.polygon, GEOFENCE_CONFIG.styleSafe)
+      .addTo(geofenceLayer)
+      .bindPopup(
+        `<div class="geofence-popup-content">` +
+        `  <div class="geofence-popup-title">⛨ ZONA GEOFENCE</div>` +
+        `  <div class="geofence-popup-desc"><b>Lokasi:</b> ${GEOFENCE_CONFIG.name}</div>` +
+        `  <div class="geofence-popup-desc"><b>Bentuk:</b> Segilima (5 Titik)</div>` +
+        `  <div class="geofence-popup-status"><b>Status ASV:</b> <span id="popup-geofence-status" class="status-safe">INSIDE (SAFE)</span></div>` +
+        `</div>`
+      )
+      .bindTooltip("Zona Geofence Segilima (Display Only)", {
+        permanent: false,
+        direction: "center",
+        className: "geofence-map-tooltip",
+      });
+
+    console.log("Peta Leaflet (Google Satellite) & Geofence Segilima berhasil dimuat.");
   } catch (e) {
     console.error("Gagal memuat Peta Leaflet.", e);
   }
@@ -183,6 +259,47 @@ document.addEventListener("DOMContentLoaded", () => {
       ELEMENTS.modal.style.display = "none";
     });
   }
+
+  // --- [HANDLER TOGGLE TAMPILAN GEOFENCE (DISPLAY ONLY)] ---
+  if (ELEMENTS.toggleGeofenceBtn) {
+    ELEMENTS.toggleGeofenceBtn.addEventListener("click", () => {
+      isGeofenceVisible = !isGeofenceVisible;
+      if (isGeofenceVisible) {
+        if (geofenceLayer && !map.hasLayer(geofenceLayer)) {
+          map.addLayer(geofenceLayer);
+        }
+        ELEMENTS.toggleGeofenceBtn.classList.remove("disabled");
+        ELEMENTS.toggleGeofenceBtn.innerHTML = `<span class="icon">⛨</span> GEOFENCE: ON`;
+      } else {
+        if (geofenceLayer && map.hasLayer(geofenceLayer)) {
+          map.removeLayer(geofenceLayer);
+        }
+        ELEMENTS.toggleGeofenceBtn.classList.add("disabled");
+        ELEMENTS.toggleGeofenceBtn.innerHTML = `<span class="icon">⛨</span> GEOFENCE: OFF`;
+      }
+    });
+  }
+
+  // --- [FUNGSI UPDATE STATUS GEOFENCE UI (DISPLAY ONLY)] ---
+  window.updateGeofenceUI = function(isInside) {
+    if (geofencePolygon) {
+      geofencePolygon.setStyle(isInside ? GEOFENCE_CONFIG.styleSafe : GEOFENCE_CONFIG.styleBreach);
+    }
+    if (ELEMENTS.geofenceBadge) {
+      if (isInside) {
+        ELEMENTS.geofenceBadge.className = "geofence-badge badge-safe";
+        ELEMENTS.geofenceBadge.innerText = "GEOFENCE: SAFE";
+      } else {
+        ELEMENTS.geofenceBadge.className = "geofence-badge badge-breach";
+        ELEMENTS.geofenceBadge.innerText = "GEOFENCE: BREACH!";
+      }
+    }
+    const popupStatus = document.getElementById("popup-geofence-status");
+    if (popupStatus) {
+      popupStatus.className = isInside ? "status-safe" : "status-breach";
+      popupStatus.innerText = isInside ? "INSIDE (SAFE)" : "OUTSIDE (BREACH!)";
+    }
+  };
 });
 
 let lastRenderedCaptures = "[]";
@@ -624,6 +741,14 @@ function setupLocalSocketIO(elements, icons) {
       }
     } else if (map && vehicleMarker && lastKnownGps.lat !== 0) {
       currentLatLng = [lastKnownGps.lat, lastKnownGps.lng];
+    }
+
+    // --- EVALUASI POSISI GEOFENCE SEGILIMA (DISPLAY ONLY) ---
+    if (geofencePolygon && currentLatLng && currentLatLng[0] !== 0 && currentLatLng[1] !== 0) {
+      const isInside = isPointInGeofence(currentLatLng[0], currentLatLng[1], GEOFENCE_CONFIG.polygon);
+      if (typeof window.updateGeofenceUI === "function") {
+        window.updateGeofenceUI(isInside);
+      }
     }
     // ----------------------------------------------------------------
     // --- END UPDATE GPS ---
