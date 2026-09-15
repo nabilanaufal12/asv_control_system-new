@@ -1,9 +1,9 @@
 {
   "general": {
-    "default_arena": "Arena_A"
+    "default_arena": "Arena_B"
   },
   "backend_connection": {
-    "ip_address": "192.168.2.174",
+    "ip_address": "127.0.0.1",
     "port": 5000
   },
   "serial_connection": {
@@ -116,7 +116,7 @@
       "longitude": "e.g., 107.6191"
     },
     "panel_defaults": {
-      "ai_model": "Auto",
+      "ai_model": "best.engine",
       "ai_speed": 1500,
       "front_motor": 1800,
       "servo_left": 70,

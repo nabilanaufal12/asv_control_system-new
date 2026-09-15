@@ -44,3 +44,7 @@ for /d /r . %d in (__pycache__) do @if exist "%d" rd /s /q "%d"
 # Windows (PowerShell):
 Get-ChildItem -Path . -Include __pycache__ -Recurse -Directory | Remove-Item -Recurse -Force
 ================================================================================
+
+nmcli connection show
+sudo nmcli connection delete 68e8bf45-4fbe-42ba-8e1c-674414e1061f
+rm -r logs/

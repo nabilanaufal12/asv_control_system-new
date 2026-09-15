@@ -85,7 +85,15 @@ Servo dirBawahKanan;
 double Kp = 2.0, Ki = 0.0, Kd = 0.5; // Konstanta PID
 
 
-double error, lastError = 0, integral = 0;
+double error = 0, lastError = 0, integral = 0;
+bool pidInitialized = false;
+
+void resetPIDController() {
+  error = 0.0;
+  lastError = 0.0;
+  integral = 0.0;
+  pidInitialized = false;
+}
 
 // ---------------- LOS Navigation ----------------
 double L_delta = 3.0;
@@ -173,81 +181,229 @@ double bearing(double lat1, double lon1, double lat2, double lon2) {
   return fmod((degrees(brng) + 360.0), 360.0); 
 }
 
-// ---------------- Baca heading CMPS12 ----------------
-float readCompass() {
-  static float last_valid_heading = 0.0;
-  Wire.beginTransmission(CMPS12_ADDRESS);
-  Wire.write(ANGLE_16BIT_REGISTER);
-  uint8_t error = Wire.endTransmission();
-  
-  if (error != 0) {
-    // [FIX-2] Hanya return nilai terakhir yang valid. JANGAN reset Wire bus
-    // di dalam loop 50Hz karena menyebabkan memory leak / crash ESP32.
-    // Wire.setTimeOut(150) di setup() sudah cukup untuk mencegah blocking.
-    return last_valid_heading;
+// ---------------- CMPS12 24-POINT CALIBRATION ----------------
+#define CMPS12_CAL_POINTS 24
+
+// Data kalibrasi hasil pengukuran di posisi CMPS12 terpasang pada kapal.
+// Kolom pertama = RAW CMPS12, kolom kedua = heading referensi sebenarnya.
+// Urutan RAW WAJIB naik dan sudah diurutkan melewati 0/360.
+const float cmpsRawCal[CMPS12_CAL_POINTS] = {
+  3.5, 23.0, 31.8, 44.8, 51.3, 61.1,
+  71.5, 81.7, 94.3, 104.3, 115.3, 128.7,
+  141.7, 155.8, 171.4, 188.4, 209.5, 233.3,
+  258.0, 282.5, 301.5, 318.7, 333.6, 348.2
+};
+
+const float cmpsRefCal[CMPS12_CAL_POINTS] = {
+  345.0, 0.0, 15.0, 30.0, 45.0, 60.0,
+  75.0, 90.0, 105.0, 120.0, 135.0, 150.0,
+  165.0, 180.0, 195.0, 210.0, 225.0, 240.0,
+  255.0, 270.0, 285.0, 300.0, 315.0, 330.0
+};
+
+float normalizeHeading360(float angle) {
+  while (angle < 0.0) angle += 360.0;
+  while (angle >= 360.0) angle -= 360.0;
+  return angle;
+}
+
+// Selisih sudut terpendek (-180 ... +180).
+float circularDifference(float target, float value) {
+  float d = target - value;
+  while (d > 180.0) d -= 360.0;
+  while (d < -180.0) d += 360.0;
+  return d;
+}
+
+// Koreksi RAW CMPS12 menggunakan 24 titik kalibrasi.
+// Metode: interpolasi ERROR (reference - raw), bukan langsung raw -> reference.
+// Cara ini membuat transisi 348 -> 360 -> 0 -> 23 tetap kontinu.
+float calibrateCMPS12(float raw) {
+  raw = normalizeHeading360(raw);
+
+  // Hitung error kalibrasi setiap titik.
+  float correction[CMPS12_CAL_POINTS];
+  for (int i = 0; i < CMPS12_CAL_POINTS; i++) {
+    correction[i] = circularDifference(cmpsRefCal[i], cmpsRawCal[i]);
   }
 
-  // Semua argumen di-cast ke uint8_t agar cocok persis dengan overload:
-  // uint8_t requestFrom(uint8_t address, uint8_t size, uint8_t sendStop)
-  uint8_t bytesReceived = Wire.requestFrom((uint8_t)CMPS12_ADDRESS, (uint8_t)2, (uint8_t)1);
-  if (bytesReceived == 2) {
-    byte highByte = Wire.read();
-    byte lowByte = Wire.read();
-    unsigned int angle16 = (highByte << 8) | lowByte; 
-    last_valid_heading = angle16 / 10.0;
-    return last_valid_heading; 
+  // --------------------------------------------------
+  // RAW 0 ... 3.5
+  // Segmen melintasi 360:
+  // 348.2 -> 3.5  = 330 -> 345
+  // --------------------------------------------------
+  if (raw < cmpsRawCal[0]) {
+    float x1 = cmpsRawCal[CMPS12_CAL_POINTS - 1];
+    float x2 = cmpsRawCal[0] + 360.0;
+    float c1 = correction[CMPS12_CAL_POINTS - 1];
+    float c2 = correction[0];
+
+    float rawExtended = raw + 360.0;
+    float t = (rawExtended - x1) / (x2 - x1);
+    float c = c1 + t * (c2 - c1);
+
+    return normalizeHeading360(raw + c);
   }
-  return last_valid_heading; // Fallback ke heading terakhir
+
+  // --------------------------------------------------
+  // RAW 3.5 ... 23.0
+  // 3.5 -> 23.0 = 345 -> 360/0
+  // --------------------------------------------------
+  if (raw < cmpsRawCal[1]) {
+    float x1 = cmpsRawCal[0];
+    float x2 = cmpsRawCal[1];
+    float c1 = correction[0];
+    float c2 = correction[1];
+
+    float t = (raw - x1) / (x2 - x1);
+    float c = c1 + t * (c2 - c1);
+
+    return normalizeHeading360(raw + c);
+  }
+
+  // --------------------------------------------------
+  // SEGMENT NORMAL
+  // --------------------------------------------------
+  for (int i = 1; i < CMPS12_CAL_POINTS - 1; i++) {
+    if (raw >= cmpsRawCal[i] && raw < cmpsRawCal[i + 1]) {
+      float x1 = cmpsRawCal[i];
+      float x2 = cmpsRawCal[i + 1];
+      float c1 = correction[i];
+      float c2 = correction[i + 1];
+
+      float t = (raw - x1) / (x2 - x1);
+      float c = c1 + t * (c2 - c1);
+
+      return normalizeHeading360(raw + c);
+    }
+  }
+
+  // --------------------------------------------------
+  // RAW 348.2 ... 360
+  // 348.2 -> 3.5/360 = 330 -> 345
+  // --------------------------------------------------
+  if (raw >= cmpsRawCal[CMPS12_CAL_POINTS - 1]) {
+    float x1 = cmpsRawCal[CMPS12_CAL_POINTS - 1];
+    float x2 = cmpsRawCal[0] + 360.0;
+    float c1 = correction[CMPS12_CAL_POINTS - 1];
+    float c2 = correction[0];
+
+    float t = (raw - x1) / (x2 - x1);
+    float c = c1 + t * (c2 - c1);
+
+    return normalizeHeading360(raw + c);
+  }
+
+  return raw;
+}
+
+// ---------------- Baca heading CMPS12 ----------------
+// ---------------- Baca heading CMPS12 ----------------
+// Tidak lagi mengembalikan heading lama saat I2C gagal.
+// true = valid, false = gagal.
+bool readCompass(float &outHeading) {
+  Wire.beginTransmission(CMPS12_ADDRESS);
+  Wire.write(ANGLE_16BIT_REGISTER);
+  uint8_t i2cError = Wire.endTransmission();
+
+  if (i2cError != 0) return false;
+
+  uint8_t bytesReceived = Wire.requestFrom(
+    (uint8_t)CMPS12_ADDRESS,
+    (uint8_t)2,
+    (uint8_t)1
+  );
+
+  if (bytesReceived != 2 || Wire.available() < 2) return false;
+
+  byte highByte = Wire.read();
+  byte lowByte = Wire.read();
+  unsigned int angle16 = (highByte << 8) | lowByte;
+  float rawHeading = angle16 / 10.0;
+
+  if (!isfinite(rawHeading) || rawHeading < 0.0 || rawHeading >= 360.0) return false;
+
+  float calibratedHeading = calibrateCMPS12(rawHeading);
+  if (!isfinite(calibratedHeading)) return false;
+
+  outHeading = normalizeHeading360(calibratedHeading);
+  return true;
 }
 
 // ---------------- PID untuk servo ----------------
 int PID_servo(double setpoint, double input) {
-  error = input - setpoint; 
+  error = input - setpoint;
 
-  if (error > 180) error -= 360; 
+  if (error > 180) error -= 360;
   if (error < -180) error += 360;
 
-  integral += error; 
-  double derivative = error - lastError; 
-  lastError = error; 
+  integral += error;
 
-  double output = Kp * error + Ki * integral + Kd * derivative; 
-  int servoPos = 90 + output; 
+  double derivative = 0.0;
+  if (pidInitialized) {
+    derivative = error - lastError;
+  } else {
+    // Setelah reset, hindari derivative kick pada sampel pertama.
+    pidInitialized = true;
+  }
+  lastError = error;
+
+  double output = Kp * error + Ki * integral + Kd * derivative;
+  int servoPos = 90 + output;
 
   if (servoPos > 180) servoPos = 180;
   if (servoPos < 0) servoPos = 0;
 
-  return servoPos; 
+  return servoPos;
 }
 
 // ---------------- PPM INPUT ----------------
-#define PPM_PIN 4 
-#define CHANNELS 10 
-volatile int ppm[CHANNELS]; 
-volatile byte ppmCounter = 0; 
-volatile unsigned long lastMicros = 0; 
+#define PPM_PIN 4
+#define CHANNELS 10
+volatile int ppm[CHANNELS];
+volatile byte ppmCounter = 0;
+volatile unsigned long lastMicros = 0;
+volatile unsigned long lastPpmFrameMicros = 0;
+volatile byte lastPpmChannelCount = 0;
+
+#define PPM_FAILSAFE_TIMEOUT_US 250000UL
 
 void IRAM_ATTR ppmISR() {
   unsigned long now = micros();
   unsigned long diff = now - lastMicros;
   lastMicros = now;
 
-  if (diff > 3000) { 
+  if (diff > 3000) {
+    if (ppmCounter > 0) {
+      lastPpmChannelCount = ppmCounter;
+      lastPpmFrameMicros = now;
+    }
     ppmCounter = 0;
   } else {
     if (ppmCounter < CHANNELS) {
-      ppm[ppmCounter] = diff; 
+      ppm[ppmCounter] = diff;
       ppmCounter++;
     }
   }
 }
 
+// RC failsafe: nilai channel dianggap tidak valid jika tidak ada frame PPM baru.
 int readChannel(byte ch, int minVal = 1000, int maxVal = 2000, int defaultVal = 1500) {
-  if (ch < CHANNELS) {
-    int val = ppm[ch];
-    if (val >= 800 && val <= 2200) return val; 
-  }
-  return defaultVal; 
+  if (ch >= CHANNELS) return defaultVal;
+
+  noInterrupts();
+  unsigned long frameTime = lastPpmFrameMicros;
+  byte channelCount = lastPpmChannelCount;
+  int val = ppm[ch];
+  interrupts();
+
+  if (frameTime == 0) return defaultVal;
+  if ((unsigned long)(micros() - frameTime) > PPM_FAILSAFE_TIMEOUT_US) return defaultVal;
+  if (channelCount <= ch) return defaultVal;
+
+  // Pertahankan rentang validasi pulse seperti kode asli: 800..2200 us.
+  if (val >= 800 && val <= 2200) return val;
+  return defaultVal;
 }
 
 // ---------------- Fungsi Manajemen Data GPS ----------------
@@ -322,7 +478,12 @@ void checkSerialInput() {
       serialInputBuffer.trim(); 
       
       if (serialInputBuffer.length() > 0) {
-        serialCommand = serialInputBuffer.charAt(0); 
+        serialCommand = serialInputBuffer.charAt(0);
+
+        if (serialCommand == 'W') {
+          resetPIDController();
+          Serial.println("[CMD] W -> waypoint control aktif. PID di-reset.");
+        }
         
         if (serialCommand == 'A') {
           // FORMAT: A,<servo>,<motor_bawah>,<motor_depan_kiri>,<motor_depan_kanan>[,<dir_bawah>[,<dir_depan_kiri>,<dir_depan_kanan>]]
@@ -379,6 +540,7 @@ void checkSerialInput() {
               counter++;
               if (counter > dataIndex) counter = dataIndex;
               is_new_wp = true;
+              resetPIDController();
               bool stillInZone = (counter > uwStart && counter <= uwEnd) 
                               || (counter > surfStart && counter <= surfEnd);
               if (!stillInZone) {
@@ -389,8 +551,10 @@ void checkSerialInput() {
             } else if (cmdAction == "DEC") {
               if (counter > 0) counter--;
               is_new_wp = true;
+              resetPIDController();
             } else if (cmdAction == "RESET") {
               counter = 0;
+              resetPIDController();
               portraitState = PT_NORMAL;
               dockingState = DK_IDLE;
             }
@@ -629,6 +793,17 @@ void setup() {
 float heading = 0.0;
 double cog = 0.0; // Course Over Ground
 unsigned long lastLoopTime = 0;
+
+// ======================================================
+// DATA NAVIGASI UNTUK OLED
+// ======================================================
+bool compassValidGlobal = false;
+double wp_dist_m = 0.0;
+double wp_target_brg = 0.0;
+double wp_error_hdg = 0.0;
+
+// Toleransi untuk dianggap sudah lurus terhadap arah waypoint
+#define HEADING_STRAIGHT_TOLERANCE 3.0
 // ---------------------------------
 
 // ======================================================
@@ -807,40 +982,137 @@ void readGPS_NMEA() {
 }
 
 // ============================================================
-// Fungsi update OLED — dipanggil di dalam loop() setiap 500ms
+// Fungsi update OLED - indikator navigasi waypoint
+// Update setiap 250ms, non-blocking
 // ============================================================
 void updateOLED() {
   if (!oledOk) return;
-  if (millis() - lastOledUpdate < 500) return;
+  if (millis() - lastOledUpdate < 250) return;
   lastOledUpdate = millis();
 
   oled.clearDisplay();
+  oled.setTextColor(SSD1306_WHITE);
 
-  // --- Baris 1: Judul ---
+  // --------------------------------------------------------
+  // BARIS 1: JUDUL
+  // --------------------------------------------------------
   oled.setTextSize(1);
   oled.setCursor(0, 0);
   oled.println("=== NAVANTARA ASV ===");
 
-  // --- Baris 2: HDG (Heading Kompas) ---
+  // --------------------------------------------------------
+  // BARIS 2: WAYPOINT
+  // counter menggunakan indeks array mulai dari 0.
+  // Tampilan dibuat mulai dari WP 1 agar mudah dibaca operator.
+  // --------------------------------------------------------
   oled.setTextSize(2);
-  oled.setCursor(0, 14);
-  oled.print("HDG ");
-  oled.print((int)round(heading));
-  oled.println((char)247); // Karakter derajat °
+  oled.setCursor(0, 13);
 
-  // --- Baris 3 & 4: COG & Satelit (font kecil) ---
+  if (dataIndex <= 0) {
+    oled.print("WP: --/--");
+  }
+  else if (counter >= dataIndex) {
+    oled.print("WP:");
+    if (dataIndex < 10) oled.print("0");
+    oled.print(dataIndex);
+    oled.print("/");
+    if (dataIndex < 10) oled.print("0");
+    oled.print(dataIndex);
+  }
+  else {
+    int displayWP = counter + 1;
+
+    oled.print("WP:");
+    if (displayWP < 10) oled.print("0");
+    oled.print(displayWP);
+    oled.print("/");
+    if (dataIndex < 10) oled.print("0");
+    oled.print(dataIndex);
+  }
+
+  // --------------------------------------------------------
+  // BARIS 3: ERROR HEADING
+  // 0 derajat = heading kapal tepat searah target waypoint.
+  // --------------------------------------------------------
   oled.setTextSize(1);
-  oled.setCursor(0, 36);
-  oled.print("COG: ");
-  oled.print(cog, 1);
-  oled.println((char)247);
+  oled.setCursor(0, 35);
+  oled.print("ERR:");
 
-  oled.setCursor(0, 48);
-  oled.print("SAT: ");
-  oled.print(satellites);
-  oled.print(" [");
-  oled.print(fixStatus);
-  oled.println("]");
+  if (!isManual && serialCommand == 'W' && compassValidGlobal && dataIndex > 0 && counter < dataIndex) {
+    oled.print(wp_error_hdg, 1);
+    oled.print((char)247);
+  } else {
+    oled.print("--.-");
+    oled.print((char)247);
+  }
+
+  // --------------------------------------------------------
+  // STATUS ARAH
+  // --------------------------------------------------------
+  oled.setCursor(70, 35);
+
+  if (counter >= dataIndex && dataIndex > 0) {
+    oled.print("SELESAI");
+  }
+  else if (isManual) {
+    oled.print("MANUAL");
+  }
+  else if (serialCommand == 'A') {
+    oled.print("AI");
+  }
+  else if (!compassValidGlobal) {
+    oled.print("CMPS ERR");
+  }
+  else if (fabs(wp_error_hdg) <= HEADING_STRAIGHT_TOLERANCE) {
+    oled.print("LURUS");
+  }
+  else if (wp_error_hdg > 0) {
+    oled.print("BELOK >");
+  }
+  else {
+    oled.print("BELOK <");
+  }
+
+  // --------------------------------------------------------
+  // BARIS 4: STATUS GPS
+  // --------------------------------------------------------
+  oled.setCursor(0, 47);
+  oled.print("GPS:");
+
+  if (gpsFixType == 0) {
+    oled.print(" NO FIX");
+  }
+  else if (gpsFixType == 1) {
+    oled.print(" GPS");
+  }
+  else if (gpsFixType == 2) {
+    oled.print(" DGPS");
+  }
+  else if (gpsFixType == 4) {
+    oled.print(" RTK FIX");
+  }
+  else if (gpsFixType == 5) {
+    oled.print(" RTK FLOAT");
+  }
+  else if (gpsFixType == 6) {
+    oled.print(" DR");
+  }
+  else {
+    oled.print(" UNKNOWN");
+  }
+
+  // --------------------------------------------------------
+  // BARIS 5: HEADING CMPS12
+  // --------------------------------------------------------
+  oled.setCursor(0, 58);
+  oled.print("HDG:");
+
+  if (compassValidGlobal) {
+    oled.print(heading, 1);
+    oled.print((char)247);
+  } else {
+    oled.print(" ERROR");
+  }
 
   oled.display();
 }
@@ -861,8 +1133,14 @@ void loop() {
   }
   lastLoopTime = millis();
   
-  heading = readCompass();
-  if (heading == -1) { heading = 0.0; } 
+  bool compassValid = readCompass(heading);
+  compassValidGlobal = compassValid;
+
+  static unsigned long lastCompassErrorLog = 0;
+  if (!compassValid && millis() - lastCompassErrorLog >= 1000) {
+    Serial.println("[CMPS12] ERROR: heading tidak valid. Navigasi waypoint ditahan.");
+    lastCompassErrorLog = millis();
+  }
 
   // Baca Channel Radio (PPM)
   int ch5 = readChannel(4); 
@@ -881,9 +1159,9 @@ void loop() {
   int finalDirDepanKanan = 1000;   // Default Maju (1000us)             
   
   int wp_target_idx = 0;
-  double wp_dist_m = 0.0;
-  double wp_target_brg = 0.0;
-  double wp_error_hdg = 0.0;
+  wp_dist_m = 0.0;
+  wp_target_brg = 0.0;
+  wp_error_hdg = 0.0;
 
   // ----------------- MANUAL MODE -----------------
   if (ch5 < 1500) { 
@@ -989,8 +1267,9 @@ void loop() {
     if (isManual) {
       Serial.println("Switching to AUTO...");
       isManual = false;
-      counter = 0; 
+      counter = 0;
       is_new_wp = true;
+      resetPIDController();
       portraitState = PT_NORMAL;
       dockingState = DK_IDLE;
     }
@@ -1048,6 +1327,7 @@ void loop() {
       if (millis() - portraitTimer >= portraitReverseMs) {
         counter++;
         is_new_wp = true;
+        resetPIDController();
         portraitState = PT_NORMAL;
         finalDir = 1000;  // Kembali maju normal (1000us)
         finalDirDepanKiri = 1000;
@@ -1076,8 +1356,15 @@ void loop() {
     } 
     else if (serialCommand == 'W') {
       status = "WAYPOINT";
-      
-      if (dataIndex > 0 && gpsFixType > 0) { 
+
+      if (!compassValid) {
+        finalServo = 90;
+        finalMotor = 1000;
+        finalMotorDepanKiri = 1000;
+        finalMotorDepanKanan = 1000;
+        status = "COMPASS_INVALID";
+      }
+      else if (dataIndex > 0 && gpsFixType > 0) { 
         
         if (counter >= dataIndex) { 
           wp_target_idx = dataIndex;
@@ -1103,6 +1390,7 @@ void loop() {
           double targetLon = longitudes[counter];
           
           if (is_new_wp) {
+            resetPIDController();
             if (counter == 0) {
               prev_wp_lat = lat;
               prev_wp_lon = lon;
@@ -1128,10 +1416,28 @@ void loop() {
           if (errorHeading > 180) errorHeading -= 360;
           if (errorHeading < -180) errorHeading += 360;
           
-          int servoPos = PID_servo(targetBearing, heading);
-          finalServo = servoPos;
+int servoPos = PID_servo(targetBearing, heading);
+finalServo = servoPos;
 
-          int motorSpeed = readChannel(6);  
+Serial.print("WP=");
+Serial.print(counter);
+Serial.print(" | DIST=");
+Serial.print(dist, 2);
+Serial.print(" | PATH=");
+Serial.print(path_angle, 2);
+Serial.print(" | LOS=");
+Serial.print(los_correction, 2);
+Serial.print(" | TARGET=");
+Serial.print(targetBearing, 2);
+Serial.print(" | HDG=");
+Serial.print(heading, 2);
+Serial.print(" | ERR=");
+Serial.print(errorHeading, 2);
+Serial.print(" | SERVO=");
+Serial.println(servoPos);
+
+          // CH6 = speed motor utama, dengan RC failsafe.
+          int motorSpeed = readChannel(6);
           
           // Di portrait zone: kunci motor utama ke portraitSpeed
           if (isInPortraitZone) {
@@ -1153,8 +1459,9 @@ void loop() {
               Serial.print("Portrait STOP di WP #");
               Serial.println(counter);
             } else {
-              counter++; 
+              counter++;
               is_new_wp = true;
+              resetPIDController();
               Serial.print("WP #");
               Serial.print(counter);
               Serial.println(" tercapai. Menuju WP berikutnya.");
@@ -1178,14 +1485,14 @@ void loop() {
         
       } else {
         finalServo = 90;
-        finalMotor = 1000; 
+        finalMotor = 1000;
         finalMotorDepanKiri = 1000;   // Paksa mati di Mode W
         finalMotorDepanKanan = 1000;  // Paksa mati di Mode W
         if (dataIndex == 0) status = "NO_WAYPOINTS";
         else status = "GPS_INVALID";
       }
+      } // selesai blok compassValid
     }
-  }
 
   // ========================================
   // --- 3. Kontrol Aktuator Lanjutan ---
@@ -1218,6 +1525,7 @@ void loop() {
   jsonDoc["sts"] = status;
 
   jsonDoc["hdg"] = (float)round(heading * 100) / 100;
+  jsonDoc["cmps_ok"] = compassValid;
   jsonDoc["cog"] = (float)round(cog * 10) / 10; // Kirim COG ke Jetson
   jsonDoc["lat"] = latitude;
   jsonDoc["lon"] = longitude;
@@ -1232,6 +1540,7 @@ void loop() {
   jsonDoc["mot"] = finalMotor;
   jsonDoc["m_dl"] = finalMotorDepanKiri;
   jsonDoc["m_dr"] = finalMotorDepanKanan;
+  jsonDoc["ppm_ok"] = (lastPpmFrameMicros != 0 && (unsigned long)(micros() - lastPpmFrameMicros) <= PPM_FAILSAFE_TIMEOUT_US);
   
   if (serialCommand == 'A') {
     // Mode Auto: Data inversi telah dihapus untuk menghemat bandwidth
