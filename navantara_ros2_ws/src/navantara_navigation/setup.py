@@ -23,6 +23,8 @@ setup(
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'buoy_navigator_node = navantara_navigation.buoy_navigator_node:main',
+        ],
     },
 )

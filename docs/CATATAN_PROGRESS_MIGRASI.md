@@ -1,8 +1,8 @@
 # Catatan Progres Migrasi Arsitektur ROS2 ASV Navantara
 
 **Tanggal**: 13 November 2026  
-**Waktu**: 02:15 WIB  
-**Status**: Fase 1 (Selesai 100%) — Verifikasi Mock Laptop Berhasil  
+**Waktu**: 02:40 WIB  
+**Status**: Fase 1 & Fase 2 (Selesai 100%) — Navigasi Otonom Koridor Gate KKI, Costmap Spasial 4 Detik, dan Visualisasi Katamaran 3D Berhasil  
 **Branch Git**: [`ros2-migration`](https://github.com/nabilanaufal12/asv_control_system-new/tree/ros2-migration)  
 **Lingkungan Uji**: Laptop Razer Blade 14 (Ubuntu 24.04.5 LTS x86_64, ROS 2 Jazzy Jalisco)
 
@@ -12,12 +12,26 @@
 
 Sistem kontrol monolitik ASV Navantara berbasis Python multithread dan Arduino lama telah berhasil ditransformasikan ke dalam fondasi arsitektur **modular ROS 2 (Humble/Jazzy cross-compatible)**.
 
-Seluruh 7 paket ROS 2 di [`navantara_ros2_ws`](file:///home/mizuuu/Documents/Koleksi_KKI_Navantara_ASV/4_Firmware_dan_Source_Code/asv_control_system_jetson/navantara_ros2_ws) berhasil di-build tanpa error menggunakan `colcon`. Mode pengembangan laptop (*Laptop Mock Development Mode*) telah diuji langsung menggunakan visualisasi **RViz2**:
-* ✅ Sensor visual kamera sintetis (`CameraView`) aktif mendeteksi bola merah & hijau pada ~31 FPS.
-* ✅ Dinamika pergerakan kapal 2D (kecepatan *surge*, inersia, hambatan air, dan *yaw rate*) merespons topik `/cmd_vel` secara mulus.
-* ✅ Lintasan odometri melingkar (`/odom/raw`) terproyeksi secara *real-time* di RViz2.
-* ✅ *Hardware watchdog timer* (0.5s) aktif melindungi kapal saat perintah kemudi berhenti.
-* ✅ Log telemetri misi tercatat otomatis dalam format CSV di folder `mission_logs/`.
+Seluruh 7 paket ROS 2 di [`navantara_ros2_ws`](file:///home/mizuuu/Documents/Koleksi_KKI_Navantara_ASV/4_Firmware_dan_Source_Code/asv_control_system_jetson/navantara_ros2_ws) berhasil di-build tanpa error menggunakan `colcon`.
+
+**Pencapaian Fase 2 (Closed-Loop Autonomous Navigation):**
+* ✅ **Visualisasi Model 3D Katamaran di RViz2**: Model URDF twin-hull catamaran lengkap ([`asv.urdf.xacro`](file:///home/mizuuu/Documents/Koleksi_KKI_Navantara_ASV/4_Firmware_dan_Source_Code/asv_control_system_jetson/navantara_ros2_ws/src/navantara_gazebo_sim/urdf/asv.urdf.xacro)) dipublikasikan via `robot_state_publisher` ke `/robot_description`, merender badan katamaran, ponton kiri/kanan, boks elektronik, *thruster*, kemudi, dan mast sensor GPS/kamera.
+* ✅ **Navigator Otonom Pelampung KKI (`buoy_navigator_node.py`)**:
+  - Buffer memori spasial 4.0 detik di frame koordinat global `odom`.
+  - Algoritma pencocokan gerbang (*gate pairing*) bola merah (port) dan hijau (starboard) untuk menghitung titik tengah lintasan (*midpoint*).
+  - Mode proteksi pelampung tunggal (*single-buoy passing offset* $\pm 1.8\text{ m}$) agar kapal aman melintas jika salah satu pelampung terhalang gelombang.
+  - Hukum kendali *Pure Pursuit* adaptif yang membatasi radius belok dan menurunkan kecepatan kapal pada belokan curam.
+* ✅ **2D Rolling Costmap Spasial (`/local_costmap/costmap`)**:
+  - Grid okupansi 10 Hz berukuran $20\text{ m} \times 20\text{ m}$ (resolusi $0.1\text{ m}$) yang selalu berpusat mengikuti posisi aktual kapal.
+  - *Lethal obstacle stamping* (nilai 100) dan radius inflasi bertingkat (50–99) pada seluruh pelampung aktif.
+* ✅ **Simulasi Koridor Dinamis Multi-Gerbang**:
+  - `vision_node.py` mensimulasikan koridor gerbang KKI di koordinat dunia `odom`.
+  - Kapal berhasil melaju otonom secara *closed-loop* dari $x=0\text{ m}$ menembus gerbang demi gerbang hingga $x>20\text{ m}$ pada kecepatan $1.2\text{--}1.4\text{ m/s}$.
+* ✅ **Marker Visual 3D Lengkap di RViz2 (`/navigation/markers`)**:
+  - Pelampung memori spasial dengan efek *fade-out* sesuai sisa umur waktu (timeout 4s).
+  - Garis gerbang biru *cyan* penghubung pasangan bola merah & hijau.
+  - Panah panduan kemudi *Pure Pursuit* (warna kuning emas).
+  - Teks status 3D mengambang di atas kapal (`MODE`, `SPEED`, `MEM BUOYS`).
 
 ---
 
@@ -88,13 +102,13 @@ Semua perubahan telah di-push ke GitHub remote:
 
 ---
 
-## 5. Rencana Tahapan Berikutnya (Next Milestones)
+## 5. Rencana Tahapan Berikutnya (Next Milestones - Fase 3)
 
-1. **Visualisasi Fisik 3D Lambung Kapal di RViz2**:
-   * Mengintegrasikan `robot_state_publisher` dan model 3D katamaran [`asv.urdf.xacro`](file:///home/mizuuu/Documents/Koleksi_KKI_Navantara_ASV/4_Firmware_dan_Source_Code/asv_control_system_jetson/navantara_ros2_ws/src/navantara_gazebo_sim/urdf/asv.urdf.xacro) ke RViz2 agar bodi kapal terlihat nyata saat berlayar.
-2. **Navigator Otonom Pelampung KKI (`buoy_navigator_node.py`)**:
-   * Membuat node otonom yang membaca `/perception/obstacles`, menghitung titik tengah lintasan bola merah dan hijau (*gate midpoint*), serta menerbitkan `/cmd_vel` secara otomatis tanpa input manual.
-3. **Rolling Costmap 2D Nav2 di RViz2**:
-   * Menampilkan lapisan grid rintangan spasial Nav2 di RViz2 dengan persistensi memori 4 detik.
-4. **Validasi Hardware Lab (NVIDIA Jetson Orin + ESP32)**:
-   * Menguji inferensi TensorRT FP16 nyata menggunakan kamera USB di Jetson dan menghubungkan kabel serial UART ke ESP32.
+1. **Uji Validasi Hardware Nyata di Lab Kampus (NVIDIA Jetson Orin Nano + ESP32)**:
+   * Mengonversi model PyTorch YOLOv8/v11 buoy detector ke TensorRT engine (`best.engine`) FP16 di Jetson Orin.
+   * Menguji inferensi visual kamera nyata via CSI / USB pada resolusi $640 \times 640$ @ 30+ FPS.
+   * Menghubungkan kabel serial UART ke ESP32 microcontroller dan memvalidasi paket biner CRC16 dengan firmware `asv_mcu_bridge.ino`.
+2. **Integrasi RTK GPS & Dual-Antenna Heading (u-blox ZED-F9P)**:
+   * Menghubungkan driver NMEA/UBX RTK GPS ke `robot_localization` EKF untuk navigasi lintasan danau/pantai berpresisi centimeter.
+3. **Penyempurnaan WebGUI Dashboard**:
+   * Menghubungkan WebGUI ke websocket bridge ROS 2 (`rosbridge_server` / custom lightweight websocket) untuk visualisasi telemetri langsung di browser tablet/laptop kendali.

@@ -27,6 +27,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 
 from geometry_msgs.msg import Point
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 from std_msgs.msg import Header
 
@@ -103,12 +104,30 @@ class ASVVisionNode(Node):
         self.cx = self.frame_w / 2.0
         self.cy = self.frame_h / 2.0
 
-        # Synthetic buoy simulation states
+        # Synthetic buoy simulation states & Vessel Pose Tracking
         self.sim_tick = 0.0
+        self.asv_x = 0.0
+        self.asv_y = 0.0
+        self.asv_yaw = 0.0
+
+        # Multi-Gate KKI Buoy Corridor in World/Odom Frame
+        # Defines 10 gates with gentle slalom bends
+        self.world_buoy_course = []
+        for i in range(15):
+            gx = 8.0 + i * 11.0
+            # S-curve serpentine lateral shift
+            curve_y = 1.6 * math.sin(i * 0.7)
+            # Red buoy on Port (Left, +Y), Green on Starboard (Right, -Y), 4.4m width
+            self.world_buoy_course.append(("bola-merah", gx, curve_y + 2.2, (0, 0, 240)))
+            self.world_buoy_course.append(("bola-hijau", gx, curve_y - 2.2, (0, 240, 0)))
+
+        self.odom_sub = self.create_subscription(
+            Odometry, '/odom/raw', self._mock_odom_callback, 10
+        )
 
         # 3. Setup Publishers
         sensor_qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=5
         )
@@ -320,11 +339,20 @@ class ASVVisionNode(Node):
 
         self._publish_perception_data(stamp, detected_obstacles, cloud_points, frame)
 
+    def _mock_odom_callback(self, msg: Odometry):
+        """Updates internal vessel pose for world-anchored buoy corridor simulation."""
+        self.asv_x = msg.pose.pose.position.x
+        self.asv_y = msg.pose.pose.position.y
+        q = msg.pose.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        self.asv_yaw = math.atan2(siny_cosp, cosy_cosp)
+
     def _generate_synthetic_buoy_stream(self):
         """
-        Generates simulated buoys in front of base_link for local testing on laptops.
-        Creates a pair of buoys (Red on Port/Left, Green on Starboard/Right) that
-        shift smoothly with time to simulate vessel movement along a slalom course.
+        Simulates camera observations of the multi-gate KKI buoy corridor.
+        Transforms world buoys into vessel camera perspective based on real-time /odom/raw pose.
+        Only buoys currently within the camera FOV are detected and published!
         """
         self.sim_tick += 0.05
         stamp = self.get_clock().now().to_msg()
@@ -335,53 +363,70 @@ class ASVVisionNode(Node):
         sim_frame[:horizon_y, :] = (210, 180, 140)  # Sky
         sim_frame[horizon_y:, :] = (80, 45, 20)     # Water
 
-        # Buoy 1: Red Buoy (Port side: Y > 0 in base_link)
-        dist_red = 10.0 + 4.0 * math.sin(self.sim_tick * 0.3)
-        y_red = 2.5 + 0.5 * math.cos(self.sim_tick * 0.2)
-        bearing_red = math.atan2(y_red, dist_red)
-
-        # Buoy 2: Green Buoy (Starboard side: Y < 0 in base_link)
-        dist_green = 10.0 + 4.0 * math.cos(self.sim_tick * 0.3)
-        y_green = -2.5 - 0.5 * math.sin(self.sim_tick * 0.2)
-        bearing_green = math.atan2(y_green, dist_green)
-
-        synthetic_buoys = [
-            ("bola-merah", dist_red, y_red, bearing_red, (0, 0, 240)),
-            ("bola-hijau", dist_green, y_green, bearing_green, (0, 240, 0)),
-        ]
-
         detected_obstacles = []
         cloud_points = []
 
-        for label, dist, y_lateral, bearing_rad, bgr_color in synthetic_buoys:
-            pos_x = dist * math.cos(bearing_rad)
-            pos_y = dist * math.sin(bearing_rad)
-            pos_z = 0.0
+        cos_yaw = math.cos(self.asv_yaw)
+        sin_yaw = math.sin(self.asv_yaw)
+        hfov_half_rad = math.radians(self.hfov_deg / 2.0)
+
+        # Loop over world buoy course
+        for label, wx, wy, bgr_color in self.world_buoy_course:
+            # Wrap course so vessel can sail indefinitely along +X
+            # Course length: 165 meters
+            rel_world_x = ((wx - self.asv_x + 15.0) % 165.0) - 15.0 + self.asv_x
+            rel_world_y = wy
+
+            dx = rel_world_x - self.asv_x
+            dy = rel_world_y - self.asv_y
+
+            # Transform to vessel base_link (x_fwd, y_left)
+            x_v = dx * cos_yaw + dy * sin_yaw
+            y_v = -dx * sin_yaw + dy * cos_yaw
+
+            # Check if within camera forward frustum (0.8m to 25m distance)
+            dist = math.hypot(x_v, y_v)
+            if x_v <= 0.8 or dist > 25.0:
+                continue
+
+            # Azimuth angle relative to camera optical axis
+            bearing_rad = math.atan2(-y_v, x_v)
             bearing_deg = math.degrees(bearing_rad)
 
-            # Project into image pixel space
-            norm_x = -bearing_rad / math.radians(self.hfov_deg / 2.0)
-            cx = self.cx + norm_x * self.cx
+            # Check if within horizontal FOV
+            if abs(bearing_rad) > hfov_half_rad:
+                continue
+
+            # Vertical elevation angle (camera pitched down by cam_pitch_rad)
             alpha = math.atan2(self.cam_height, dist) - self.cam_pitch_rad
             cy = self.cy + math.tan(alpha) * self.fy
 
-            pixel_size = max(15.0, (self.fx * self.ball_diameter) / dist)
+            # Horizontal pixel coordinate
+            norm_x = -y_v / (x_v * math.tan(hfov_half_rad))
+            cx = self.cx + norm_x * self.cx
+
+            # Only render if within image frame
+            if not (0 <= cx < self.frame_w and 0 <= cy < self.frame_h):
+                continue
+
+            # Apparent pixel size
+            pixel_size = max(12.0, (self.fx * self.ball_diameter) / dist)
             x1 = cx - pixel_size / 2.0
             y1 = cy - pixel_size / 2.0
             x2 = cx + pixel_size / 2.0
             y2 = cy + pixel_size / 2.0
 
-            cloud_points.append((pos_x, pos_y, pos_z))
+            cloud_points.append((x_v, y_v, 0.0))
 
             if HAS_CUSTOM_MSG:
                 obs = Obstacle()
                 obs.header.stamp = stamp
                 obs.header.frame_id = self.target_frame
                 obs.label = label
-                obs.confidence = 0.94
-                obs.position.x = float(pos_x)
-                obs.position.y = float(pos_y)
-                obs.position.z = float(pos_z)
+                obs.confidence = 0.95
+                obs.position.x = float(x_v)
+                obs.position.y = float(y_v)
+                obs.position.z = 0.0
                 obs.distance_m = float(dist)
                 obs.bearing_deg = float(bearing_deg)
                 obs.bbox_center_x = float(cx)
@@ -390,16 +435,16 @@ class ASVVisionNode(Node):
                 obs.bbox_height = float(pixel_size)
                 detected_obstacles.append(obs)
 
-            if self.publish_annotated and (0 <= cx < self.frame_w and 0 <= cy < self.frame_h):
+            if self.publish_annotated:
                 cv2.circle(sim_frame, (int(cx), int(cy)), int(pixel_size / 2), bgr_color, -1)
                 cv2.rectangle(sim_frame, (int(x1), int(y1)), (int(x2), int(y2)), bgr_color, 2)
                 text = f"{label} {dist:.1f}m ({bearing_deg:+.1f}d)"
                 cv2.putText(sim_frame, text, (int(x1), max(20, int(y1) - 5)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1)
 
         if self.publish_annotated:
-            status_text = f"MOCK PERCEPTION | Sim T: {self.sim_tick:.1f}s"
-            cv2.putText(sim_frame, status_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            status_text = f"KKI BUOY CORRIDOR | ASV Pos: ({self.asv_x:.1f}, {self.asv_y:.1f})"
+            cv2.putText(sim_frame, status_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
 
         self._publish_perception_data(stamp, detected_obstacles, cloud_points, sim_frame)
 

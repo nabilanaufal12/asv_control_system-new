@@ -29,36 +29,28 @@ def generate_launch_description():
         description='Serial port for MCU communication (used when use_laptop_mock:=false)'
     )
 
-    # 2. Static Transform Publishers (Sensor Extrinsics relative to base_link)
-    # base_link -> camera_link (x=0.8m forward, z=0.25m above waterline, pitched down 5 deg = 0.087 rad)
-    tf_camera = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_camera',
-        arguments=['--x', '0.8', '--y', '0.0', '--z', '0.25',
-                   '--roll', '0.0', '--pitch', '0.087', '--yaw', '0.0',
-                   '--frame-id', 'base_link', '--child-frame-id', 'camera_link']
+    enable_autonomy_arg = DeclareLaunchArgument(
+        'enable_autonomy',
+        default_value='true',
+        description='Launch autonomous buoy gate navigation node (buoy_navigator_node)'
     )
 
-    # base_link -> gps_link (x=0.0m center, z=0.4m mast)
-    tf_gps = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_gps',
-        arguments=['--x', '0.0', '--y', '0.0', '--z', '0.4',
-                   '--roll', '0.0', '--pitch', '0.0', '--yaw', '0.0',
-                   '--frame-id', 'base_link', '--child-frame-id', 'gps_link']
+    # 2. Robot Description & State Publisher (3D Catamaran Hull & Sensor Mounts)
+    sim_share = get_package_share_directory('navantara_gazebo_sim')
+    urdf_path = os.path.join(sim_share, 'urdf', 'asv.urdf.xacro')
+    with open(urdf_path, 'r') as f:
+        robot_description_content = f.read()
+
+    robot_state_publisher_node = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='screen',
+        parameters=[{'robot_description': robot_description_content}]
     )
 
-    # base_link -> imu_link (x=0.0m center, z=0.1m hull)
-    tf_imu = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='static_tf_imu',
-        arguments=['--x', '0.0', '--y', '0.0', '--z', '0.1',
-                   '--roll', '0.0', '--pitch', '0.0', '--yaw', '0.0',
-                   '--frame-id', 'base_link', '--child-frame-id', 'imu_link']
-    )
+    # Note: Sensor frame transforms (base_link -> camera_link, gps_link, imu_link)
+    # are published directly by robot_state_publisher from the URDF model.
 
     # 3. Perception Node
     # In mock mode: simulation_mode:=True generates synthetic buoy stream and projected pointcloud
@@ -127,7 +119,27 @@ def generate_launch_description():
         ]
     )
 
-    # 5. WebGUI & Telemetry Bridge Node
+    # 5. Autonomous Buoy Gate Navigator & 2D Rolling Costmap Node
+    buoy_navigator_node = Node(
+        package='navantara_navigation',
+        executable='buoy_navigator_node',
+        name='asv_buoy_navigator_node',
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('enable_autonomy')),
+        parameters=[
+            {'lookahead_distance': 3.5},
+            {'cruise_speed': 1.2},
+            {'max_angular_speed': 1.5},
+            {'persistence_timeout': 4.0},
+            {'gate_width_nominal': 3.0},
+            {'single_buoy_lateral_offset': 1.8},
+            {'costmap_size_x': 20.0},
+            {'costmap_size_y': 20.0},
+            {'costmap_resolution': 0.1},
+        ]
+    )
+
+    # 6. WebGUI & Telemetry Bridge Node
     webgui_node = Node(
         package='navantara_webgui_bridge',
         executable='webgui_bridge_node',
@@ -142,12 +154,12 @@ def generate_launch_description():
     return LaunchDescription([
         use_laptop_mock_arg,
         port_arg,
-        tf_camera,
-        tf_gps,
-        tf_imu,
+        enable_autonomy_arg,
+        robot_state_publisher_node,
         perception_mock_node,
         perception_hw_node,
         control_bridge_mock_node,
         control_bridge_hw_node,
+        buoy_navigator_node,
         webgui_node,
     ])

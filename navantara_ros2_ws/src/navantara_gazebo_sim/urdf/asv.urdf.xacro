@@ -1,60 +1,193 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="navantara_asv">
 
-  <!-- Base Link / Center of Hull -->
+  <!-- Materials -->
+  <material name="hull_navy">
+    <color rgba="0.08 0.22 0.55 1.0"/>
+  </material>
+  <material name="deck_carbon">
+    <color rgba="0.18 0.18 0.18 0.95"/>
+  </material>
+  <material name="electronics_orange">
+    <color rgba="0.95 0.45 0.05 1.0"/>
+  </material>
+  <material name="thruster_black">
+    <color rgba="0.05 0.05 0.05 1.0"/>
+  </material>
+  <material name="sensor_silver">
+    <color rgba="0.75 0.75 0.80 1.0"/>
+  </material>
+  <material name="camera_lens">
+    <color rgba="0.1 0.7 0.9 1.0"/>
+  </material>
+
+  <!-- Base Link: Geometric center of ASV at waterline -->
   <link name="base_link">
+    <!-- Center Deck Structure -->
     <visual>
+      <origin xyz="0.0 0.0 0.08" rpy="0 0 0"/>
       <geometry>
-        <box size="1.8 0.9 0.35"/>
+        <box size="1.40 0.72 0.04"/>
       </geometry>
-      <material name="hull_color">
-        <color rgba="0.1 0.3 0.8 1.0"/>
-      </material>
+      <material name="deck_carbon"/>
     </visual>
-    <collision>
+
+    <!-- Waterproof Electronics & Battery Enclosure Box -->
+    <visual>
+      <origin xyz="-0.10 0.0 0.20" rpy="0 0 0"/>
       <geometry>
-        <box size="1.8 0.9 0.35"/>
+        <box size="0.65 0.45 0.20"/>
+      </geometry>
+      <material name="electronics_orange"/>
+    </visual>
+
+    <!-- Port Demihull (Pontoon - Kiri: Y = +0.32m) -->
+    <visual>
+      <origin xyz="-0.05 0.32 0.0" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.70 0.22 0.25"/>
+      </geometry>
+      <material name="hull_navy"/>
+    </visual>
+
+    <!-- Port Bow Wedge/Taper (Moncong Haluan Kiri) -->
+    <visual>
+      <origin xyz="0.85 0.32 0.0" rpy="0 0.35 0"/>
+      <geometry>
+        <box size="0.25 0.22 0.22"/>
+      </geometry>
+      <material name="hull_navy"/>
+    </visual>
+
+    <!-- Starboard Demihull (Pontoon - Kanan: Y = -0.32m) -->
+    <visual>
+      <origin xyz="-0.05 -0.32 0.0" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.70 0.22 0.25"/>
+      </geometry>
+      <material name="hull_navy"/>
+    </visual>
+
+    <!-- Starboard Bow Wedge/Taper (Moncong Haluan Kanan) -->
+    <visual>
+      <origin xyz="0.85 -0.32 0.0" rpy="0 0.35 0"/>
+      <geometry>
+        <box size="0.25 0.22 0.22"/>
+      </geometry>
+      <material name="hull_navy"/>
+    </visual>
+
+    <!-- Port Thruster Nacelle (Buritan Kiri) -->
+    <visual>
+      <origin xyz="-0.92 0.32 -0.06" rpy="0 1.5708 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.18"/>
+      </geometry>
+      <material name="thruster_black"/>
+    </visual>
+
+    <!-- Starboard Thruster Nacelle (Buritan Kanan) -->
+    <visual>
+      <origin xyz="-0.92 -0.32 -0.06" rpy="0 1.5708 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.18"/>
+      </geometry>
+      <material name="thruster_black"/>
+    </visual>
+
+    <!-- Center Rudder Representation -->
+    <visual>
+      <origin xyz="-0.90 0.0 -0.08" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.12 0.02 0.16"/>
+      </geometry>
+      <material name="thruster_black"/>
+    </visual>
+
+    <!-- Collisions for safety checking -->
+    <collision>
+      <origin xyz="0.0 0.0 0.05" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.80 0.86 0.35"/>
       </geometry>
     </collision>
+
     <inertial>
-      <mass value="25.0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="1.5" ixy="0.0" ixz="0.0" iyy="4.5" iyz="0.0" izz="5.2"/>
+      <mass value="22.5"/>
+      <origin xyz="-0.05 0.0 0.05" rpy="0 0 0"/>
+      <inertia ixx="1.25" ixy="0.0" ixz="0.0" iyy="4.20" iyz="0.0" izz="5.10"/>
     </inertial>
   </link>
 
+  <!-- ==================== SENSORS ==================== -->
+
   <!-- Camera Link -->
   <link name="camera_link">
+    <!-- Camera Sensor Housing -->
     <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.08 0.08 0.08"/>
+        <box size="0.06 0.08 0.05"/>
       </geometry>
-      <material name="black">
-        <color rgba="0.1 0.1 0.1 1.0"/>
-      </material>
+      <material name="sensor_silver"/>
+    </visual>
+    <!-- Lens Tube -->
+    <visual>
+      <origin xyz="0.035 0 0" rpy="0 1.5708 0"/>
+      <geometry>
+        <cylinder radius="0.018" length="0.02"/>
+      </geometry>
+      <material name="camera_lens"/>
     </visual>
   </link>
 
   <joint name="camera_joint" type="fixed">
     <parent link="base_link"/>
     <child link="camera_link"/>
-    <origin xyz="0.8 0.0 0.25" rpy="0 0 0"/>
+    <origin xyz="0.80 0.0 0.25" rpy="0.0 0.087 0.0"/>
   </joint>
 
-  <!-- GPS Link -->
-  <link name="gps_link"/>
+  <!-- GPS Link (Mast & White Antenna Disc) -->
+  <link name="gps_link">
+    <!-- Antenna Mast -->
+    <visual>
+      <origin xyz="0 0 -0.15" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012" length="0.30"/>
+      </geometry>
+      <material name="sensor_silver"/>
+    </visual>
+    <!-- RTK GNSS Antenna Dome -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.075" length="0.035"/>
+      </geometry>
+      <material name="deck_carbon"/>
+    </visual>
+  </link>
+
   <joint name="gps_joint" type="fixed">
     <parent link="base_link"/>
     <child link="gps_link"/>
-    <origin xyz="0.0 0.0 0.4" rpy="0 0 0"/>
+    <origin xyz="0.0 0.0 0.40" rpy="0 0 0"/>
   </joint>
 
   <!-- IMU Link -->
-  <link name="imu_link"/>
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.04 0.02"/>
+      </geometry>
+      <material name="sensor_silver"/>
+    </visual>
+  </link>
+
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <origin xyz="0.0 0.0 0.1" rpy="0 0 0"/>
+    <origin xyz="0.0 0.0 0.10" rpy="0 0 0"/>
   </joint>
 
 </robot>
