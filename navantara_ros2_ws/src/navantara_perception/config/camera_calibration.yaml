@@ -1,0 +1,33 @@
+# navantara_perception / config/camera_calibration.yaml
+# Camera intrinsic matrix and distortion coefficients for ASV Navantara forward camera
+image_width: 640
+image_height: 480
+camera_name: navantara_forward_cam
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [457.01,   0.0,   320.0,
+           0.0,   457.01, 240.0,
+           0.0,     0.0,    1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [-0.082, 0.045, 0.001, -0.002, 0.000]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0,
+         0.0, 1.0, 0.0,
+         0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [457.01,   0.0,   320.0, 0.0,
+           0.0,   457.01, 240.0, 0.0,
+           0.0,     0.0,    1.0, 0.0]
+camera_parameters:
+  hfov_deg: 70.0
+  vfov_deg: 55.0
+  mounting_height_m: 0.45
+  pitch_angle_deg: 5.0

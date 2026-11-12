@@ -1,0 +1,26 @@
+# navantara_control_bridge / config/serial_bridge.yaml
+# Parameters for serial hardware communication bridge & laptop mock mode
+asv_serial_bridge_node:
+  ros__parameters:
+    mock_hardware: false
+    port: "/dev/ttyASV"
+    baudrate: 230400
+    watchdog_timeout_sec: 0.5
+    serial_poll_rate_hz: 50.0
+    use_binary_protocol: false
+
+    # Thruster and rudder calibration
+    max_speed_pwm: 1850
+    min_speed_pwm: 1150
+    neutral_pwm: 1500
+    servo_center_deg: 90
+    servo_max_deg: 135
+    servo_min_deg: 45
+
+    # Control gains for /cmd_vel mapping
+    angular_gain: 30.0   # 1.0 rad/s yaw command -> 30 degrees rudder deflection
+    linear_gain: 250.0   # 1.0 m/s surge command -> +250 PWM above neutral
+
+    # Simulation coordinate origin (KKI Venue)
+    sim_origin_lat: 0.925430
+    sim_origin_lon: 104.455210
