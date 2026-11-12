@@ -60,3 +60,8 @@ navigation_simulation.py
 Catatan.md
 SOP_Checklist_NAVANTARA.csv
 SOP_Checklist_NAVANTARA.html
+
+navantara_ros2_ws/build/
+navantara_ros2_ws/install/
+navantara_ros2_ws/log/
+mission_logs/

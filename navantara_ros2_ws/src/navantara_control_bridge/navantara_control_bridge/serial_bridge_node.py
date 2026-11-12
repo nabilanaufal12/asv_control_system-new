@@ -21,6 +21,7 @@ import struct
 import time
 from typing import Optional
 
+import numpy as np
 import serial
 import serial.tools.list_ports
 
@@ -142,7 +143,7 @@ class ASVSerialBridgeNode(Node):
 
         # 4. Setup Publishers
         sensor_qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=10
         )
@@ -295,12 +296,12 @@ class ASVSerialBridgeNode(Node):
         tau_u = 1.2
         drag = 0.15 * self.sim_u * abs(self.sim_u)
         self.sim_u += ((self.target_u - self.sim_u) / tau_u - drag) * dt
-        self.sim_u = float(np.clip(self.sim_u, -0.5, 3.0))
+        self.sim_u = float(max(-0.5, min(3.0, self.sim_u)))
 
         # Yaw rate response: rudder dynamics (tau_r: 0.4s)
         tau_r = 0.4
         self.sim_r += ((self.target_r - self.sim_r) / tau_r) * dt
-        self.sim_r = float(np.clip(self.sim_r, -1.2, 1.2))
+        self.sim_r = float(max(-1.2, min(1.2, self.sim_r)))
 
         # Position integration
         self.sim_yaw = (self.sim_yaw + self.sim_r * dt) % (2.0 * math.pi)
