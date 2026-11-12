@@ -1,0 +1,10 @@
+std_msgs/Header header
+string label
+float32 confidence
+geometry_msgs/Point position
+float32 distance_m
+float32 bearing_deg
+float32 bbox_center_x
+float32 bbox_center_y
+float32 bbox_width
+float32 bbox_height

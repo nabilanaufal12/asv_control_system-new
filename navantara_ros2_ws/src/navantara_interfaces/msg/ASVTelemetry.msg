@@ -1,0 +1,17 @@
+std_msgs/Header header
+string control_mode
+string mission_status
+float64 latitude
+float64 longitude
+float32 heading_deg
+float32 speed_knot
+uint8 gps_satellites
+uint8 gps_fix_type
+int16 servo_pwm
+int16 thruster_pwm
+int16 front_left_motor_pwm
+int16 front_right_motor_pwm
+uint16[8] rc_channels
+bool is_connected
+float32 voltage
+float32 current

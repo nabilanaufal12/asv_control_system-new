@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="navantara_asv">
+
+  <!-- Base Link / Center of Hull -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="1.8 0.9 0.35"/>
+      </geometry>
+      <material name="hull_color">
+        <color rgba="0.1 0.3 0.8 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="1.8 0.9 0.35"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="25.0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1.5" ixy="0.0" ixz="0.0" iyy="4.5" iyz="0.0" izz="5.2"/>
+    </inertial>
+  </link>
+
+  <!-- Camera Link -->
+  <link name="camera_link">
+    <visual>
+      <geometry>
+        <box size="0.08 0.08 0.08"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.8 0.0 0.25" rpy="0 0 0"/>
+  </joint>
+
+  <!-- GPS Link -->
+  <link name="gps_link"/>
+  <joint name="gps_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gps_link"/>
+    <origin xyz="0.0 0.0 0.4" rpy="0 0 0"/>
+  </joint>
+
+  <!-- IMU Link -->
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0.0 0.0 0.1" rpy="0 0 0"/>
+  </joint>
+
+</robot>
