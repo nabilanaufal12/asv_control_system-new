@@ -1,8 +1,8 @@
 # Catatan Progres Migrasi Arsitektur ROS2 ASV Navantara
 
 **Tanggal**: 13 November 2026  
-**Waktu**: 02:40 WIB  
-**Status**: Fase 1 & Fase 2 (Selesai 100%) — Navigasi Otonom Koridor Gate KKI, Costmap Spasial 4 Detik, dan Visualisasi Katamaran 3D Berhasil  
+**Waktu**: 17:40 WIB  
+**Status**: Fase 1 & Fase 2 (Selesai 100%) — Navigasi Otonom Koridor Gate KKI, Costmap Spasial 4 Detik, Model 3D Katamaran, dan Auto-Tracking RViz2 Berhasil  
 **Branch Git**: [`ros2-migration`](https://github.com/nabilanaufal12/asv_control_system-new/tree/ros2-migration)  
 **Lingkungan Uji**: Laptop Razer Blade 14 (Ubuntu 24.04.5 LTS x86_64, ROS 2 Jazzy Jalisco)
 
@@ -88,6 +88,9 @@ graph TD
    * *Solusi*: Dihapus instalasi pip lokal agar sistem kembali menggunakan `python3-numpy 1.26.4` bawaan resmi Ubuntu 24.04.
 3. **Penyelarasan QoS Telemetri**:
    * Diselaraskan seluruh publisher sensor status dan subscriber telemetri ke `QoSProfile(reliability=RELIABLE)` untuk mencegah *QoS incompatible warning*.
+4. **Shader Map GLSL Intel & Auto-Tracking Kamera RViz2**:
+   * *Problem*: Driver Mesa Intel HD Graphics 4600 melempar warning *link GLSL sampler* pada plugin `Map` RViz2 karena perbedaan tipe sampler (2D vs 1D). Selain itu, kamera 3D RViz2 tertinggal di titik awal $(0, 0, 0)$ saat kapal berlayar ke depan.
+   * *Solusi*: Dibuat launch file [`view_rviz.launch.py`](file:///home/mizuuu/Documents/Koleksi_KKI_Navantara_ASV/4_Firmware_dan_Source_Code/asv_control_system_jetson/navantara_ros2_ws/src/navantara_navigation/launch/view_rviz.launch.py) dan skrip [`run_rviz_software.sh`](file:///home/mizuuu/Documents/Koleksi_KKI_Navantara_ASV/4_Firmware_dan_Source_Code/asv_control_system_jetson/navantara_ros2_ws/run_rviz_software.sh) dengan opsi software GL. Diperbarui konfigurasi [`navantara_view.rviz`](file:///home/mizuuu/Documents/Koleksi_KKI_Navantara_ASV/4_Firmware_dan_Source_Code/asv_control_system_jetson/navantara_ros2_ws/src/navantara_navigation/config/navantara_view.rviz) dengan `Target Frame: base_link` sehingga kamera 3D otomatis mengunci dan mengikuti badan kapal katamaran secara *real-time*.
 
 ---
 
@@ -99,6 +102,8 @@ Semua perubahan telah di-push ke GitHub remote:
   * `docs/ROADMAP_ROS2_MIGRATION.md`: Dokumen audit komprehensif arsitektur lama vs baru.
   * `navantara_ros2_ws/src/`: Seluruh kode sumber 7 paket ROS 2.
   * `navantara_ros2_ws/src/navantara_navigation/launch/navantara_bringup.launch.py`: Master bringup runner.
+  * `navantara_ros2_ws/src/navantara_navigation/launch/view_rviz.launch.py`: Runner visualisasi RViz2.
+  * `navantara_ros2_ws/run_rviz_software.sh`: Skrip jalan cepat RViz2 dengan software fallback.
 
 ---
 
