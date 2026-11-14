@@ -10,7 +10,7 @@ Laptop Mock Development Mode (on Ubuntu 24.04 laptop without hardware).
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -39,6 +39,12 @@ def generate_launch_description():
         'enable_autonomy',
         default_value='true',
         description='Launch autonomous buoy gate navigation node (buoy_navigator_node)'
+    )
+
+    launch_rviz_arg = DeclareLaunchArgument(
+        'launch_rviz',
+        default_value='false',
+        description='Launch RViz2 with preconfigured ASV Navantara view'
     )
 
     # 2. Robot Description & State Publisher (3D Catamaran Hull & Sensor Mounts)
@@ -172,11 +178,30 @@ def generate_launch_description():
         ]
     )
 
+    # 7. RViz2 3D Visualizer (Optional)
+    nav_share = get_package_share_directory('navantara_navigation')
+    rviz_config_path = os.path.join(nav_share, 'config', 'navantara_view.rviz')
+    set_software_gl = SetEnvironmentVariable(
+        name='LIBGL_ALWAYS_SOFTWARE',
+        value='1',
+        condition=IfCondition(LaunchConfiguration('launch_rviz'))
+    )
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', rviz_config_path],
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('launch_rviz'))
+    )
+
     return LaunchDescription([
         use_laptop_mock_arg,
         port_arg,
         gps_port_arg,
         enable_autonomy_arg,
+        launch_rviz_arg,
+        set_software_gl,
         robot_state_publisher_node,
         perception_mock_node,
         perception_hw_node,
@@ -185,4 +210,5 @@ def generate_launch_description():
         control_bridge_hw_node,
         buoy_navigator_node,
         webgui_node,
+        rviz_node,
     ])
