@@ -74,7 +74,7 @@ class ASVBuoyNavigatorNode(Node):
         self.declare_parameter('max_yaw_rate_radps', 0.8)
         self.declare_parameter('lookahead_min_m', 2.5)
         self.declare_parameter('lookahead_max_m', 7.0)
-        self.declare_parameter('single_buoy_offset_m', 1.8)
+        self.declare_parameter('single_buoy_offset_m', 1.0)
         self.declare_parameter('costmap_size_m', 20.0)
         self.declare_parameter('costmap_resolution_m', 0.1)
         self.declare_parameter('costmap_inflation_radius_m', 1.2)

@@ -110,16 +110,51 @@ class ASVVisionNode(Node):
         self.asv_y = 0.0
         self.asv_yaw = 0.0
 
-        # Multi-Gate KKI Buoy Corridor in World/Odom Frame
-        # Defines 10 gates with gentle slalom bends
-        self.world_buoy_course = []
-        for i in range(15):
-            gx = 8.0 + i * 11.0
-            # S-curve serpentine lateral shift
-            curve_y = 1.6 * math.sin(i * 0.7)
-            # Red buoy on Port (Left, +Y), Green on Starboard (Right, -Y), 4.4m width
-            self.world_buoy_course.append(("bola-merah", gx, curve_y + 2.2, (0, 0, 240)))
-            self.world_buoy_course.append(("bola-hijau", gx, curve_y - 2.2, (0, 240, 0)))
+        # ============================================================
+        # Official KKI 2026 Lintasan A — Closed-Loop U-Circuit
+        # 10 gate pairs (celah 2.0m), mission objects, 3 docking balls
+        # Coordinate system: Origin = START/FINISH dock
+        #   X = East (+X), Y = North (+Y)
+        # Port (Left) buoy = Red Ball  → always on the OUTER/LEFT side
+        # Starboard (Right) buoy = Green Ball → always on the INNER/RIGHT side
+        # ============================================================
+        self.world_buoy_course = [
+            # --- LEG 1: North (Kolom E, heading +Y) ---
+            # Gate 1–3: Red (+X / East), Green (-X / West), 2.0m apart
+            ("bola-merah",   1.0,  5.0,  (0,   0, 240)),  # G1 Red  Port/Left
+            ("bola-hijau",  -1.0,  5.0,  (0, 240,   0)),  # G1 Green Stbd/Right
+            ("bola-merah",   1.0, 10.0,  (0,   0, 240)),  # G2 Red
+            ("bola-hijau",  -1.0, 10.0,  (0, 240,   0)),  # G2 Green
+            ("bola-merah",   1.0, 15.0,  (0,   0, 240)),  # G3 Red
+            ("bola-hijau",  -1.0, 15.0,  (0, 240,   0)),  # G3 Green
+            # --- LEG 2: West (Baris 5/6, heading -X) ---
+            # Gate 4–7: Red (+Y / North outer), Green (-Y / South inner)
+            ("bola-merah",  -5.0, 19.0,  (0,   0, 240)),  # G4 Red
+            ("bola-hijau",  -5.0, 17.0,  (0, 240,   0)),  # G4 Green
+            ("bola-merah", -12.0, 19.0,  (0,   0, 240)),  # G5 Red
+            ("bola-hijau", -12.0, 17.0,  (0, 240,   0)),  # G5 Green
+            ("bola-merah", -19.0, 19.0,  (0,   0, 240)),  # G6 Red
+            ("bola-hijau", -19.0, 17.0,  (0, 240,   0)),  # G6 Green
+            ("bola-merah", -26.0, 19.0,  (0,   0, 240)),  # G7 Red
+            ("bola-hijau", -26.0, 17.0,  (0, 240,   0)),  # G7 Green
+            # --- LEG 3: South (Kolom A, heading -Y) ---
+            # Gate 8–10: Red (-X / West outer), Green (+X / East inner)
+            ("bola-merah", -29.0, 14.0,  (0,   0, 240)),  # G8 Red
+            ("bola-hijau", -27.0, 14.0,  (0, 240,   0)),  # G8 Green
+            ("bola-merah", -29.0,  9.0,  (0,   0, 240)),  # G9 Red
+            ("bola-hijau", -27.0,  9.0,  (0, 240,   0)),  # G9 Green
+            ("bola-merah", -29.0,  4.0,  (0,   0, 240)),  # G10 Red
+            ("bola-hijau", -27.0,  4.0,  (0, 240,   0)),  # G10 Green
+            # --- MISSION ZONE: East (+X) back toward dock ---
+            # Mission 4: Surface Imaging (Green Box)
+            ("kotak-hijau", -20.0,  1.5,  (0, 200,   0)),
+            # Mission 5: Underwater Imaging (Blue Box)
+            ("kotak-biru",  -10.0,  1.5,  (200,  80,   0)),
+            # --- DOCKING: 3 Blue Balls at origin, 30 cm spacing ---
+            ("bola-biru",    0.0,  -0.3,  (200, 100,   0)),  # Dock Ball 1
+            ("bola-biru",    0.0,   0.0,  (200, 100,   0)),  # Dock Ball 2
+            ("bola-biru",    0.0,   0.3,  (200, 100,   0)),  # Dock Ball 3
+        ]
 
         self.odom_sub = self.create_subscription(
             Odometry, '/odom/raw', self._mock_odom_callback, 10
@@ -381,12 +416,10 @@ class ASVVisionNode(Node):
         sin_yaw = math.sin(self.asv_yaw)
         hfov_half_rad = math.radians(self.hfov_deg / 2.0)
 
-        # Loop over world buoy course
+        # Loop over KKI 2026 Lintasan A closed-loop course (no wrapping needed)
         for label, wx, wy, bgr_color in self.world_buoy_course:
-            # Wrap course so vessel can sail indefinitely along +X
-            # Course length: 165 meters
-            rel_world_x = ((wx - self.asv_x + 15.0) % 165.0) - 15.0 + self.asv_x
-            rel_world_y = wy
+            rel_world_x = wx   # Absolute world-frame X (closed loop, no modular wrap)
+            rel_world_y = wy   # Absolute world-frame Y
 
             dx = rel_world_x - self.asv_x
             dy = rel_world_y - self.asv_y
