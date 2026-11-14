@@ -188,6 +188,7 @@ class ASVVisionNode(Node):
         model_file = Path(self.model_path)
         if not model_file.exists():
             candidates = [
+                Path("/home/navantara/navantara/src/navantara_backend/vision/best.engine"),
                 Path("src/navantara_backend/vision/best.engine"),
                 Path("best.engine"),
                 Path("best.pt"),
@@ -210,16 +211,20 @@ class ASVVisionNode(Node):
 
     def _init_camera_capture(self):
         """Initializes hardware camera with V4L2 backend."""
-        self.cap = cv2.VideoCapture(self.camera_source, cv2.CAP_V4L2)
+        cam_src = self.camera_source
+        if os.path.exists("/dev/video_surface") and cam_src == 0:
+            cam_src = "/dev/video_surface"
+
+        self.cap = cv2.VideoCapture(cam_src, cv2.CAP_V4L2)
         if not self.cap.isOpened():
-            self.cap = cv2.VideoCapture(self.camera_source)
+            self.cap = cv2.VideoCapture(cam_src)
 
         if self.cap.isOpened():
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.frame_w)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_h)
-            self.get_logger().info(f"Hardware camera opened at /dev/video{self.camera_source}")
+            self.get_logger().info(f"Hardware camera opened at {cam_src}")
         else:
-            self.get_logger().warn(f"Cannot open camera device /dev/video{self.camera_source}. Fallback to mock.")
+            self.get_logger().warn(f"Cannot open camera device {cam_src}. Fallback to mock.")
             self.sim_mode = True
 
     def _main_loop_timer(self):
@@ -331,7 +336,13 @@ class ASVVisionNode(Node):
                     detected_obstacles.append(obs)
 
                 if self.publish_annotated:
-                    color = (0, 255, 0) if 'hijau' in label.lower() or 'green' in label.lower() else (0, 0, 255)
+                    lbl = label.lower()
+                    if 'hijau' in lbl or 'green' in lbl:
+                        color = (0, 255, 0)      # Green (BGR)
+                    elif 'biru' in lbl or 'blue' in lbl:
+                        color = (255, 128, 0)    # Blue/Cyan (BGR)
+                    else:
+                        color = (0, 0, 255)      # Red (BGR)
                     cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
                     text = f"{label} {dist_m:.1f}m {bearing_deg:+.1f}deg"
                     cv2.putText(frame, text, (int(x1), max(20, int(y1) - 5)),

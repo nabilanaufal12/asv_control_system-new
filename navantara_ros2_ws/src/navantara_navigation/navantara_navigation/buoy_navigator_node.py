@@ -202,6 +202,7 @@ class ASVBuoyNavigatorNode(Node):
 
         red_buoys_ahead = []
         green_buoys_ahead = []
+        blue_buoys_ahead = []
 
         for b in self.buoy_memory:
             dx = b.x - self.asv_x
@@ -212,14 +213,18 @@ class ASVBuoyNavigatorNode(Node):
             # Only consider buoys ahead or slightly abreast (x_v > -0.5m)
             if x_v > -0.5:
                 dist = math.hypot(x_v, y_v)
-                if 'merah' in b.label.lower() or 'red' in b.label.lower():
+                lbl = b.label.lower()
+                if 'merah' in lbl or 'red' in lbl:
                     red_buoys_ahead.append((dist, x_v, y_v, b))
-                elif 'hijau' in b.label.lower() or 'green' in b.label.lower():
+                elif 'hijau' in lbl or 'green' in lbl:
                     green_buoys_ahead.append((dist, x_v, y_v, b))
+                elif 'biru' in lbl or 'blue' in lbl:
+                    blue_buoys_ahead.append((dist, x_v, y_v, b))
 
         # Sort by distance
         red_buoys_ahead.sort(key=lambda item: item[0])
         green_buoys_ahead.sort(key=lambda item: item[0])
+        blue_buoys_ahead.sort(key=lambda item: item[0])
 
         active_gate_pair = None
 
@@ -232,6 +237,15 @@ class ASVBuoyNavigatorNode(Node):
             # Gate Midpoint in vessel frame
             mid_xv = (xr_v + xg_v) / 2.0
             mid_yv = (yr_v + yg_v) / 2.0
+
+            # If a Blue obstacle sits near the gate center, nudge waypoint away from it
+            if blue_buoys_ahead:
+                _, xb_v, yb_v, _ = blue_buoys_ahead[0]
+                dist_mid_to_blue = math.hypot(xb_v - mid_xv, yb_v - mid_yv)
+                if dist_mid_to_blue < 1.4:
+                    # Nudge away from blue towards the side with more clearance
+                    shift_dir = -1.0 if yb_v >= mid_yv else 1.0
+                    mid_yv += shift_dir * 0.9
 
             # Transform midpoint back to odom
             self.target_x = self.asv_x + (mid_xv * cos_yaw - mid_yv * sin_yaw)
@@ -261,8 +275,21 @@ class ASVBuoyNavigatorNode(Node):
             self.target_y = self.asv_y + (target_xv * sin_yaw + target_yv * cos_yaw)
             self.current_nav_mode = "PASSING_GREEN_STARBOARD"
 
+        elif blue_buoys_ahead:
+            # === CASE D: ONLY BLUE OBSTACLE VISIBLE AHEAD (CORRIDOR OBSTACLE) ===
+            # Avoid blue obstacle: nudge laterally away from its center
+            _, xb_v, yb_v, _ = blue_buoys_ahead[0]
+            target_xv = xb_v
+            # If blue obstacle is on left or center (yb_v >= 0), pass on starboard (-Y); else pass on port (+Y)
+            offset = -self.single_buoy_offset if yb_v >= 0.0 else self.single_buoy_offset
+            target_yv = yb_v + offset
+
+            self.target_x = self.asv_x + (target_xv * cos_yaw - target_yv * sin_yaw)
+            self.target_y = self.asv_y + (target_xv * sin_yaw + target_yv * cos_yaw)
+            self.current_nav_mode = "AVOIDING_BLUE_OBSTACLE"
+
         else:
-            # === CASE D: NO BUOYS IN SIGHT (CRUISING FORWARD) ===
+            # === CASE E: NO BUOYS IN SIGHT (CRUISING FORWARD) ===
             # Drive straight forward along current heading
             self.target_x = self.asv_x + 6.0 * cos_yaw
             self.target_y = self.asv_y + 6.0 * sin_yaw
@@ -377,10 +404,15 @@ class ASVBuoyNavigatorNode(Node):
             m.pose.position.z = 0.15
             m.scale = Vector3(x=0.45, y=0.45, z=0.45)
 
-            if 'merah' in b.label.lower() or 'red' in b.label.lower():
+            lbl = b.label.lower()
+            if 'merah' in lbl or 'red' in lbl:
                 m.color = ColorRGBA(r=1.0, g=0.1, b=0.1, a=0.95)
-            else:
+            elif 'hijau' in lbl or 'green' in lbl:
                 m.color = ColorRGBA(r=0.1, g=1.0, b=0.1, a=0.95)
+            elif 'biru' in lbl or 'blue' in lbl:
+                m.color = ColorRGBA(r=0.1, g=0.3, b=1.0, a=0.95)
+            else:
+                m.color = ColorRGBA(r=1.0, g=0.8, b=0.1, a=0.95)
 
             # Fade older buoys
             age = time.time() - b.last_seen

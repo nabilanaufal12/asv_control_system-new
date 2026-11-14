@@ -29,6 +29,12 @@ def generate_launch_description():
         description='Serial port for MCU communication (used when use_laptop_mock:=false)'
     )
 
+    gps_port_arg = DeclareLaunchArgument(
+        'gps_port',
+        default_value='/dev/ttyGPS',
+        description='Serial port for RTK GNSS receiver (used when use_laptop_mock:=false)'
+    )
+
     enable_autonomy_arg = DeclareLaunchArgument(
         'enable_autonomy',
         default_value='true',
@@ -77,7 +83,7 @@ def generate_launch_description():
         condition=UnlessCondition(LaunchConfiguration('use_laptop_mock')),
         parameters=[
             {'simulation_mode': False},
-            {'model_path': 'best.engine'},
+            {'model_path': '/home/navantara/navantara/src/navantara_backend/vision/best.engine'},
             {'camera_source': 0},
             {'publish_annotated_image': True},
             {'inference_rate_hz': 25.0},
@@ -85,7 +91,22 @@ def generate_launch_description():
         ]
     )
 
-    # 4. Control Bridge Node
+    # 4. RTK GNSS Receiver Node (u-blox ZED-F9P over USB Serial)
+    rtk_gnss_node = Node(
+        package='navantara_localization',
+        executable='rtk_gnss_node',
+        name='asv_rtk_gnss_node',
+        output='screen',
+        condition=UnlessCondition(LaunchConfiguration('use_laptop_mock')),
+        parameters=[
+            {'gps_port': LaunchConfiguration('gps_port')},
+            {'baudrate': 115200},
+            {'frame_id': 'gps_link'},
+            {'publish_rate_hz': 10.0},
+        ]
+    )
+
+    # 5. Control Bridge Node
     # In mock mode: runs internal 50Hz 2D kinematic vessel model & dynamic TF (odom -> base_link)
     # In hardware mode: connects to ESP32/STM32 MCU over UART with watchdog
     control_bridge_mock_node = Node(
@@ -154,10 +175,12 @@ def generate_launch_description():
     return LaunchDescription([
         use_laptop_mock_arg,
         port_arg,
+        gps_port_arg,
         enable_autonomy_arg,
         robot_state_publisher_node,
         perception_mock_node,
         perception_hw_node,
+        rtk_gnss_node,
         control_bridge_mock_node,
         control_bridge_hw_node,
         buoy_navigator_node,
